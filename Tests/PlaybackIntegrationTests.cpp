@@ -147,7 +147,7 @@ int main()
         if(elapsed<0.0||energy<=1.0e-6)return fail("30-second preview unsafe or silent");
         const double realtimeFactor=elapsed/30.0;
         std::cout<<"preview "<<sr<<" Hz realtime factor "<<realtimeFactor<<" peak "<<peak<<"\n";
-        if(realtimeFactor>=.90)return fail("preview not comfortably faster than real-time");
+        if(realtimeFactor>=.50)return fail("preview exceeded 50% realtime CPU budget on CI runner");
 
         const auto oldSeed=p.getSongGenerationSeed();
         p.startSongPreviewAtBar(dropBar);
