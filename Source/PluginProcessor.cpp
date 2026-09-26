@@ -620,14 +620,19 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
     auto a=arrangementSnapshot();
     if(!a||numSamples<=0){songPlaying.store(false);return;}
 
+    const int renderSamples=juce::jmin(numSamples,maximumBlockSize);
     const auto& lanes=a->getLanes();
     const int64_t start=songSample.load();
     const double spb=previewSampleRate*60.0/a->getBpm();
     const int64_t total=(int64_t)std::llround(a->getTotalBeats()*spb);
 
     out.clear();
-    static constexpr float laneGain[musicalLaneCount]={.68f,.38f,.34f,.28f,.58f,.25f,.20f};
-    static constexpr float hpHz[musicalLaneCount]={28.f,105.f,125.f,135.f,115.f,145.f,95.f};
+    songFxBus.clear(0,renderSamples);
+
+    // Lane order: BASS, SUB, CHORDS, PLUCK, PAD, LEAD, COUNTER, FX.
+    static constexpr float laneGain[musicalLaneCount]={.52f,.34f,.30f,.27f,.22f,.50f,.23f,.16f};
+    static constexpr float hpHz[musicalLaneCount]={28.f,18.f,120.f,125.f,160.f,120.f,150.f,110.f};
+    static constexpr float fxSend[musicalLaneCount]={0.f,0.f,.14f,.10f,.18f,.12f,.08f,.15f};
 
     for(int i=0;i<musicalLaneCount;++i)
     {
@@ -636,63 +641,114 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
 
         auto& midi=songMidi[(size_t)i];
         auto& scratch=songScratch[(size_t)i];
-        injectSongLaneMidi(lanes[(size_t)laneIndex],midi,start,numSamples,a->getBpm());
+        injectSongLaneMidi(lanes[(size_t)laneIndex],midi,start,renderSamples,a->getBpm());
+
         const bool active=songEngines[(size_t)i].hasActiveVoices();
         if(midi.isEmpty()&&!active)continue;
 
-        scratch.clear();
-        songEngines[(size_t)i].render(scratch,midi);
+        scratch.clear(0,renderSamples);
+
+        // Non-owning view: render exactly the number of samples FL Studio asked for.
+        // This avoids advancing 8192 samples per small host block and avoids allocation.
+        juce::AudioBuffer<float> scratchView(scratch.getArrayOfWritePointers(),
+                                             scratch.getNumChannels(),
+                                             0,renderSamples);
+        songEngines[(size_t)i].render(scratchView,midi);
 
         const float rc=1.f/(juce::MathConstants<float>::twoPi*hpHz[i]);
         const float dt=1.f/(float)previewSampleRate;
-        const float alpha=rc/(rc+dt);
+        const float hpAlpha=rc/(rc+dt);
 
-        for(int ch=0;ch<scratch.getNumChannels()&&ch<2;++ch)
+        for(int ch=0;ch<scratchView.getNumChannels()&&ch<2;++ch)
         {
-            auto* d=scratch.getWritePointer(ch);
+            auto* d=scratchView.getWritePointer(ch);
             float x1=laneHpX[(size_t)i][(size_t)ch];
             float y1=laneHpY[(size_t)i][(size_t)ch];
-            for(int s=0;s<numSamples;++s)
+            for(int s=0;s<renderSamples;++s)
             {
-                const float x=d[s];
-                const float y=alpha*(y1+x-x1);
+                const float x=std::isfinite(d[s])?d[s]:0.f;
+                const float y=hpAlpha*(y1+x-x1);
                 x1=x;y1=y;d[s]=y;
             }
             laneHpX[(size_t)i][(size_t)ch]=x1;
             laneHpY[(size_t)i][(size_t)ch]=y1;
         }
 
+        // BASS low end stays near-mono.
+        if(i==0&&scratchView.getNumChannels()>=2)
+        {
+            auto* l=scratchView.getWritePointer(0);
+            auto* r=scratchView.getWritePointer(1);
+            for(int s=0;s<renderSamples;++s)
+            {
+                const float mid=.5f*(l[s]+r[s]);
+                l[s]=mid*.88f+l[s]*.12f;
+                r[s]=mid*.88f+r[s]*.12f;
+            }
+        }
+
+        // SUB is mono and low-passed. It never enters the shared reverb bus.
+        if(i==1)
+        {
+            const float lpRc=1.f/(juce::MathConstants<float>::twoPi*125.f);
+            const float lpA=dt/(lpRc+dt);
+            auto* l=scratchView.getWritePointer(0);
+            auto* r=scratchView.getNumChannels()>1?scratchView.getWritePointer(1):l;
+            float state=laneLpState[(size_t)i][0];
+            for(int s=0;s<renderSamples;++s)
+            {
+                const float mono=.5f*(l[s]+r[s]);
+                state+=lpA*(mono-state);
+                l[s]=state;
+                r[s]=state;
+            }
+            laneLpState[(size_t)i][0]=state;
+            laneLpState[(size_t)i][1]=state;
+        }
+
         for(int ch=0;ch<out.getNumChannels();++ch)
-            out.addFrom(ch,0,scratch,ch,0,numSamples,laneGain[i]);
+        {
+            out.addFrom(ch,0,scratchView,ch,0,renderSamples,laneGain[i]);
+            if(fxSend[i]>0.f)
+                songFxBus.addFrom(ch,0,scratchView,ch,0,renderSamples,laneGain[i]*fxSend[i]);
+        }
     }
 
-    const int drumCount=collectDrumTriggers(*a,start,numSamples);
+    const int drumCount=collectDrumTriggers(*a,start,renderSamples);
     drumSynth.render(out,drumTriggers.data(),drumCount);
 
-    if(out.getNumChannels()>=2)
-        songReverb.processStereo(out.getWritePointer(0),out.getWritePointer(1),numSamples);
-    else if(out.getNumChannels()==1)
-        songReverb.processMono(out.getWritePointer(0),numSamples);
+    // One shared wet-only reverb bus; drums/BASS/SUB stay dry.
+    if(songFxBus.getNumChannels()>=2)
+        songReverb.processStereo(songFxBus.getWritePointer(0),songFxBus.getWritePointer(1),renderSamples);
+    else if(songFxBus.getNumChannels()==1)
+        songReverb.processMono(songFxBus.getWritePointer(0),renderSamples);
+    for(int ch=0;ch<out.getNumChannels();++ch)
+        out.addFrom(ch,0,songFxBus,ch,0,renderSamples,.72f);
 
     const float masterRc=1.f/(juce::MathConstants<float>::twoPi*24.f);
     const float masterDt=1.f/(float)previewSampleRate;
     const float masterAlpha=masterRc/(masterRc+masterDt);
 
+    int fade=songFadeRemaining.load(std::memory_order_acquire);
     for(int ch=0;ch<out.getNumChannels()&&ch<2;++ch)
     {
         auto* d=out.getWritePointer(ch);
         float x1=masterHpX[(size_t)ch],y1=masterHpY[(size_t)ch];
-        for(int s=0;s<numSamples;++s)
+        for(int s=0;s<renderSamples;++s)
         {
             const float x=std::isfinite(d[s])?d[s]:0.f;
             const float hp=masterAlpha*(y1+x-x1);
             x1=x;y1=hp;
-            d[s]=juce::jlimit(-.96f,.96f,std::tanh(hp*.68f));
+            float y=juce::jlimit(-.92f,.92f,std::tanh(hp*.67f));
+            if(fade>0)y*=juce::jlimit(0.f,1.f,(128.f-(float)fade)/128.f);
+            d[s]=y;
+            if(ch==0&&fade>0)--fade;
         }
         masterHpX[(size_t)ch]=x1;masterHpY[(size_t)ch]=y1;
     }
+    songFadeRemaining.store(juce::jmax(0,fade),std::memory_order_release);
 
-    const int64_t next=start+numSamples;
+    const int64_t next=start+renderSamples;
     songSample.store(next);
     if(next>=total)
     {
@@ -700,7 +756,6 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
         for(auto& e:songEngines)e.allNotesOff();
     }
 }
-
 bool SonaraAudioProcessor::writeArrangementMidiFile(const juce::File& destination) const
 {
     auto a = arrangementSnapshot(); return a ? a->writeMidiFile(destination) : false;
