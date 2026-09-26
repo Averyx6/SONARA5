@@ -300,6 +300,58 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
                    +"% • new structure + drums + harmony + bass + sounds";
 }
 
+void SonaraAudioProcessor::randomizeEverything(const juce::String& prompt)
+{
+    locks={};
+    const juce::String soundBrief=prompt+" • completely new standalone signature synth, unique oscillator character, polished transient, controlled low end";
+    generatePatch(soundBrief);
+    generateTrack(prompt);
+    generationStatus="EVERYTHING RANDOMIZED • brand-new song + melody + structure + sounds";
+}
+
+juce::String SonaraAudioProcessor::makeSurprisePrompt()
+{
+    static constexpr const char* genres[]={
+        "emotional progressive house","future rave","melodic EDM pop","dark tech house",
+        "drum and bass","electro house","cinematic EDM","tropical progressive house",
+        "festival trance EDM","experimental melodic bass"
+    };
+    static constexpr const char* moods[]={
+        "euphoric and emotional","dark and mysterious","uplifting and nostalgic","aggressive and futuristic",
+        "dreamy and cinematic","melancholic but energetic","warm and hopeful","tense then explosive"
+    };
+    static constexpr const char* keys[]={
+        "F minor","D minor","A minor","C minor","G minor","E minor","A major","D major","G major","C major"
+    };
+    static constexpr int bpms[]={122,124,126,128,130,132,138,140,150,174};
+    static constexpr const char* hooks[]={
+        "huge memorable lead hook","short addictive synth hook","anthemic octave melody","syncopated pluck hook",
+        "wide emotional supersaw theme","minimal dark vocal-like synth hook","cinematic call-and-response melody"
+    };
+    static constexpr const char* arrangements[]={
+        "short intro, verse, build, huge drop, breakdown, chorus, second build, final hook",
+        "fast intro, early drop, breakdown, melodic chorus, harder final hook",
+        "atmospheric intro, restrained verse, rising build, euphoric drop, emotional breakdown, massive final hook",
+        "club intro, groove verse, tension build, punchy drop, hook chorus, stripped break, explosive ending"
+    };
+
+    auto& r=juce::Random::getSystemRandom();
+    const auto pick=[&](const auto& arr)->juce::String{
+        constexpr int n=(int)(sizeof(arr)/sizeof(arr[0]));
+        return juce::String(arr[r.nextInt(n)]);
+    };
+
+    const juce::String genre=pick(genres);
+    const juce::String mood=pick(moods);
+    const juce::String key=pick(keys);
+    const int bpm=bpms[r.nextInt((int)(sizeof(bpms)/sizeof(bpms[0])))];
+    const juce::String hook=pick(hooks);
+    const juce::String arrangement=pick(arrangements);
+
+    return genre+", "+juce::String(bpm)+" BPM, "+key+", "+mood+", "+hook+
+           ", completely fresh chord progression and bass groove, distinct drums, "+arrangement;
+}
+
 void SonaraAudioProcessor::regenerateDrums(const juce::String& prompt)
 {
     stopSongPreview();
