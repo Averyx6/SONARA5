@@ -59,6 +59,7 @@ private:
         int chordMode=0;
         int arpMode=0;
         int melodyArchetype=0;
+        int motifLength=8;
         int phraseBars=4;
         int octaveRange=2;
         float density=.65f;
