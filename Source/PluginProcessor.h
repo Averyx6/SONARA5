@@ -4,6 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <vector>
+#include <deque>
 #include "Engine/SonaraEngine.h"
 #include "Generation/PromptGenerator.h"
 #include "Generation/SongArrangement.h"
@@ -43,7 +44,7 @@ public:
     std::shared_ptr<const sonara::SongArrangement> arrangementSnapshot() const noexcept { return std::atomic_load_explicit(&arrangement,std::memory_order_acquire); }
     bool writeArrangementMidiFile(const juce::File&) const;
     bool writeSelectedLaneMidiFile(const juce::File&) const;
-    void setSelectedLane(int i) noexcept { selectedLane.store(juce::jlimit(0,10,i)); }
+    void setSelectedLane(int i) noexcept { selectedLane.store(juce::jlimit(0,11,i)); }
     int getSelectedLane() const noexcept { return selectedLane.load(); }
 
 
@@ -68,6 +69,7 @@ public:
     void setPreviewBpm(double bpm) noexcept { previewBpm=juce::jlimit(60.0,200.0,bpm); }
     double getPreviewBpm() const noexcept { return previewBpm; }
     uint64_t getSongGenerationSeed() const noexcept { return lastSongSeed.load(std::memory_order_relaxed); }
+    float getMelodyNovelty() const noexcept { return lastMelodyNovelty.load(std::memory_order_relaxed); }
     void setMacro(Macro,float normalized);
     const sonara::SoundDNA& currentPatch()const{return engine.patch();}
     sonara::MutationLocks& mutationLocks() noexcept { return locks; }
@@ -84,7 +86,7 @@ public:
     std::atomic<float> generationProgress{0}; juce::String generationStatus{"Ready"};
 
 private:
-    static constexpr int firstMusicalLane=4, musicalLaneCount=7;
+    static constexpr int firstMusicalLane=4, musicalLaneCount=8;
     void injectPreviewMidi(juce::MidiBuffer&,int);
     void injectSongLaneMidi(const sonara::ArrangementLane&, juce::MidiBuffer&, int64_t startSample, int numSamples, double bpm) noexcept;
     int collectDrumTriggers(const sonara::SongArrangement&, int64_t startSample, int numSamples) noexcept;
@@ -100,14 +102,17 @@ private:
     uint64_t generationCounter=1;
     uint64_t sessionSalt=0;
     std::atomic<uint64_t> lastSongSeed{0};
-    std::atomic<bool> previewPlaying{false}; std::atomic<int64_t> previewSample{0}; std::atomic<bool> songPlaying{false}; std::atomic<int64_t> songSample{0}; std::atomic<int> selectedLane{8};
+    std::atomic<float> lastMelodyNovelty{1.f};
+    std::deque<std::vector<int>> melodyHistory;
+    std::atomic<bool> previewPlaying{false}; std::atomic<int64_t> previewSample{0}; std::atomic<bool> songPlaying{false}; std::atomic<int64_t> songSample{0}; std::atomic<int> selectedLane{9};
     double previewSampleRate=44100.0,previewBpm=128.0; int64_t previewLengthSamples=1; int maximumBlockSize=512;
     std::shared_ptr<const sonara::SongArrangement> arrangement;
     std::array<juce::AudioBuffer<float>,musicalLaneCount> songScratch;
     std::array<juce::MidiBuffer,musicalLaneCount> songMidi;
     std::array<std::array<float,2>,musicalLaneCount> laneHpX{},laneHpY{};
+    std::array<std::array<float,2>,musicalLaneCount> laneLpState{};
     std::array<float,2> masterHpX{},masterHpY{};
-    std::array<sonara::DrumTrigger,96> drumTriggers{};
+    std::array<sonara::DrumTrigger,256> drumTriggers{};
     std::vector<sonara::SoundDNA> patchHistory; int historyIndex=-1; sonara::SoundDNA patchA,patchB; bool hasA=false,hasB=false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SonaraAudioProcessor)
 };
