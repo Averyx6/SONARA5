@@ -221,7 +221,9 @@ int main()
             }
         }
 
-    // TEST C: 30 generated songs may not produce an identical lead fingerprint.\n    std::set<uint64_t> fingerprints;\n    for(uint64_t i=0;i<30;++i)
+    // TEST C: 30 generated songs may not produce an identical lead fingerprint.
+    std::set<uint64_t> fingerprints;
+    for(uint64_t i=0;i<30;++i)
     {
         sonara::SongArrangement x;
         x.generate(prompt,120.0,0xabc000ULL+i*0x10203ULL);
