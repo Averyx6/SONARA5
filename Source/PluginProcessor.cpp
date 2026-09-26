@@ -381,6 +381,9 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
         auto& midi=songMidi[(size_t)i];
         auto& scratch=songScratch[(size_t)i];
         injectSongLaneMidi(lanes[(size_t)laneIndex],midi,start,numSamples,a->getBpm());
+        const bool active=songEngines[(size_t)i].hasActiveVoices();
+        if(midi.isEmpty()&&!active)continue;
+
         scratch.clear();
         songEngines[(size_t)i].render(scratch,midi);
 
