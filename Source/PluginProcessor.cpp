@@ -903,7 +903,14 @@ bool SonaraAudioProcessor::loadProject(const juce::File& file)
 
 bool SonaraAudioProcessor::exportFullMix(const juce::File& file)
 {
-    auto a=arrangementSnapshot();if(!a){generationStatus="Generate a track first";return false;}generationStatus="Rendering 24-bit full mix";generationProgress.store(.01f);const bool ok=audioExporter.renderFullMix(*a,file,44100.0,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;});generationProgress.store(ok?1.f:0.f);generationStatus=ok?"24-bit full mix ready • "+file.getFullPathName():"Full mix export failed";return ok;
+    auto a=arrangementSnapshot();if(!a){generationStatus="Generate a track first";return false;}generationStatus="Rendering 24-bit full mix";generationProgress.store(.01f);
+    sonara::AudioExporter::MixArray mix{};
+    for(int i=0;i<12;++i)
+    {
+        const auto s=getLaneMix(i);
+        mix[(size_t)i]={s.level,s.pan,s.width,s.fxSend};
+    }
+    const bool ok=audioExporter.renderFullMix(*a,file,44100.0,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;},&mix);generationProgress.store(ok?1.f:0.f);generationStatus=ok?"24-bit full mix ready • "+file.getFullPathName():"Full mix export failed";return ok;
 }
 
 bool SonaraAudioProcessor::exportSelectedLaneAudio(const juce::File& file)
