@@ -440,103 +440,121 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
     const int scaleMinor[] = {0,2,3,5,7,8,10,12};
     const int scaleMajor[] = {0,2,4,5,7,9,11,12};
     const int* scale = minor ? scaleMinor : scaleMajor;
-
-    // Build two genuinely different seed-driven phrases instead of rotating one fixed motif.
-    // The prompt still controls key/style/energy, while the generation seed controls melodic identity.
-    int phraseA[8]{}, phraseB[8]{}, counterPhrase[8]{};
-    int degreeA = static_cast<int>(random01(seed, 1001) * 7.f);
-    int degreeB = static_cast<int>(random01(seed, 1002) * 7.f);
     static constexpr int moves[] = {-3,-2,-1,-1,0,1,1,2,3};
 
-    for (int i = 0; i < 8; ++i)
+    for(int bar=0;bar<bars;++bar)
     {
-        const int moveA = moves[juce::jlimit(0, 8, static_cast<int>(random01(seed, 1100 + i) * 9.f))];
-        const int moveB = moves[juce::jlimit(0, 8, static_cast<int>(random01(seed, 1200 + i) * 9.f))];
-        degreeA = juce::jlimit(0, 7, degreeA + moveA);
-        degreeB = juce::jlimit(0, 7, degreeB + moveB);
-        phraseA[i] = degreeA;
-        phraseB[i] = degreeB;
+        const ArrangementSection* section=nullptr;
+        int sectionIndex=0;
+        for(size_t si=0;si<sections.size();++si)
+            if(sectionContains(sections[si],bar)){section=&sections[si];sectionIndex=(int)si;break;}
 
-        // Counter melody has its own contour and is not just a transposed lead.
-        const int counterBase = static_cast<int>(random01(seed, 1300 + i) * 7.f);
-        counterPhrase[i] = juce::jlimit(0, 7, counterBase + ((i % 3) - 1));
-    }
+        const juce::String sectionName=section?section->name:juce::String();
+        const float energy=section?section->energy:.4f;
+        const bool intro=sectionName.contains("INTRO");
+        const bool verse=sectionName.contains("VERSE");
+        const bool build=sectionName.contains("BUILD");
+        const bool drop=sectionName.contains("DROP");
+        const bool breakdown=sectionName.contains("BREAKDOWN");
+        const bool chorus=sectionName.contains("CHORUS");
+        const bool finalHook=sectionName.contains("FINAL")||sectionName.contains("HOOK");
+        const int localBar=section?bar-section->startBar:bar;
 
-    for (int bar = 0; bar < bars; ++bar)
-    {
-        float energy=.4f;
-        for (const auto& s : sections) if(sectionContains(s,bar)){energy=s.energy;break;}
+        bool leadActive=!intro;
+        if(intro) leadActive=localBar>=juce::jmax(2,section?section->bars/2:4);
+        if(breakdown) leadActive=(localBar%2==0);
+        if(!leadActive) continue;
 
-        const bool leadActive = (bar >= 12 && bar < 40) || bar >= 48;
-        if (!leadActive) continue;
+        const int phraseBlock=localBar/4;
+        const uint64_t phraseSeed=mix64(seed
+            ^ ((uint64_t)sectionIndex+1ULL)*0x9e3779b97f4a7c15ULL
+            ^ ((uint64_t)phraseBlock+1ULL)*0xbf58476d1ce4e5b9ULL);
 
-        const double b = bar * beatsPerBar;
-        const bool finalDrop = bar >= 56;
-        const bool drop = energy > .8f;
-        const int steps = (drop || energetic) ? 8 : 4;
-        const double step = 4.0 / steps;
-        const int phraseGroup = bar / 4;
-        const int rotation = static_cast<int>(random01(seed, 2000 + phraseGroup) * 8.f) % 8;
-        const bool useB = ((phraseGroup + static_cast<int>(random01(seed, 2050 + phraseGroup) * 3.f)) % 2) != 0;
-        const int* phrase = useB ? phraseB : phraseA;
-
-        for (int i = 0; i < steps; ++i)
+        int motif[8]{};
+        int degree=static_cast<int>(random01(phraseSeed,100)*7.f);
+        const int contour=static_cast<int>(random01(phraseSeed,101)*5.f)%5;
+        for(int i=0;i<8;++i)
         {
-            const uint64_t salt = static_cast<uint64_t>(bar * 64 + i);
-            const bool strongBeat = i == 0 || i == steps / 2;
-            const float restChance = drop ? .10f : .22f;
-            if (!strongBeat && random01(seed, 3000 + salt) < restChance) continue;
-
-            int degree = phrase[(i + rotation) % 8];
-            if (random01(seed, 4000 + salt) > .72f)
-            {
-                const int nudge = random01(seed, 4100 + salt) > .5f ? 1 : -1;
-                degree = juce::jlimit(0, 7, degree + nudge);
-            }
-
-            int octave = drop ? 24 : 12;
-            if (finalDrop && random01(seed, 4200 + salt) > .78f) octave += 12;
-            if (!drop && random01(seed, 4250 + salt) < .13f) octave -= 12;
-
-            const int note = rootMidi + octave + scale[degree];
-            const double length = juce::jlimit(.16, .92,
-                step * (.46 + .72 * random01(seed, 5000 + salt)));
-            const int velocity = juce::jlimit(58, 127,
-                78 + static_cast<int>(energy * 30.f)
-                + static_cast<int>(random01(seed, 5100 + salt) * 16.f) - 8);
-
-            const double timing = (i % 2 == 1)
-                ? (random01(seed, 5200 + salt) - .5) * .035
-                : 0.0;
-            addNote(lead, note, juce::jmax(b, b + i * step + timing), length, velocity);
+            int move=moves[juce::jlimit(0,8,(int)(random01(phraseSeed,120+i)*9.f))];
+            if(contour==1&&i<4)move=juce::jmax(move,0);
+            if(contour==2&&i>=4)move=juce::jmin(move,0);
+            if(contour==3&&i%2==0)move=juce::jmax(move,1);
+            if(contour==4&&i%3==2)move=-juce::jmax(1,std::abs(move));
+            degree=juce::jlimit(0,7,degree+move);
+            motif[i]=degree;
         }
 
-        // Phrase ending/fill varies by 4/8-bar position so drops evolve instead of looping literally.
-        if ((bar % 4) == 3)
+        int steps=4;
+        if(build||chorus)steps=6;
+        if(drop||finalHook||energetic)steps=8;
+        if(breakdown)steps=3;
+        if(finalHook&&random01(phraseSeed,180)>.55f)steps=12;
+
+        const int rhythmMode=static_cast<int>(random01(phraseSeed,181)*6.f)%6;
+        const double baseStep=4.0/steps;
+        const double b=bar*beatsPerBar;
+        const int barInPhrase=localBar%4;
+
+        for(int i=0;i<steps;++i)
         {
-            const int fillDegree = finalDrop
-                ? phraseB[static_cast<int>(random01(seed, 6000 + bar) * 8.f) % 8]
-                : phraseA[static_cast<int>(random01(seed, 6100 + bar) * 8.f) % 8];
-            const int fillOctave = drop ? 24 : 12;
-            addNote(lead, rootMidi + fillOctave + scale[fillDegree],
-                    b + 3.5, .34, finalDrop ? 119 : 103);
+            const uint64_t salt=(uint64_t)bar*128ULL+(uint64_t)i;
+            const bool anchor=i==0||i==steps/2;
+            float restChance=verse?.24f:(breakdown?.42f:(drop||finalHook?.08f:.16f));
+            if(!anchor&&random01(phraseSeed,220+salt)<restChance)continue;
+
+            int motifIndex=(i+barInPhrase*2+rhythmMode)%8;
+            int d=motif[motifIndex];
+            if(random01(phraseSeed,300+salt)>.70f)
+                d=juce::jlimit(0,7,d+(random01(phraseSeed,310+salt)>.5f?1:-1));
+
+            if(build&&barInPhrase>=2&&i>steps/2)d=juce::jlimit(0,7,d+1);
+            if(finalHook&&barInPhrase==3&&i>=steps/2)d=juce::jlimit(0,7,d+1);
+
+            int octave=(drop||chorus||finalHook)?24:12;
+            if(breakdown)octave=12;
+            if(finalHook&&random01(phraseSeed,320+salt)>.74f)octave+=12;
+            if(verse&&random01(phraseSeed,325+salt)<.15f)octave-=12;
+
+            double pos=i*baseStep;
+            if(rhythmMode==1&&i%2==1)pos+=baseStep*.22;
+            else if(rhythmMode==2&&i%3==2)pos-=baseStep*.18;
+            else if(rhythmMode==3&&i>0&&i%4==0)pos+=baseStep*.35;
+            else if(rhythmMode==4&&i%2==0)pos+=baseStep*.10;
+            pos=juce::jlimit(0.0,3.92,pos);
+
+            const double length=juce::jlimit(.11,1.15,
+                baseStep*(.38+.82*random01(phraseSeed,400+salt)));
+            const int velocity=juce::jlimit(50,127,
+                62+(int)(energy*38.f)+(anchor?6:0)+(int)(random01(phraseSeed,420+salt)*18.f)-9);
+
+            addNote(lead,rootMidi+octave+scale[d],b+pos,length,velocity);
         }
 
-        // Independent counter line appears selectively in high-energy sections.
-        if (drop && (bar % 2 == 1) && random01(seed, 7000 + bar) > .18f)
+        if((barInPhrase==3||finalHook)&&random01(phraseSeed,500+bar)>.22f)
         {
-            const int counterRotation = static_cast<int>(random01(seed, 7100 + bar) * 8.f) % 8;
-            for (int i = 0; i < 4; ++i)
+            const int d=motif[(5+rhythmMode+barInPhrase)%8];
+            addNote(lead,rootMidi+(finalHook?36:(drop||chorus?24:12))+scale[d],
+                    b+3.5,.22+random01(phraseSeed,510+bar)*.22,
+                    finalHook?118:96+(int)(energy*18.f));
+        }
+
+        if((drop||chorus||finalHook)&&random01(phraseSeed,600+bar)>.28f)
+        {
+            const uint64_t counterSeed=mix64(phraseSeed^0x434f554e544552ULL);
+            int counterDegree=static_cast<int>(random01(counterSeed,10)*7.f);
+            const int counterCount=finalHook?5:4;
+            for(int i=0;i<counterCount;++i)
             {
-                if (i > 0 && random01(seed, 7200 + bar * 8 + i) < .20f) continue;
-                const int degree = counterPhrase[(i + counterRotation) % 8];
-                const int octave = finalDrop ? 24 : 12;
-                const int velocity = juce::jlimit(52, 104,
-                    62 + static_cast<int>(random01(seed, 7300 + bar * 8 + i) * 24.f));
-                addNote(counter, rootMidi + octave + scale[degree],
-                        b + 2.0 + i * .5,
-                        .18 + .18 * random01(seed, 7400 + bar * 8 + i),
-                        velocity);
+                if(i>0&&random01(counterSeed,30+bar*8+i)<.18f)continue;
+                int move=moves[juce::jlimit(0,8,(int)(random01(counterSeed,50+i+bar)*9.f))];
+                counterDegree=juce::jlimit(0,7,counterDegree+move);
+                const double pos=1.75+i*(2.0/counterCount)
+                    +(i%2?(.08*(random01(counterSeed,70+i+bar)-.5)):0.0);
+                const int octave=finalHook?24:12;
+                addNote(counter,rootMidi+octave+scale[counterDegree],
+                        b+juce::jlimit(0.0,3.85,pos),
+                        .14+.24*random01(counterSeed,90+i+bar),
+                        juce::jlimit(46,104,56+(int)(energy*28.f)+(int)(random01(counterSeed,110+i+bar)*10.f)));
             }
         }
     }
