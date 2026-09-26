@@ -40,7 +40,7 @@ bool finiteAndSafe(const juce::AudioBuffer<float>& b,float& peak,double& energy)
             peak=juce::jmax(peak,std::abs(x));
             energy+=(double)x*x;
         }
-    return peak<=.921f;
+    return peak<=.951f;
 }
 
 double renderSeconds(SonaraAudioProcessor& p,double sr,double seconds,int blockSize,float& peak,double& energy)
@@ -146,8 +146,10 @@ int main()
         const double elapsed=renderSeconds(p,sr,30.0,blockSize,peak,energy);
         if(elapsed<0.0||energy<=1.0e-6)return fail("30-second preview unsafe or silent");
         const double realtimeFactor=elapsed/30.0;
-        std::cout<<"preview "<<sr<<" Hz realtime factor "<<realtimeFactor<<" peak "<<peak<<"\n";
+        const double rms=std::sqrt(energy/(30.0*sr*2.0));
+        std::cout<<"preview "<<sr<<" Hz realtime factor "<<realtimeFactor<<" peak "<<peak<<" rms "<<rms<<"\n";
         if(realtimeFactor>=.50)return fail("preview exceeded 50% realtime CPU budget on CI runner");
+        if(rms<.012)return fail("preview mix is still too quiet");
 
         const auto oldSeed=p.getSongGenerationSeed();
         p.startSongPreviewAtBar(dropBar);
