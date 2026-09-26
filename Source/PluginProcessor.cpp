@@ -3,6 +3,58 @@
 #include <algorithm>
 #include <cmath>
 
+namespace {
+uint64_t scrambleSongSeed(uint64_t x) noexcept
+{
+    x += 0x9e3779b97f4a7c15ULL;
+    x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+    return x ^ (x >> 31);
+}
+
+const sonara::ArrangementLane* laneNamed(const sonara::SongArrangement& a,const juce::String& name)
+{
+    for(const auto& lane:a.getLanes())if(lane.name==name)return &lane;
+    return nullptr;
+}
+
+float melodySimilarity(const sonara::SongArrangement& a,const sonara::SongArrangement& b)
+{
+    const auto* x=laneNamed(a,"LEAD");
+    const auto* y=laneNamed(b,"LEAD");
+    if(x==nullptr||y==nullptr||x->notes.empty()||y->notes.empty())return 0.f;
+
+    const int n=juce::jmin(64,juce::jmin((int)x->notes.size(),(int)y->notes.size()));
+    if(n<8)return 0.f;
+
+    float score=0.f,weight=0.f;
+    for(int i=0;i<n;++i)
+    {
+        const auto& aN=x->notes[(size_t)i];
+        const auto& bN=y->notes[(size_t)i];
+
+        weight+=1.f;
+        if((aN.note%12)==(bN.note%12))score+=.52f;
+        if(std::abs(aN.beat-bN.beat)<.08)score+=.28f;
+        if(std::abs(aN.length-bN.length)<.08)score+=.20f;
+
+        if(i>0)
+        {
+            const int aInt=aN.note-x->notes[(size_t)i-1].note;
+            const int bInt=bN.note-y->notes[(size_t)i-1].note;
+            weight+=.45f;
+            if(aInt==bInt)score+=.32f;
+            else if((aInt>0)==(bInt>0)&&aInt!=0&&bInt!=0)score+=.13f;
+        }
+    }
+
+    const float countRatio=(float)juce::jmin(x->notes.size(),y->notes.size())
+                          /(float)juce::jmax<size_t>(1,juce::jmax(x->notes.size(),y->notes.size()));
+    const float normalized=weight>0.f?score/weight:0.f;
+    return juce::jlimit(0.f,1.f,normalized*.82f+countRatio*.18f);
+}
+}
+
 SonaraAudioProcessor::SonaraAudioProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
@@ -194,29 +246,58 @@ void SonaraAudioProcessor::recallB(){ if(hasB){ engine.setPatch(patchB);generati
 
 void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
 {
-    stopPreview(); stopSongPreview();
-    generationProgress.store(.05f); generationStatus = "Understanding full-track prompt";
+    stopPreview();stopSongPreview();
+    generationProgress.store(.03f);
+    generationStatus="Creating a completely new song from scratch";
 
-    const uint64_t seed = (uint64_t) prompt.hashCode64()
-                        ^ sessionSalt
-                        ^ (++generationCounter * 0x9e3779b97f4a7c15ULL)
-                        ^ 0x534f4e475f4d454cULL;
-    lastSongSeed.store(seed, std::memory_order_relaxed);
-    auto made = std::make_shared<sonara::SongArrangement>();
-    made->generate(prompt, previewBpm, seed);
-    generationProgress.store(.62f); generationStatus = "Loading generated SoundDNA into arrangement lanes";
+    auto previous=arrangementSnapshot();
+    std::shared_ptr<sonara::SongArrangement> made;
+    uint64_t seed=0;
+    float similarity=0.f;
 
-    const auto& lanes = made->getLanes();
-    if(lanes.size()>=4) drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
-    for (int i = 0; i < musicalLaneCount; ++i)
+    for(int attempt=0;attempt<8;++attempt)
     {
-        const int laneIndex = firstMusicalLane + i;
-        if (juce::isPositiveAndBelow(laneIndex, (int)lanes.size())) songEngines[(size_t)i].setPatch(lanes[(size_t)laneIndex].sound);
+        const uint64_t entropy=static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64())
+                             ^ static_cast<uint64_t>(juce::Time::getHighResolutionTicks())
+                             ^ ((uint64_t)(attempt+1)*0xd1342543de82ef95ULL);
+        seed=scrambleSongSeed((uint64_t)prompt.hashCode64()
+                           ^ sessionSalt
+                           ^ (++generationCounter*0x9e3779b97f4a7c15ULL)
+                           ^ entropy
+                           ^ 0x534f4e475f465245ULL);
+
+        made=std::make_shared<sonara::SongArrangement>();
+        made->generate(prompt,previewBpm,seed);
+
+        similarity=previous?melodySimilarity(*previous,*made):0.f;
+        generationProgress.store(.12f+.055f*attempt);
+
+        if(!previous||similarity<.34f)break;
+        generationStatus="Melody too similar • rerolling fresh composition";
     }
-    previewBpm = made->getBpm();
-    std::atomic_store_explicit(&arrangement, std::shared_ptr<const sonara::SongArrangement>(made), std::memory_order_release);
-    selectedLane.store(lanes.size() > 8 ? 8 : 0);
-    generationProgress.store(1.f); generationStatus = "Full track ready • fresh drums + harmony + bass + synths + melody + FX";
+
+    lastSongSeed.store(seed,std::memory_order_relaxed);
+    generationProgress.store(.64f);
+    generationStatus="Loading new SoundDNA palette into fresh arrangement";
+
+    const auto& lanes=made->getLanes();
+    if(lanes.size()>=4)drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
+    for(int i=0;i<musicalLaneCount;++i)
+    {
+        const int laneIndex=firstMusicalLane+i;
+        if(juce::isPositiveAndBelow(laneIndex,(int)lanes.size()))
+        {
+            songEngines[(size_t)i].allNotesOff();
+            songEngines[(size_t)i].setPatch(lanes[(size_t)laneIndex].sound);
+        }
+    }
+
+    previewBpm=made->getBpm();
+    std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(made),std::memory_order_release);
+    selectedLane.store(lanes.size()>8?8:0);
+    generationProgress.store(1.f);
+    generationStatus="NEW SONG READY • melody similarity "+juce::String(similarity*100.f,0)
+                   +"% • new structure + drums + harmony + bass + sounds";
 }
 
 void SonaraAudioProcessor::regenerateDrums(const juce::String& prompt)
