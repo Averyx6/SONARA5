@@ -320,12 +320,14 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     generationProgress.store(.03f);
     generationStatus="Creating a completely new song from scratch";
 
-    auto previous=arrangementSnapshot();
+    const auto previous=arrangementSnapshot();
+    const auto previousFingerprint=previous?melodyFingerprint(*previous):std::vector<int>{};
     std::shared_ptr<sonara::SongArrangement> made;
+    std::vector<int> acceptedFingerprint;
     uint64_t seed=0;
-    float similarity=0.f;
+    float maxSimilarity=0.f;
 
-    for(int attempt=0;attempt<8;++attempt)
+    for(int attempt=0;attempt<12;++attempt)
     {
         const uint64_t entropy=static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64())
                              ^ static_cast<uint64_t>(juce::Time::getHighResolutionTicks())
@@ -336,18 +338,43 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
                            ^ entropy
                            ^ 0x534f4e475f465245ULL);
 
-        made=std::make_shared<sonara::SongArrangement>();
-        made->generate(prompt,previewBpm,seed);
+        auto candidate=std::make_shared<sonara::SongArrangement>();
+        candidate->generate(prompt,previewBpm,seed);
+        auto fingerprint=melodyFingerprint(*candidate);
 
-        similarity=previous?melodySimilarity(*previous,*made):0.f;
-        generationProgress.store(.12f+.055f*attempt);
+        maxSimilarity=previousFingerprint.empty()?0.f:fingerprintSimilarity(previousFingerprint,fingerprint);
+        for(const auto& historic:melodyHistory)
+            maxSimilarity=juce::jmax(maxSimilarity,fingerprintSimilarity(historic,fingerprint));
 
-        if(!previous||similarity<.34f)break;
-        generationStatus="Melody too similar • rerolling fresh composition";
+        generationProgress.store(.10f+.04f*attempt);
+
+        // Reject anything that still looks like a recent lead at the structural level.
+        if(!fingerprint.empty()&&(maxSimilarity<.31f||attempt==11))
+        {
+            made=std::move(candidate);
+            acceptedFingerprint=std::move(fingerprint);
+            break;
+        }
+
+        generationStatus="Melody fingerprint too similar • rerolling composition "+juce::String(attempt+2);
+    }
+
+    if(!made)
+    {
+        generationProgress.store(0.f);
+        generationStatus="Song generation failed to create a valid melody";
+        return;
+    }
+
+    if(!acceptedFingerprint.empty())
+    {
+        melodyHistory.push_back(acceptedFingerprint);
+        while(melodyHistory.size()>6)melodyHistory.pop_front();
     }
 
     lastSongSeed.store(seed,std::memory_order_relaxed);
-    generationProgress.store(.64f);
+    lastMelodyNovelty.store(juce::jlimit(0.f,1.f,1.f-maxSimilarity),std::memory_order_relaxed);
+    generationProgress.store(.66f);
     generationStatus="Loading new SoundDNA palette into fresh arrangement";
 
     const auto& lanes=made->getLanes();
@@ -364,11 +391,12 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
 
     previewBpm=made->getBpm();
     std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(made),std::memory_order_release);
-    selectedLane.store(lanes.size()>8?8:0);
+    selectedLane.store(lanes.size()>9?9:0);
     generationProgress.store(1.f);
-    generationStatus="NEW SONG READY • melody similarity "+juce::String(similarity*100.f,0)
-                   +"% • new structure + drums + harmony + bass + sounds";
+    generationStatus="NEW SONG READY • melody novelty "+juce::String((1.f-maxSimilarity)*100.f,0)
+                   +"% • drums + bass + sub + harmony + melody + FX regenerated";
 }
+
 
 void SonaraAudioProcessor::randomizeEverything(const juce::String& prompt)
 {
