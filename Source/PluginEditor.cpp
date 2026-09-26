@@ -51,20 +51,138 @@ void SonaraAudioProcessorEditor::SoundDNAView::paint(juce::Graphics& g){
     g.setColour(dim);g.setFont(11.f);g.drawText("SOUND DNA • seed "+juce::String(d.seed)+" • unison "+juce::String(d.unison)+" • cutoff "+juce::String((int)d.cutoff)+" Hz",r.getX()+18,r.getBottom()-31,r.getWidth()-36,18,juce::Justification::left);
 }
 
-void SonaraAudioProcessorEditor::TimelineView::paint(juce::Graphics& g){
-    auto r=getLocalBounds().toFloat();g.setColour(panel2);g.fillRoundedRectangle(r,10.f);auto a=processor.arrangementSnapshot();
-    if(!a){g.setColour(dim);g.setFont(14.f);g.drawText("Generate a track to build the arrangement timeline",getLocalBounds(),juce::Justification::centred);return;}
-    const auto& lanes=a->getLanes(); const auto& sections=a->getSections(); const int bars=a->getBars(); const double totalBeats=a->getTotalBeats();
-    const float labelW=108.f, headerH=24.f,rowH=(r.getHeight()-headerH)/(float)lanes.size();auto grid=r.withTrimmedLeft(labelW).withTrimmedTop(headerH);
-    for(const auto& s:sections){const float x=grid.getX()+grid.getWidth()*s.startBar/(float)bars;const float w=grid.getWidth()*s.bars/(float)bars;g.setColour((s.name.contains("DROP")?purple:cyan).withAlpha(.08f+.12f*s.energy));g.fillRect(x,grid.getY(),w,grid.getHeight());g.setColour(text.withAlpha(.55f));g.setFont(9.f);g.drawText(s.name,(int)x+3,(int)r.getY(),(int)w-6,(int)headerH,juce::Justification::centredLeft);g.setColour(juce::Colour(0xff26344c));g.drawVerticalLine((int)x,grid.getY(),grid.getBottom());}
-    for(size_t li=0;li<lanes.size();++li){const auto& lane=lanes[li];const float y=grid.getY()+li*rowH;g.setColour(li==(size_t)processor.getSelectedLane()?juce::Colour(0xff15263b):juce::Colour(0xff0c1523));g.fillRect(r.getX(),y,r.getWidth(),rowH-1);g.setColour(laneColour(li));g.fillRect(r.getX()+5.f,y+5.f,3.f,rowH-10.f);g.setColour(text.withAlpha(.75f));g.setFont(10.f);g.drawText(lane.name,(int)r.getX()+14,(int)y,(int)labelW-18,(int)rowH,juce::Justification::centredLeft);
-        // Draw note activity as real clip density blocks.
-        for(const auto& n:lane.notes){const float x=grid.getX()+grid.getWidth()*(float)(n.beat/totalBeats);const float w=juce::jmax(1.2f,grid.getWidth()*(float)(n.length/totalBeats));g.setColour(laneColour(li).withAlpha(.38f));g.fillRoundedRectangle(x,y+rowH*.28f,w,rowH*.44f,1.5f);}
+void SonaraAudioProcessorEditor::TimelineView::paint(juce::Graphics& g)
+{
+    auto r=getLocalBounds().toFloat();
+    g.setColour(panel2);g.fillRoundedRectangle(r,10.f);
+    auto a=processor.arrangementSnapshot();
+    if(!a)
+    {
+        g.setColour(dim);g.setFont(14.f);
+        g.drawText("Generate a track to build the arrangement timeline",getLocalBounds(),juce::Justification::centred);
+        return;
     }
-    const float px=grid.getX()+grid.getWidth()*(float)processor.songPosition01();g.setColour(juce::Colours::white.withAlpha(.92f));g.drawLine(px,r.getY(),px,r.getBottom(),1.3f);g.setColour(cyan);g.fillEllipse(px-3,r.getY()+2,6,6);
+
+    const auto& lanes=a->getLanes();
+    const auto& sections=a->getSections();
+    const int bars=a->getBars();
+    const double totalBeats=a->getTotalBeats();
+    const float labelW=112.f,headerH=44.f;
+    const float rowH=(r.getHeight()-headerH)/(float)juce::jmax(1,(int)lanes.size());
+    const auto header=juce::Rectangle<float>(r.getX()+labelW,r.getY(),r.getWidth()-labelW,headerH);
+    const auto grid=r.withTrimmedLeft(labelW).withTrimmedTop(headerH);
+    const int currentBar=processor.currentSongBar();
+
+    g.setColour(juce::Colour(0xff08111e));
+    g.fillRoundedRectangle(r.getX()+4.f,r.getY()+4.f,labelW-8.f,headerH-8.f,6.f);
+    g.setColour(cyan.withAlpha(.82f));g.setFont(8.5f);
+    g.drawFittedText("SECTIONS\nCLICK TO PLAY",(int)r.getX()+10,(int)r.getY()+8,(int)labelW-20,(int)headerH-14,
+                     juce::Justification::centredLeft,2);
+
+    for(const auto& s:sections)
+    {
+        const float x=header.getX()+header.getWidth()*s.startBar/(float)bars;
+        const float w=header.getWidth()*s.bars/(float)bars;
+        const bool active=currentBar>=s.startBar&&currentBar<s.startBar+s.bars;
+        const bool impact=s.name.contains("DROP")||s.name.contains("HOOK");
+        const auto base=impact?purple:cyan;
+
+        g.setColour(base.withAlpha(active?.42f:(.10f+.12f*s.energy)));
+        g.fillRoundedRectangle(x+1.f,header.getY()+4.f,juce::jmax(2.f,w-2.f),headerH-8.f,5.f);
+        g.setColour(active?juce::Colours::white:text.withAlpha(.65f));
+        g.setFont(active?9.5f:8.3f);
+        g.drawFittedText(s.name,(int)x+5,(int)header.getY()+7,juce::jmax(8,(int)w-10),16,
+                         juce::Justification::centredLeft,1);
+        g.setColour(active?cyan.withAlpha(.9f):dim.withAlpha(.8f));
+        g.setFont(7.5f);
+        g.drawFittedText("BAR "+juce::String(s.startBar+1),(int)x+5,(int)header.getY()+23,
+                         juce::jmax(8,(int)w-10),11,juce::Justification::centredLeft,1);
+    }
+
+    for(const auto& s:sections)
+    {
+        const float x=grid.getX()+grid.getWidth()*s.startBar/(float)bars;
+        const float w=grid.getWidth()*s.bars/(float)bars;
+        const bool active=currentBar>=s.startBar&&currentBar<s.startBar+s.bars;
+        const bool impact=s.name.contains("DROP")||s.name.contains("HOOK");
+        g.setColour((impact?purple:cyan).withAlpha(active?.10f:.045f+.055f*s.energy));
+        g.fillRect(x,grid.getY(),w,grid.getHeight());
+        g.setColour(juce::Colour(0xff26344c).withAlpha(.8f));
+        g.drawVerticalLine((int)x,grid.getY(),grid.getBottom());
+    }
+
+    for(size_t li=0;li<lanes.size();++li)
+    {
+        const auto& lane=lanes[li];
+        const float y=grid.getY()+li*rowH;
+        g.setColour(li==(size_t)processor.getSelectedLane()?juce::Colour(0xff15263b):juce::Colour(0xff0c1523));
+        g.fillRect(r.getX(),y,r.getWidth(),juce::jmax(1.f,rowH-1.f));
+        g.setColour(laneColour(li));g.fillRoundedRectangle(r.getX()+5.f,y+4.f,3.f,juce::jmax(2.f,rowH-8.f),1.5f);
+        g.setColour(text.withAlpha(li==(size_t)processor.getSelectedLane()?.95f:.72f));g.setFont(9.5f);
+        g.drawFittedText(lane.name,(int)r.getX()+14,(int)y,(int)labelW-20,(int)rowH,
+                         juce::Justification::centredLeft,1);
+
+        for(const auto& n:lane.notes)
+        {
+            const float x=grid.getX()+grid.getWidth()*(float)(n.beat/totalBeats);
+            const float w=juce::jmax(1.2f,grid.getWidth()*(float)(n.length/totalBeats));
+            const float alpha=.28f+.44f*(n.velocity/127.f);
+            g.setColour(laneColour(li).withAlpha(alpha));
+            g.fillRoundedRectangle(x,y+rowH*.27f,w,juce::jmax(2.f,rowH*.46f),1.5f);
+        }
+    }
+
+    const float px=grid.getX()+grid.getWidth()*(float)processor.songPosition01();
+    g.setColour(juce::Colours::white.withAlpha(processor.isSongPlaying()?.98f:.55f));
+    g.drawLine(px,header.getY()+2.f,px,r.getBottom(),processor.isSongPlaying()?1.8f:1.1f);
+    g.setColour(cyan);
+    juce::Path marker;
+    marker.startNewSubPath(px-5.f,header.getY()+1.f);
+    marker.lineTo(px+5.f,header.getY()+1.f);
+    marker.lineTo(px,header.getY()+8.f);
+    marker.closeSubPath();
+    g.fillPath(marker);
+
+    const auto sectionName=processor.currentSectionName();
+    g.setColour(juce::Colour(0xff06101c).withAlpha(.92f));
+    g.fillRoundedRectangle(r.getRight()-190.f,r.getBottom()-22.f,182.f,16.f,5.f);
+    g.setColour(cyan.withAlpha(.9f));g.setFont(8.5f);
+    g.drawFittedText("BAR "+juce::String(currentBar+1)+"/"+juce::String(bars)+" • "+sectionName,
+                     (int)r.getRight()-184,(int)r.getBottom()-20,170,12,
+                     juce::Justification::centredRight,1);
 }
 
-void SonaraAudioProcessorEditor::TimelineView::mouseDown(const juce::MouseEvent& e){auto a=processor.arrangementSnapshot();if(!a)return;const auto& lanes=a->getLanes();const float headerH=24.f,rowH=(getHeight()-headerH)/(float)lanes.size();const int lane=juce::jlimit(0,(int)lanes.size()-1,(int)((e.position.y-headerH)/rowH));processor.setSelectedLane(lane);repaint();}
+void SonaraAudioProcessorEditor::TimelineView::mouseDown(const juce::MouseEvent& e)
+{
+    auto a=processor.arrangementSnapshot();
+    if(!a)return;
+
+    constexpr float headerH=44.f;
+    constexpr float labelW=112.f;
+
+    if(e.position.y<headerH&&e.position.x>=labelW)
+    {
+        const float normalized=juce::jlimit(0.f,.9999f,(e.position.x-labelW)/juce::jmax(1.f,(float)getWidth()-labelW));
+        const int clickedBar=juce::jlimit(0,a->getBars()-1,(int)std::floor(normalized*a->getBars()));
+        for(const auto& s:a->getSections())
+            if(clickedBar>=s.startBar&&clickedBar<s.startBar+s.bars)
+            {
+                processor.startSongPreviewAtBar(s.startBar);
+                repaint();
+                return;
+            }
+    }
+
+    if(e.position.y>=headerH)
+    {
+        const auto& lanes=a->getLanes();
+        if(lanes.empty())return;
+        const float rowH=(getHeight()-headerH)/(float)lanes.size();
+        const int lane=juce::jlimit(0,(int)lanes.size()-1,(int)((e.position.y-headerH)/rowH));
+        processor.setSelectedLane(lane);
+        repaint();
+    }
+}
 
 void SonaraAudioProcessorEditor::PianoRollView::paint(juce::Graphics& g){
     auto r=getLocalBounds().toFloat();g.setColour(juce::Colour(0xff09111e));g.fillRoundedRectangle(r,10.f);auto a=processor.arrangementSnapshot();if(!a||!juce::isPositiveAndBelow(processor.getSelectedLane(),(int)a->getLanes().size())){g.setColour(dim);g.drawText("PIANO ROLL",getLocalBounds(),juce::Justification::centred);return;}
