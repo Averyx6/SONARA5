@@ -16,6 +16,8 @@
 class SonaraAudioProcessor final : public juce::AudioProcessor {
 public:
     enum class Macro : int { brightness=0, movement, space, impact };
+    enum class LaneMixParameter : int { level=0, pan, width, fxSend };
+    struct LaneMixState { float level=1.f,pan=0.f,width=1.f,fxSend=1.f; };
     SonaraAudioProcessor();
     void prepareToPlay(double,int) override; void releaseResources() override{}; bool isBusesLayoutSupported(const BusesLayout&) const override;
     void processBlock(juce::AudioBuffer<float>&,juce::MidiBuffer&) override;
@@ -73,6 +75,8 @@ public:
     uint64_t getSongGenerationSeed() const noexcept { return lastSongSeed.load(std::memory_order_relaxed); }
     float getMelodyNovelty() const noexcept { return lastMelodyNovelty.load(std::memory_order_relaxed); }
     void setMacro(Macro,float normalized);
+    void setLaneMix(int laneIndex,LaneMixParameter,float value) noexcept;
+    LaneMixState getLaneMix(int laneIndex) const noexcept;
     const sonara::SoundDNA& currentPatch()const{return engine.patch();}
     sonara::MutationLocks& mutationLocks() noexcept { return locks; }
     const sonara::MutationLocks& mutationLocks() const noexcept { return locks; }
@@ -109,6 +113,7 @@ private:
     std::atomic<bool> previewPlaying{false}; std::atomic<int64_t> previewSample{0}; std::atomic<bool> songPlaying{false}; std::atomic<int64_t> songSample{0}; std::atomic<int> songFadeRemaining{0}; std::atomic<int> selectedLane{9};
     double previewSampleRate=44100.0,previewBpm=128.0; int64_t previewLengthSamples=1; int maximumBlockSize=512;
     std::shared_ptr<const sonara::SongArrangement> arrangement;
+    std::array<std::atomic<float>,12> laneMixLevel{},laneMixPan{},laneMixWidth{},laneMixFx{};
     std::array<juce::AudioBuffer<float>,musicalLaneCount> songScratch;
     juce::AudioBuffer<float> songFxBus;
     std::array<juce::MidiBuffer,musicalLaneCount> songMidi;
