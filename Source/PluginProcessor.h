@@ -108,6 +108,7 @@ private:
     double previewSampleRate=44100.0,previewBpm=128.0; int64_t previewLengthSamples=1; int maximumBlockSize=512;
     std::shared_ptr<const sonara::SongArrangement> arrangement;
     std::array<juce::AudioBuffer<float>,musicalLaneCount> songScratch;
+    juce::AudioBuffer<float> songFxBus;
     std::array<juce::MidiBuffer,musicalLaneCount> songMidi;
     std::array<std::array<float,2>,musicalLaneCount> laneHpX{},laneHpY{};
     std::array<std::array<float,2>,musicalLaneCount> laneLpState{};
