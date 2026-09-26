@@ -199,6 +199,7 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     generationProgress.store(.62f); generationStatus = "Loading generated SoundDNA into arrangement lanes";
 
     const auto& lanes = made->getLanes();
+    if(lanes.size()>=4) drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
     for (int i = 0; i < musicalLaneCount; ++i)
     {
         const int laneIndex = firstMusicalLane + i;
@@ -237,6 +238,7 @@ void SonaraAudioProcessor::regenerateDrums(const juce::String& prompt)
     const int drumLanes = juce::jmin(4, juce::jmin((int)dst.size(), (int)src.size()));
     for (int i = 0; i < drumLanes; ++i)
         dst[(size_t)i] = src[(size_t)i];
+    if(dst.size()>=4) drumSynth.configureKit(dst[0].sound,dst[1].sound,dst[2].sound,dst[3].sound);
 
     std::atomic_store_explicit(&arrangement,
         std::shared_ptr<const sonara::SongArrangement>(updated),
@@ -253,6 +255,8 @@ void SonaraAudioProcessor::startSongPreview()
     auto a = arrangementSnapshot();
     if (!a || a->isEmpty()){ generationStatus = "Generate a full track first"; return; }
     stopPreview();
+    const auto& lanes=a->getLanes();
+    if(lanes.size()>=4) drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
     songSample.store(0); drumSynth.reset();
     for (auto& e : songEngines) e.allNotesOff();
     songPlaying.store(true); generationStatus = "Playing generated arrangement";
