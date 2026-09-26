@@ -95,7 +95,7 @@ std::vector<int> lanePatternFingerprint(const sonara::SongArrangement& song,cons
     for(int i=0;i<limit;++i)
     {
         const auto& note=lane->notes[(size_t)i];
-        fp.push_back(lane->drums?note:note.note-song.getRootMidi());
+        fp.push_back(lane->drums?note.note:note.note-song.getRootMidi());
         fp.push_back(i==0?0:juce::jlimit(-24,24,note.note-previous));
         fp.push_back((int)std::llround(std::fmod(juce::jmax(0.0,note.beat),16.0)*4.0));
         fp.push_back(i==0?0:juce::jlimit(0,64,(int)std::llround((note.beat-previousBeat)*8.0)));
