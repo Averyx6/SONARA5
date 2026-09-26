@@ -652,7 +652,13 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         int oct=0;
         while(degree<0){degree+=7;--oct;}
         while(degree>=7){degree-=7;++oct;}
-        return juce::jlimit(48,100,rootMidi+registerSemitones+scale[degree]+12*oct);
+        int note=rootMidi+registerSemitones+scale[degree]+12*oct;
+
+        // Never hard-clamp MIDI pitch: that changes pitch class and can turn an
+        // in-key melody into an out-of-key boundary note. Fold by octaves instead.
+        while(note<52)note+=12;
+        while(note>96)note-=12;
+        return note;
     };
 
     auto sectionForBar=[&](int bar)->std::pair<const ArrangementSection*,int>
