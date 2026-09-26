@@ -332,6 +332,11 @@ void SonaraAudioProcessorEditor::setTab(int index)
     for(int i=0;i<8;++i) presets[(size_t)i].setButtonText(activeTab==0?soundNames[i]:songNames[i]);
 
     updateModeVisibility();
+
+    // Tab-specific controls have different button rows. Re-run the responsive layout
+    // whenever the active tab changes so newly-visible controls receive real bounds
+    // instead of remaining at their default 0x0 position.
+    resized();
     repaint();
 }
 void SonaraAudioProcessorEditor::updateModeVisibility(){
