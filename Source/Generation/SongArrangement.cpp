@@ -91,12 +91,17 @@ void SongArrangement::generate(const juce::String& prompt, double bpm, uint64_t 
     {
         auto& lane = lanes[i];
         juce::String soundPrompt = prompt + " " + lane.name + " ";
-        if (lane.drums) soundPrompt += "tight punchy drum transient dry";
-        else if (lane.name == "BASS") soundPrompt += "deep controlled bass mono tight";
-        else if (lane.name == "CHORDS" || lane.name == "PAD") soundPrompt += "warm wide lush pad";
-        else if (lane.name == "LEAD") soundPrompt += "memorable emotional lead wide powerful";
-        else if (lane.name == "PLUCK") soundPrompt += "bright pluck short punchy";
-        else soundPrompt += "clean atmospheric texture";
+        if (lane.drums) soundPrompt += "tight punchy drum transient ";
+        else if (lane.name == "BASS") soundPrompt += "deep controlled bass mono ";
+        else if (lane.name == "CHORDS" || lane.name == "PAD") soundPrompt += "wide musical harmony ";
+        else if (lane.name == "LEAD") soundPrompt += "memorable emotional lead ";
+        else if (lane.name == "PLUCK") soundPrompt += "pluck rhythmic ";
+        else soundPrompt += "clean atmospheric texture ";
+        const float flavour = random01(seed, 0x9000ULL + static_cast<uint64_t>(i) * 17ULL);
+        soundPrompt += flavour < .25f ? "warm soft spacious long release" :
+                       flavour < .50f ? "bright crisp wide fast attack" :
+                       flavour < .75f ? "dark thick body subtle modulation" :
+                                        "airy animated wide heavy modulation";
         lane.sound = designer.generate(soundPrompt, mix64(seed + static_cast<uint64_t>(i) * 0x517cc1b727220a95ULL));
         lane.sound.name = lane.name + " • Generated";
     }
@@ -438,10 +443,28 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
 void SongArrangement::addFx(uint64_t seed)
 {
     ArrangementLane fx{"FX / TRANSITIONS",7,false};
-    for (const auto& s : sections)
+    const int style=static_cast<int>(random01(seed,801)*4.f)%4;
+    for(size_t i=0;i<sections.size();++i)
     {
-        if (s.startBar > 0) addNote(fx, 84 + static_cast<int>(random01(seed,s.startBar)*5.f), s.startBar*beatsPerBar - .5, .45, 72);
-        if (s.energy > .75f) addNote(fx, 48, s.startBar*beatsPerBar, .25, 95);
+        const auto& s=sections[i];
+        const double boundary=s.startBar*beatsPerBar;
+        if(s.startBar>0)
+        {
+            const double leadIn=(style==0?1.0:style==1?2.0:style==2?.5:4.0);
+            const int riserNote=81+(int)(random01(seed,810+i)*9.f);
+            addNote(fx,riserNote,juce::jmax(0.0,boundary-leadIn),juce::jmax(.25,leadIn-.08),
+                    62+(int)(s.energy*36.f)+(int)(random01(seed,820+i)*10.f));
+            if(random01(seed,830+i)>.25f)
+                addNote(fx,72+(int)(random01(seed,840+i)*12.f),boundary+.125,.35+random01(seed,850+i)*.8,
+                        68+(int)(s.energy*28.f));
+        }
+        if(s.energy>.75f)
+        {
+            addNote(fx,48+(style%2)*12,boundary,.20+random01(seed,860+i)*.35,
+                    juce::jlimit(70,127,90+(int)(s.energy*30.f)));
+            if(s.name.contains("FINAL") && random01(seed,870+i)>.3f)
+                addNote(fx,36,boundary+.5,.55,108);
+        }
     }
     lanes.push_back(std::move(fx));
 }
