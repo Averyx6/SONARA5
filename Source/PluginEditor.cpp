@@ -221,7 +221,7 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     tabFx.onClick=[this]{setTab(3);};tabReference.onClick=[this]{setTab(4);};tabMidi.onClick=[this]{setTab(5);};tabExport.onClick=[this]{setTab(6);};
 
     for(auto* b:{&lockOsc,&lockUnison,&lockEnv,&lockFilter,&lockMod,&lockSources,&lockTone,&lockFx})addAndMakeVisible(*b);
-    configureMacro(macroBrightness,"BRIGHT");configureMacro(macroMovement,"MOVE");configureMacro(macroSpace,"SPACE");configureMacro(macroImpact,"IMPACT");
+    configureMacro(macroBrightness,"BRIGHT");configureMacro(macroMovement,"MOVE");configureMacro(macroSpace,"SPACE");configureMacro(macroImpact,"IMPACT");configureMixSlider(mixLevel,0.0,1.5," LEVEL");configureMixSlider(mixPan,-1.0,1.0," PAN");configureMixSlider(mixWidth,0.0,1.5," WIDTH");configureMixSlider(mixFx,0.0,1.5," FX");
     bpm.setRange(60,200,1);bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);bpm.setSliderStyle(juce::Slider::LinearHorizontal);bpm.setTextBoxStyle(juce::Slider::TextBoxRight,false,64,20);bpm.setTextValueSuffix(" BPM");addAndMakeVisible(bpm);
     patchName.setColour(juce::Label::textColourId,text);patchName.setFont(juce::FontOptions(15.f).withStyle("Bold"));addAndMakeVisible(patchName);
     statusLine.setColour(juce::Label::textColourId,dim);statusLine.setFont(11.f);addAndMakeVisible(statusLine);
@@ -289,7 +289,10 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     resound.onClick=[this]{p.resoundReference(songPrompt.getText());};
     rebuildReference.onClick=[this]{p.rebuildInstrumentalFromReference(songPrompt.getText());setTab(1);};
     saveSoundButton.onClick=[this]{chooseSaveSound();};loadSoundButton.onClick=[this]{chooseLoadSound();};saveProjectButton.onClick=[this]{chooseSaveProject();};loadProjectButton.onClick=[this]{chooseLoadProject();};exportMixButton.onClick=[this]{chooseExportMix();};exportStemsButton.onClick=[this]{chooseExportStems();};
-    macroBrightness.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::brightness,(float)macroBrightness.getValue());};macroMovement.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::movement,(float)macroMovement.getValue());};macroSpace.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::space,(float)macroSpace.getValue());};macroImpact.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::impact,(float)macroImpact.getValue());};
+    macroBrightness.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::brightness,(float)macroBrightness.getValue());};macroMovement.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::movement,(float)macroMovement.getValue());};macroSpace.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::space,(float)macroSpace.getValue());};macroImpact.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::impact,(float)macroImpact.getValue());};mixLevel.onValueChange=[this]{p.setLaneMix(p.getSelectedLane(),SonaraAudioProcessor::LaneMixParameter::level,(float)mixLevel.getValue());};
+    mixPan.onValueChange=[this]{p.setLaneMix(p.getSelectedLane(),SonaraAudioProcessor::LaneMixParameter::pan,(float)mixPan.getValue());};
+    mixWidth.onValueChange=[this]{p.setLaneMix(p.getSelectedLane(),SonaraAudioProcessor::LaneMixParameter::width,(float)mixWidth.getValue());};
+    mixFx.onValueChange=[this]{p.setLaneMix(p.getSelectedLane(),SonaraAudioProcessor::LaneMixParameter::fxSend,(float)mixFx.getValue());};
     lockOsc.onClick=[this]{p.mutationLocks().oscillators=lockOsc.getToggleState();};lockUnison.onClick=[this]{p.mutationLocks().unison=lockUnison.getToggleState();};lockEnv.onClick=[this]{p.mutationLocks().ampEnvelope=lockEnv.getToggleState();};lockFilter.onClick=[this]{p.mutationLocks().filter=lockFilter.getToggleState();};lockMod.onClick=[this]{p.mutationLocks().modulation=lockMod.getToggleState();};lockSources.onClick=[this]{p.mutationLocks().sources=lockSources.getToggleState();};lockTone.onClick=[this]{p.mutationLocks().tone=lockTone.getToggleState();};lockFx.onClick=[this]{p.mutationLocks().spatialFx=lockFx.getToggleState();};
 
     const auto& d=p.currentPatch();macroBrightness.setValue(d.macroBrightness,juce::dontSendNotification);macroMovement.setValue(d.macroMovement,juce::dontSendNotification);macroSpace.setValue(d.macroSpace,juce::dontSendNotification);macroImpact.setValue(d.macroImpact,juce::dontSendNotification);syncLockButtons();setTab(0);startTimerHz(30);
@@ -298,6 +301,27 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
 SonaraAudioProcessorEditor::~SonaraAudioProcessorEditor(){fileChooser.reset();setLookAndFeel(nullptr);}
 void SonaraAudioProcessorEditor::styleButton(juce::Button& b,bool accent){b.setColour(juce::TextButton::buttonColourId,accent?juce::Colour(0xff39256f):juce::Colour(0xff101a2c));b.setColour(juce::TextButton::buttonOnColourId,purple);}
 void SonaraAudioProcessorEditor::configureMacro(juce::Slider& s,const juce::String& name){s.setRange(0,1,.001);s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s.setName(name);addAndMakeVisible(s);}
+void SonaraAudioProcessorEditor::configureMixSlider(juce::Slider& s,double min,double max,const juce::String& suffix)
+{
+    s.setRange(min,max,.001);s.setSliderStyle(juce::Slider::LinearHorizontal);
+    s.setTextBoxStyle(juce::Slider::TextBoxRight,false,72,22);s.setTextValueSuffix(suffix);
+    s.setColour(juce::Slider::trackColourId,cyan.withAlpha(.72f));
+    s.setColour(juce::Slider::backgroundColourId,juce::Colour(0xff0b1524));
+    addAndMakeVisible(s);
+}
+
+void SonaraAudioProcessorEditor::syncMixControls()
+{
+    const int lane=p.getSelectedLane();
+    const auto state=p.getLaneMix(lane);
+    const bool enabled=lane>=4;
+    for(auto* s:{&mixLevel,&mixPan,&mixWidth,&mixFx})s->setEnabled(enabled);
+    mixLevel.setValue(state.level,juce::dontSendNotification);
+    mixPan.setValue(state.pan,juce::dontSendNotification);
+    mixWidth.setValue(state.width,juce::dontSendNotification);
+    mixFx.setValue(state.fxSend,juce::dontSendNotification);
+}
+
 void SonaraAudioProcessorEditor::syncLockButtons(){const auto& l=p.mutationLocks();lockOsc.setToggleState(l.oscillators,juce::dontSendNotification);lockUnison.setToggleState(l.unison,juce::dontSendNotification);lockEnv.setToggleState(l.ampEnvelope,juce::dontSendNotification);lockFilter.setToggleState(l.filter,juce::dontSendNotification);lockMod.setToggleState(l.modulation,juce::dontSendNotification);lockSources.setToggleState(l.sources,juce::dontSendNotification);lockTone.setToggleState(l.tone,juce::dontSendNotification);lockFx.setToggleState(l.spatialFx,juce::dontSendNotification);}
 void SonaraAudioProcessorEditor::showStatus(const juce::String& s){p.generationStatus=s;statusLine.setText(s,juce::dontSendNotification);}
 
@@ -379,6 +403,8 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     for(auto* b:std::array<juce::Component*,8>{&variation1,&variation2,&variation3,&variation4,&captureA,&captureB,&recallA,&recallB})b->setVisible(instrumentTab);
     for(auto* b:std::array<juce::Component*,8>{&lockOsc,&lockUnison,&lockEnv,&lockFilter,&lockMod,&lockSources,&lockTone,&lockFx})b->setVisible(instrumentTab);
     for(auto* s:std::array<juce::Component*,4>{&macroBrightness,&macroMovement,&macroSpace,&macroImpact})s->setVisible(instrumentTab);
+    for(auto* s:std::array<juce::Component*,4>{&mixLevel,&mixPan,&mixWidth,&mixFx})s->setVisible(mixTab);
+    if(mixTab)syncMixControls();
     patchName.setVisible(instrumentTab);
     selectedLaneLabel.setVisible(arrangementTab);
 
@@ -397,7 +423,7 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     if(referenceTab)referenceSummary.setText(p.hasReference()?p.getReferenceSummary():"LOAD AUDIO or IMPORT MIDI\n\nSONARA analyzes tempo, key and a dominant instrumental melody into editable note data. RESOUND plays that melody with new generated SoundDNA. REBUILD creates new drums, bass, chords, synths and arrangement around the extracted melody without copying the reference audio.",juce::dontSendNotification);
 }
 
-void SonaraAudioProcessorEditor::timerCallback(){playbackProgress=p.isSongPlaying()?p.songPosition01():p.previewPosition01();pulse+=.065f;if(pulse>juce::MathConstants<float>::twoPi)pulse=0.f;soundView.animation=pulse;patchName.setText(p.currentPatch().name,juce::dontSendNotification);statusLine.setText(p.generationStatus,juce::dontSendNotification);connect.setButtonText("CYANORYX • BRIDGE READY");playSong.setButtonText(p.isSongPlaying()?"PAUSE":(p.songPosition01()>0.0&&p.songPosition01()<.9999?"RESUME":"PLAY SONG"));previewSound.setButtonText(p.isPreviewPlaying()?"PREVIEWING":"PREVIEW SOUND");auto a=p.arrangementSnapshot();selectedLaneLabel.setText(a&&juce::isPositiveAndBelow(p.getSelectedLane(),(int)a->getLanes().size())?"SELECTED • "+a->getLanes()[(size_t)p.getSelectedLane()].name:"SELECTED • none",juce::dontSendNotification);if(activeTab==4&&p.hasReference())referenceSummary.setText(p.getReferenceSummary(),juce::dontSendNotification);timeline.repaint();pianoRoll.repaint();soundView.repaint();repaint();}
+void SonaraAudioProcessorEditor::timerCallback(){playbackProgress=p.isSongPlaying()?p.songPosition01():p.previewPosition01();pulse+=.065f;if(pulse>juce::MathConstants<float>::twoPi)pulse=0.f;soundView.animation=pulse;patchName.setText(p.currentPatch().name,juce::dontSendNotification);statusLine.setText(p.generationStatus,juce::dontSendNotification);connect.setButtonText("CYANORYX • BRIDGE READY");playSong.setButtonText(p.isSongPlaying()?"PAUSE":(p.songPosition01()>0.0&&p.songPosition01()<.9999?"RESUME":"PLAY SONG"));previewSound.setButtonText(p.isPreviewPlaying()?"PREVIEWING":"PREVIEW SOUND");auto a=p.arrangementSnapshot();selectedLaneLabel.setText(a&&juce::isPositiveAndBelow(p.getSelectedLane(),(int)a->getLanes().size())?"SELECTED • "+a->getLanes()[(size_t)p.getSelectedLane()].name:"SELECTED • none",juce::dontSendNotification);if(activeTab==3)syncMixControls();if(activeTab==4&&p.hasReference())referenceSummary.setText(p.getReferenceSummary(),juce::dontSendNotification);timeline.repaint();pianoRoll.repaint();soundView.repaint();repaint();}
 
 void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
 {
@@ -614,6 +640,14 @@ void SonaraAudioProcessorEditor::resized()
 
     const int pianoY=upperY+upperH+10;
     const int bottomControlsY=h-88;
+    if(activeTab==3)
+    {
+        const int my=pianoY+18;
+        mixLevel.setBounds(cx+18,my,cw-36,38);
+        mixPan.setBounds(cx+18,my+48,cw-36,38);
+        mixWidth.setBounds(cx+18,my+96,cw-36,38);
+        mixFx.setBounds(cx+18,my+144,cw-36,38);
+    }
     const int pianoH=juce::jmax(96,bottomControlsY-pianoY-56);
     pianoRoll.setBounds(cx,pianoY,cw,pianoH);
 
