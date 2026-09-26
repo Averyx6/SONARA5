@@ -109,6 +109,17 @@ SoundDNA PromptGenerator::generate(const juce::String& prompt, uint64_t seed, Pr
     if(has("reese")){d.chorus=.10f+.12f*hash01(seed,71);d.chorusRate=.12f+.18f*hash01(seed,72);d.chorusDepth=.34f+.20f*hash01(seed,73);}
     if(has("chorus")||has("lush")){d.chorus=.38f+.22f*hash01(seed,74);d.chorusRate=.12f+.42f*hash01(seed,75);d.chorusDepth=.58f+.28f*hash01(seed,76);}
     if(has("dry")||has("tight")){d.chorus=0.f;d.reverb=.015f;d.delay=.01f;} if(has("mono")||has("centered"))d.chorus=juce::jmin(d.chorus,.05f); if(has("wet")||has("space")||has("cinematic")){d.chorus=juce::jmax(d.chorus,.26f);d.reverb=.52f;d.delay=.30f;} if(has("noisy")||has("texture"))d.noiseLevel=.10f+.10f*hash01(seed,45);
+    if(has("pure sub")||has("clean sub")||has("sine sub"))
+    {
+        d.name="Generated Sub";
+        d.oscA=WaveShape::sine;d.oscB=WaveShape::sine;d.oscMix=.05f;d.oscBTranspose=0.f;
+        d.unison=1;d.detune=0.f;d.phaseRandom=0.f;d.width=0.f;
+        d.attack=.004f;d.decay=.08f;d.sustain=.94f;d.release=.14f;
+        d.filterMode=FilterMode::lowpass;d.cutoff=115.f;d.resonance=.06f;d.filterEnv=0.f;
+        d.subLevel=0.f;d.noiseLevel=0.f;d.fmAmount=0.f;d.ringMod=0.f;
+        d.drive=.018f;d.chorus=0.f;d.reverb=0.f;d.delay=0.f;
+        d.lfoCutoff=0.f;d.lfoPitch=0.f;d.lfoMorphA=0.f;d.lfoMorphB=0.f;
+    }
     d.oscAMorph=juce::jlimit(0.f,1.f,d.oscAMorph);d.oscBMorph=juce::jlimit(0.f,1.f,d.oscBMorph);d.lfoMorphA=juce::jlimit(-1.f,1.f,d.lfoMorphA);d.lfoMorphB=juce::jlimit(-1.f,1.f,d.lfoMorphB);d.cutoff=juce::jlimit(80.f,19000.f,d.cutoff);d.subLevel=juce::jlimit(0.f,.65f,d.subLevel);d.noiseLevel=juce::jlimit(0.f,.35f,d.noiseLevel);d.pitchEnv=juce::jlimit(-48.f,48.f,d.pitchEnv);d.pitchEnvDecay=juce::jlimit(.005f,4.f,d.pitchEnvDecay);d.transientLevel=juce::jlimit(0.f,1.f,d.transientLevel);d.transientDecay=juce::jlimit(.001f,.5f,d.transientDecay);d.fmAmount=juce::jlimit(0.f,1.f,d.fmAmount);d.fmRatio=juce::jlimit(.125f,16.f,d.fmRatio);d.ringMod=juce::jlimit(0.f,1.f,d.ringMod);d.bitCrush=juce::jlimit(0.f,1.f,d.bitCrush);d.downsample=juce::jlimit(0.f,1.f,d.downsample);d.chorus=juce::jlimit(0.f,1.f,d.chorus);d.chorusRate=juce::jlimit(.02f,8.f,d.chorusRate);d.chorusDepth=juce::jlimit(0.f,1.f,d.chorusDepth);
     if(cb) cb(.82f,"Building chorus, space and FX"); if(cb) cb(1.f,"Ready"); return d;
 }
