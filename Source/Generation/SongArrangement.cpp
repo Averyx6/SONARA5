@@ -168,7 +168,8 @@ void SongArrangement::generate(const juce::String& prompt, double bpm, uint64_t 
         auto& lane = lanes[i];
         juce::String soundPrompt = prompt + " " + lane.name + " ";
         if (lane.drums) soundPrompt += "tight punchy drum transient ";
-        else if (lane.name == "BASS") soundPrompt += "deep controlled bass mono ";
+        else if (lane.name == "BASS") soundPrompt += "deep controlled bass mono harmonic body ";
+        else if (lane.name == "SUB") soundPrompt += "pure clean sine sub mono lowpass controlled no highs ";
         else if (lane.name == "CHORDS" || lane.name == "PAD") soundPrompt += "wide musical harmony ";
         else if (lane.name == "LEAD") soundPrompt += "memorable emotional lead ";
         else if (lane.name == "PLUCK") soundPrompt += "pluck rhythmic ";
@@ -190,6 +191,17 @@ void SongArrangement::generate(const juce::String& prompt, double bpm, uint64_t 
             lane.sound.reverb=juce::jmin(.025f,lane.sound.reverb);
             lane.sound.delay=0.f; lane.sound.chorus=0.f;
             lane.sound.release=juce::jmin(.34f,lane.sound.release);
+        }
+        else if(lane.name=="SUB")
+        {
+            lane.sound.oscA=WaveShape::sine; lane.sound.oscB=WaveShape::sine;
+            lane.sound.oscMix=.08f; lane.sound.unison=1; lane.sound.detune=0.f;
+            lane.sound.width=0.f; lane.sound.subLevel=0.f; lane.sound.noiseLevel=0.f;
+            lane.sound.filterMode=FilterMode::lowpass;
+            lane.sound.cutoff=125.f; lane.sound.resonance=.08f; lane.sound.filterEnv=0.f;
+            lane.sound.attack=.004f; lane.sound.decay=.08f; lane.sound.sustain=.92f; lane.sound.release=.16f;
+            lane.sound.drive=.025f; lane.sound.chorus=0.f; lane.sound.reverb=0.f; lane.sound.delay=0.f;
+            lane.sound.lfoCutoff=0.f; lane.sound.lfoPitch=0.f; lane.sound.lfoMorphA=0.f; lane.sound.lfoMorphB=0.f;
         }
         else if(lane.name=="CHORDS")
         {
@@ -368,7 +380,7 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
 
 void SongArrangement::addHarmony(uint64_t seed)
 {
-    ArrangementLane bass{"BASS",2,false}, chords{"CHORDS",3,false}, pluck{"PLUCK",4,false}, pad{"PAD",5,false};
+    ArrangementLane bass{"BASS",2,false}, sub{"SUB",3,false}, chords{"CHORDS",4,false}, pluck{"PLUCK",5,false}, pad{"PAD",6,false};
 
     static constexpr int minorProgressions[8][4] = {
         {0,8,3,10}, {0,10,8,10}, {0,3,10,8}, {0,5,8,7},
@@ -473,6 +485,34 @@ void SongArrangement::addHarmony(uint64_t seed)
             }
         }
 
+        // Dedicated SUB is intentionally simpler than BASS: clean mono fundamentals,
+        // no upper movement, and section-aware note lengths to avoid low-end overlap.
+        if(!intro || localBar>=juce::jmax(1,section?section->bars/2:2))
+        {
+            if(breakdown)
+            {
+                if(localBar%2==0)
+                    addNote(sub,juce::jlimit(24,48,root-24),b,3.35,58+(int)(energy*18.f));
+            }
+            else if(drop||chorus||finalHook)
+            {
+                const int subSteps=(bassMode==1||bassMode==3)?4:2;
+                const double subStep=4.0/subSteps;
+                for(int s=0;s<subSteps;++s)
+                {
+                    if(s>0&&random01(seed,3040+bs+s)<.08f)continue;
+                    addNote(sub,juce::jlimit(24,48,root-24),b+s*subStep,
+                            juce::jmin(1.55,subStep*.78),68+(int)(energy*20.f));
+                }
+            }
+            else
+            {
+                addNote(sub,juce::jlimit(24,48,root-24),b,1.72,62+(int)(energy*16.f));
+                if(verse&&random01(seed,3048+bs)>.46f)
+                    addNote(sub,juce::jlimit(24,48,root-24),b+2.0,1.55,58+(int)(energy*14.f));
+            }
+        }
+
         const int repeats=breakdown?1:((drop||chorus||finalHook)?(chordMode==2?2:4):(verse&&chordMode==4?2:1));
         const double unit=4.0/repeats;
         const double chordLen=breakdown?3.55:((drop||chorus)?(chordMode==0?.70:juce::jmin(.72,unit*.68)):juce::jmin(3.45,unit*.86));
@@ -524,6 +564,7 @@ void SongArrangement::addHarmony(uint64_t seed)
     }
 
     lanes.push_back(std::move(bass));
+    lanes.push_back(std::move(sub));
     lanes.push_back(std::move(chords));
     lanes.push_back(std::move(pluck));
     lanes.push_back(std::move(pad));
@@ -531,7 +572,7 @@ void SongArrangement::addHarmony(uint64_t seed)
 
 void SongArrangement::addMelody(uint64_t seed, bool energetic)
 {
-    ArrangementLane lead{"LEAD",1,false}, counter{"COUNTER",6,false};
+    ArrangementLane lead{"LEAD",1,false}, counter{"COUNTER",7,false};
     const int scaleMinor[] = {0,2,3,5,7,8,10,12};
     const int scaleMajor[] = {0,2,4,5,7,9,11,12};
     const int* scale = minor ? scaleMinor : scaleMajor;
@@ -696,7 +737,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
 
 void SongArrangement::addFx(uint64_t seed)
 {
-    ArrangementLane fx{"FX / TRANSITIONS",7,false};
+    ArrangementLane fx{"FX / TRANSITIONS",8,false};
     const int style=static_cast<int>(random01(seed,801)*4.f)%4;
     for(size_t i=0;i<sections.size();++i)
     {
