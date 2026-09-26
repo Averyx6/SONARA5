@@ -53,7 +53,9 @@ void SonaraVoice::renderNextBlock(juce::AudioBuffer<float>& out,int start,int co
     if(!adsr.isActive())clearCurrentNote();
 }
 SonaraEngine::SonaraEngine(){for(int i=0;i<8;++i)synth.addVoice(new SonaraVoice());synth.addSound(new SonaraSound());audioDNA.copyDSPFrom(dna);pendingDNA=dna;patchPending=true;}
-void SonaraEngine::setLowCpuMode(bool enabled){if(lowCpuMode==enabled)return;lowCpuMode=enabled;synth.allNotesOff(0,false);synth.clearVoices();const int count=lowCpuMode?4:8;for(int i=0;i<count;++i)synth.addVoice(new SonaraVoice());}
+void SonaraEngine::rebuildVoices(){synth.allNotesOff(0,false);synth.clearVoices();const int count=lowCpuMode?juce::jmin(requestedVoices,4):requestedVoices;for(int i=0;i<juce::jlimit(1,8,count);++i)synth.addVoice(new SonaraVoice());}
+void SonaraEngine::setLowCpuMode(bool enabled){if(lowCpuMode==enabled)return;lowCpuMode=enabled;rebuildVoices();}
+void SonaraEngine::setVoiceLimit(int voices){const int next=juce::jlimit(1,8,voices);if(requestedVoices==next)return;requestedVoices=next;rebuildVoices();}
 void SonaraEngine::prepare(double sampleRate,int maximumBlockSize,int numChannels){sr=juce::jmax(8000.0,sampleRate);synth.setCurrentPlaybackSampleRate(sr);for(int i=0;i<synth.getNumVoices();++i)if(auto*v=dynamic_cast<SonaraVoice*>(synth.getVoice(i)))v->prepare(sr,maximumBlockSize,numChannels);reverb.reset();chorusBuffer.setSize(2,lowCpuMode?8:juce::jmax(8,(int)std::ceil(sr*.06)+4),false,false,true);chorusBuffer.clear();chorusWrite=0;chorusPhase=0.f;delayBuffer.setSize(2,lowCpuMode?4:juce::jmax(4,(int)std::ceil(sr*.45)+2),false,false,true);delayBuffer.clear();delayWrite=0;}
 bool SonaraEngine::hasActiveVoices() noexcept {for(int i=0;i<synth.getNumVoices();++i)if(auto* v=synth.getVoice(i);v!=nullptr&&v->isVoiceActive())return true;return false;}
 void SonaraEngine::setPatch(const SoundDNA& d){dna=d;auto next=d;if(lowCpuMode){next.unison=juce::jlimit(1,2,next.unison);next.chorus=0.f;next.reverb=0.f;next.delay=0.f;next.release=juce::jmin(.52f,next.release);next.noiseLevel=juce::jmin(.05f,next.noiseLevel);}const juce::SpinLock::ScopedLockType lock(pendingLock);pendingDNA=next;patchPending=true;}
