@@ -85,7 +85,7 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
     engines.reserve((size_t)musicalCount);
 
     static constexpr int voiceBudget[expectedMusical]={1,1,3,2,3,3,2,1};
-    static constexpr float laneGain[expectedMusical]={.52f,.34f,.30f,.27f,.22f,.50f,.23f,.16f};
+    static constexpr float laneGain[expectedMusical]={.60f,.38f,.36f,.32f,.26f,.58f,.27f,.18f};
     static constexpr float hpHz[expectedMusical]={28.f,18.f,120.f,125.f,160.f,120.f,150.f,110.f};
     static constexpr float fxSend[expectedMusical]={0.f,0.f,.14f,.10f,.18f,.12f,.08f,.15f};
 
@@ -133,15 +133,14 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
             if(midi.isEmpty()&&!active)continue;
 
             s.clear();
-            juce::AudioBuffer<float> view(s.getArrayOfWritePointers(),2,0,n);
-            engines[(size_t)i]->render(view,midi);
+            engines[(size_t)i]->render(s,midi,n);
 
             const float rc=1.f/(juce::MathConstants<float>::twoPi*hpHz[i]);
             const float dt=1.f/(float)sampleRate;
             const float hpA=rc/(rc+dt);
             for(int ch=0;ch<2;++ch)
             {
-                auto* d=view.getWritePointer(ch);
+                auto* d=s.getWritePointer(ch);
                 float x1=hpX[(size_t)i][(size_t)ch],y1=hpY[(size_t)i][(size_t)ch];
                 for(int smp=0;smp<n;++smp)
                 {
@@ -154,14 +153,14 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
 
             if(i==0)
             {
-                auto* l=view.getWritePointer(0);auto* r=view.getWritePointer(1);
+                auto* l=s.getWritePointer(0);auto* r=s.getWritePointer(1);
                 for(int smp=0;smp<n;++smp){const float mid=.5f*(l[smp]+r[smp]);l[smp]=mid*.88f+l[smp]*.12f;r[smp]=mid*.88f+r[smp]*.12f;}
             }
             else if(i==1)
             {
                 const float lpRc=1.f/(juce::MathConstants<float>::twoPi*125.f);
                 const float lpA=dt/(lpRc+dt);
-                auto* l=view.getWritePointer(0);auto* r=view.getWritePointer(1);
+                auto* l=s.getWritePointer(0);auto* r=s.getWritePointer(1);
                 float state=lpState[(size_t)i][0];
                 for(int smp=0;smp<n;++smp){const float mono=.5f*(l[smp]+r[smp]);state+=lpA*(mono-state);l[smp]=state;r[smp]=state;}
                 lpState[(size_t)i][0]=state;lpState[(size_t)i][1]=state;
@@ -172,9 +171,9 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
             if(mix!=nullptr&&juce::isPositiveAndBelow(globalLane,(int)mix->size()))
                 mixState=(*mix)[(size_t)globalLane];
 
-            if(view.getNumChannels()>=2)
+            if(s.getNumChannels()>=2)
             {
-                auto* l=view.getWritePointer(0);auto* r=view.getWritePointer(1);
+                auto* l=s.getWritePointer(0);auto* r=s.getWritePointer(1);
                 const float requestedWidth=juce::jlimit(0.f,1.5f,mixState.width);
                 const float width=i==1?0.f:(i==0?juce::jmin(.25f,requestedWidth):requestedWidth);
                 const float pan=juce::jlimit(-1.f,1.f,mixState.pan);
@@ -193,8 +192,8 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
             const float send=fxSend[i]*juce::jlimit(0.f,1.5f,mixState.fxSend);
             for(int ch=0;ch<2;++ch)
             {
-                block.addFrom(ch,0,view,ch,0,n,gain);
-                if(send>0.f)fxBus.addFrom(ch,0,view,ch,0,n,gain*send);
+                block.addFrom(ch,0,s,ch,0,n,gain);
+                if(send>0.f)fxBus.addFrom(ch,0,s,ch,0,n,gain*send);
             }
         }
 
@@ -222,7 +221,7 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
                 const float x=std::isfinite(d[smp])?d[smp]:0.f;
                 const float hp=masterA*(y1+x-x1);
                 x1=x;y1=hp;
-                d[smp]=juce::jlimit(-.92f,.92f,std::tanh(hp*.67f));
+                d[smp]=juce::jlimit(-.95f,.95f,std::tanh(hp*.82f));
             }
             masterX[(size_t)ch]=x1;masterY[(size_t)ch]=y1;
         }
