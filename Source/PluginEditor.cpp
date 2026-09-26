@@ -77,8 +77,19 @@ void SonaraAudioProcessorEditor::PianoRollView::paint(juce::Graphics& g){
 
 SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):AudioProcessorEditor(&x),p(x){
     setLookAndFeel(&look);setSize(1320,820);setResizable(true,true);setResizeLimits(1180,720,1900,1200);setOpaque(true);
-    prompt.setText("Emotional progressive house, 128 BPM, F minor, huge memorable lead, warm chords, powerful drop");
-    prompt.setMultiLine(false);prompt.setFont(14.f);addAndMakeVisible(prompt);
+    soundPrompt.setText("Future rave lead, aggressive bright festival, wide fast attack");
+    songPrompt.setText("Emotional progressive house, 128 BPM, F minor, huge memorable lead, warm chords, deep bass, powerful evolving drop");
+    for(auto* editor:{&soundPrompt,&songPrompt})
+    {
+        editor->setMultiLine(false);
+        editor->setFont(14.f);
+        editor->setColour(juce::TextEditor::backgroundColourId,juce::Colour(0xff08111e));
+        editor->setColour(juce::TextEditor::outlineColourId,juce::Colour(0xff263650));
+        editor->setColour(juce::TextEditor::focusedOutlineColourId,cyan.withAlpha(.85f));
+        addAndMakeVisible(*editor);
+    }
+    soundPrompt.setTextToShowWhenEmpty("Describe one custom sound...",dim);
+    songPrompt.setTextToShowWhenEmpty("Describe the whole song: genre, key, BPM, energy, drop, instruments...",dim);
 
     std::array<juce::Button*,37> buttons {&generateSound,&generateTrack,&generateDrums,&similar,&mutate,&randomize,&undo,&redo,
         &variation1,&variation2,&variation3,&variation4,&captureA,&captureB,&recallA,&recallB,&connect,&previewSound,&playSong,&stop,
@@ -100,16 +111,47 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     referenceSummary.setColour(juce::Label::textColourId,text.withAlpha(.82f));referenceSummary.setFont(juce::FontOptions(13.f));referenceSummary.setJustificationType(juce::Justification::topLeft);addAndMakeVisible(referenceSummary);
     addAndMakeVisible(soundView);addAndMakeVisible(timeline);addAndMakeVisible(pianoRoll);addAndMakeVisible(playbackBar);
 
-    const std::array<juce::String,8> presetPrompts={"Emotional progressive house lead, wide warm powerful","Future rave lead, aggressive bright festival","Warm short pluck, organic attack, wide delay","Deep reese bass, mono sub, moving texture","Dreamy ambient pad, evolving wide soft","Tech house bass, tight punchy dark","Cinematic bell, metallic organic spacious","Experimental morphing synth, animated texture"};
-    for(size_t i=0;i<presets.size();++i){addAndMakeVisible(presets[i]);styleButton(presets[i]);presets[i].onClick=[this,i,presetPrompts]{prompt.setText(presetPrompts[i]);};}
+    const std::array<juce::String,8> soundPresetPrompts={
+        "Emotional progressive house lead, wide warm powerful",
+        "Future rave lead, aggressive bright festival",
+        "Warm short pluck, organic attack, wide delay",
+        "Deep reese bass, mono sub, moving texture",
+        "Dreamy ambient pad, evolving wide soft",
+        "Tech house bass, tight punchy dark",
+        "Cinematic bell, metallic organic spacious",
+        "Experimental morphing synth, animated texture"
+    };
+    const std::array<juce::String,8> songPresetPrompts={
+        "Emotional progressive house, 128 BPM, F minor, memorable lead, warm chords, deep bass, huge evolving drops",
+        "Future rave, 128 BPM, F minor, aggressive festival energy, dark bass, sharp synths, massive drops",
+        "Melodic EDM pop, 124 BPM, emotional bright hook, warm chords, punchy drums, uplifting final drop",
+        "Tech house, 126 BPM, dark tight groove, rolling bass, sparse synth hook, club arrangement",
+        "Drum and bass, 174 BPM, energetic minor key, moving bass, fast drums, atmospheric breakdown, huge final drop",
+        "Electro pop, 122 BPM, catchy melody, clean bass, glossy synths, dynamic chorus sections",
+        "Cinematic EDM, 128 BPM, emotional minor key, wide pads, dramatic builds, powerful melodic drops",
+        "Experimental EDM, 130 BPM, unusual groove, evolving harmony, animated synths, unpredictable but musical sections"
+    };
+    for(size_t i=0;i<presets.size();++i)
+    {
+        addAndMakeVisible(presets[i]);styleButton(presets[i]);
+        presets[i].onClick=[this,i,soundPresetPrompts,songPresetPrompts]
+        {
+            if(activeTab==0) soundPrompt.setText(soundPresetPrompts[i]);
+            else songPrompt.setText(songPresetPrompts[i]);
+        };
+    }
 
-    generateSound.onClick=[this]{p.generatePatch(prompt.getText());};generateTrack.onClick=[this]{p.generateTrack(prompt.getText());bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);setTab(1);};generateDrums.onClick=[this]{p.regenerateDrums(prompt.getText());p.setSelectedLane(0);setTab(2);};
+    generateSound.onClick=[this]{p.generatePatch(soundPrompt.getText());};
+    generateTrack.onClick=[this]{p.generateTrack(songPrompt.getText());bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);setTab(1);};
+    generateDrums.onClick=[this]{p.regenerateDrums(songPrompt.getText());p.setSelectedLane(0);setTab(2);};
     similar.onClick=[this]{p.generateSimilarPatch();};mutate.onClick=[this]{p.mutatePatch();};randomize.onClick=[this]{p.randomizePatch();};undo.onClick=[this]{p.undoPatch();};redo.onClick=[this]{p.redoPatch();};
     variation1.onClick=[this]{p.generateVariation(1);};variation2.onClick=[this]{p.generateVariation(2);};variation3.onClick=[this]{p.generateVariation(3);};variation4.onClick=[this]{p.generateVariation(4);};
     captureA.onClick=[this]{p.captureA();};captureB.onClick=[this]{p.captureB();};recallA.onClick=[this]{p.recallA();};recallB.onClick=[this]{p.recallB();};
     previewSound.onClick=[this]{p.startPreview();};playSong.onClick=[this]{p.startSongPreview();};stop.onClick=[this]{p.stopPreview();p.stopSongPreview();};bpm.onValueChange=[this]{p.setPreviewBpm(bpm.getValue());};
     connect.onClick=[this]{const auto packet=p.exportProjectForCyanoryx();juce::SystemClipboard::copyTextToClipboard(packet);showStatus(packet.isNotEmpty()?"Cyanoryx protocol v4 bundle copied":"Cyanoryx bundle unavailable");};
-    loadReference.onClick=[this]{chooseReferenceAudio();};importMidi.onClick=[this]{chooseMidiImport();};resound.onClick=[this]{p.resoundReference(prompt.getText());};rebuildReference.onClick=[this]{p.rebuildInstrumentalFromReference(prompt.getText());setTab(1);};
+    loadReference.onClick=[this]{chooseReferenceAudio();};importMidi.onClick=[this]{chooseMidiImport();};
+    resound.onClick=[this]{p.resoundReference(soundPrompt.getText());};
+    rebuildReference.onClick=[this]{p.rebuildInstrumentalFromReference(songPrompt.getText());setTab(1);};
     saveSoundButton.onClick=[this]{chooseSaveSound();};loadSoundButton.onClick=[this]{chooseLoadSound();};saveProjectButton.onClick=[this]{chooseSaveProject();};loadProjectButton.onClick=[this]{chooseLoadProject();};exportMixButton.onClick=[this]{chooseExportMix();};exportStemsButton.onClick=[this]{chooseExportStems();};
     macroBrightness.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::brightness,(float)macroBrightness.getValue());};macroMovement.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::movement,(float)macroMovement.getValue());};macroSpace.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::space,(float)macroSpace.getValue());};macroImpact.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::impact,(float)macroImpact.getValue());};
     lockOsc.onClick=[this]{p.mutationLocks().oscillators=lockOsc.getToggleState();};lockUnison.onClick=[this]{p.mutationLocks().unison=lockUnison.getToggleState();};lockEnv.onClick=[this]{p.mutationLocks().ampEnvelope=lockEnv.getToggleState();};lockFilter.onClick=[this]{p.mutationLocks().filter=lockFilter.getToggleState();};lockMod.onClick=[this]{p.mutationLocks().modulation=lockMod.getToggleState();};lockSources.onClick=[this]{p.mutationLocks().sources=lockSources.getToggleState();};lockTone.onClick=[this]{p.mutationLocks().tone=lockTone.getToggleState();};lockFx.onClick=[this]{p.mutationLocks().spatialFx=lockFx.getToggleState();};
