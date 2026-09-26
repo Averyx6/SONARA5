@@ -185,28 +185,109 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
     const int scaleMinor[] = {0,2,3,5,7,8,10,12};
     const int scaleMajor[] = {0,2,4,5,7,9,11,12};
     const int* scale = minor ? scaleMinor : scaleMajor;
-    int motif[8]{};
-    for (int i = 0; i < 8; ++i) motif[i] = scale[(i * 2 + static_cast<int>(random01(seed, i) * 4.f)) % 8];
+
+    // Build two genuinely different seed-driven phrases instead of rotating one fixed motif.
+    // The prompt still controls key/style/energy, while the generation seed controls melodic identity.
+    int phraseA[8]{}, phraseB[8]{}, counterPhrase[8]{};
+    int degreeA = static_cast<int>(random01(seed, 1001) * 7.f);
+    int degreeB = static_cast<int>(random01(seed, 1002) * 7.f);
+    static constexpr int moves[] = {-3,-2,-1,-1,0,1,1,2,3};
+
+    for (int i = 0; i < 8; ++i)
+    {
+        const int moveA = moves[juce::jlimit(0, 8, static_cast<int>(random01(seed, 1100 + i) * 9.f))];
+        const int moveB = moves[juce::jlimit(0, 8, static_cast<int>(random01(seed, 1200 + i) * 9.f))];
+        degreeA = juce::jlimit(0, 7, degreeA + moveA);
+        degreeB = juce::jlimit(0, 7, degreeB + moveB);
+        phraseA[i] = degreeA;
+        phraseB[i] = degreeB;
+
+        // Counter melody has its own contour and is not just a transposed lead.
+        const int counterBase = static_cast<int>(random01(seed, 1300 + i) * 7.f);
+        counterPhrase[i] = juce::jlimit(0, 7, counterBase + ((i % 3) - 1));
+    }
 
     for (int bar = 0; bar < bars; ++bar)
     {
-        float energy=.4f; for (const auto& s : sections) if(sectionContains(s,bar)){energy=s.energy;break;}
+        float energy=.4f;
+        for (const auto& s : sections) if(sectionContains(s,bar)){energy=s.energy;break;}
+
         const bool leadActive = (bar >= 12 && bar < 40) || bar >= 48;
         if (!leadActive) continue;
-        const double b=bar*beatsPerBar;
-        const int octave = energy > .8f ? 24 : 12;
-        const int steps = (energy > .8f || energetic) ? 8 : 4;
-        for (int i=0;i<steps;++i)
+
+        const double b = bar * beatsPerBar;
+        const bool finalDrop = bar >= 56;
+        const bool drop = energy > .8f;
+        const int steps = (drop || energetic) ? 8 : 4;
+        const double step = 4.0 / steps;
+        const int phraseGroup = bar / 4;
+        const int rotation = static_cast<int>(random01(seed, 2000 + phraseGroup) * 8.f) % 8;
+        const bool useB = ((phraseGroup + static_cast<int>(random01(seed, 2050 + phraseGroup) * 3.f)) % 2) != 0;
+        const int* phrase = useB ? phraseB : phraseA;
+
+        for (int i = 0; i < steps; ++i)
         {
-            const int m = motif[(i + bar * 3) % 8];
-            const int note = rootMidi + octave + m + ((bar % 8 == 7 && i >= steps - 2) ? 12 : 0);
-            const double len = (i % 4 == 3) ? .7 : .33;
-            addNote(lead,note,b+i*(4.0/steps),len,92+static_cast<int>(energy*25));
+            const uint64_t salt = static_cast<uint64_t>(bar * 64 + i);
+            const bool strongBeat = i == 0 || i == steps / 2;
+            const float restChance = drop ? .10f : .22f;
+            if (!strongBeat && random01(seed, 3000 + salt) < restChance) continue;
+
+            int degree = phrase[(i + rotation) % 8];
+            if (random01(seed, 4000 + salt) > .72f)
+            {
+                const int nudge = random01(seed, 4100 + salt) > .5f ? 1 : -1;
+                degree = juce::jlimit(0, 7, degree + nudge);
+            }
+
+            int octave = drop ? 24 : 12;
+            if (finalDrop && random01(seed, 4200 + salt) > .78f) octave += 12;
+            if (!drop && random01(seed, 4250 + salt) < .13f) octave -= 12;
+
+            const int note = rootMidi + octave + scale[degree];
+            const double length = juce::jlimit(.16, .92,
+                step * (.46 + .72 * random01(seed, 5000 + salt)));
+            const int velocity = juce::jlimit(58, 127,
+                78 + static_cast<int>(energy * 30.f)
+                + static_cast<int>(random01(seed, 5100 + salt) * 16.f) - 8);
+
+            const double timing = (i % 2 == 1)
+                ? (random01(seed, 5200 + salt) - .5) * .035
+                : 0.0;
+            addNote(lead, note, juce::jmax(b, b + i * step + timing), length, velocity);
         }
-        if (energy > .85f && bar % 2 == 1)
-            for (int i=0;i<4;++i) addNote(counter,rootMidi+12+scale[(i*2+3)%8],b+2.0+i*.5,.24,66+i*3);
+
+        // Phrase ending/fill varies by 4/8-bar position so drops evolve instead of looping literally.
+        if ((bar % 4) == 3)
+        {
+            const int fillDegree = finalDrop
+                ? phraseB[static_cast<int>(random01(seed, 6000 + bar) * 8.f) % 8]
+                : phraseA[static_cast<int>(random01(seed, 6100 + bar) * 8.f) % 8];
+            const int fillOctave = drop ? 24 : 12;
+            addNote(lead, rootMidi + fillOctave + scale[fillDegree],
+                    b + 3.5, .34, finalDrop ? 119 : 103);
+        }
+
+        // Independent counter line appears selectively in high-energy sections.
+        if (drop && (bar % 2 == 1) && random01(seed, 7000 + bar) > .18f)
+        {
+            const int counterRotation = static_cast<int>(random01(seed, 7100 + bar) * 8.f) % 8;
+            for (int i = 0; i < 4; ++i)
+            {
+                if (i > 0 && random01(seed, 7200 + bar * 8 + i) < .20f) continue;
+                const int degree = counterPhrase[(i + counterRotation) % 8];
+                const int octave = finalDrop ? 24 : 12;
+                const int velocity = juce::jlimit(52, 104,
+                    62 + static_cast<int>(random01(seed, 7300 + bar * 8 + i) * 24.f));
+                addNote(counter, rootMidi + octave + scale[degree],
+                        b + 2.0 + i * .5,
+                        .18 + .18 * random01(seed, 7400 + bar * 8 + i),
+                        velocity);
+            }
+        }
     }
-    lanes.push_back(std::move(lead)); lanes.push_back(std::move(counter));
+
+    lanes.push_back(std::move(lead));
+    lanes.push_back(std::move(counter));
 }
 
 void SongArrangement::addFx(uint64_t seed)
