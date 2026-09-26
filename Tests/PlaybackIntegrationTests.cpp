@@ -141,6 +141,8 @@ int main()
         p.generateTrack(prompt);
         auto a=p.arrangementSnapshot();
         if(!a||a->getLanes().size()!=12)return fail("processor did not generate 12 lanes");
+        if(a->getSongId()!=p.getSongGenerationSeed())return fail("winning candidate was not the arrangement actually published");
+        if(a->getHarmonyId()==0||a->getMelodyId()==0)return fail("composition identity IDs were not created");
 
         const auto* bass=laneNamed(*a,"BASS");
         const auto* sub=laneNamed(*a,"SUB");
@@ -217,6 +219,12 @@ int main()
                 return fail("GENERATE TRACK recycled a previous melody skeleton");
             if(i>0&&composer.getMelodyNovelty()<.45f)
                 return fail("GENERATE TRACK accepted a melody with low novelty");
+            if(i>0&&composer.getHarmonyNovelty()<.14f)
+                return fail("GENERATE TRACK accepted near-identical normalized harmony");
+            if(i>0&&composer.getSongNovelty()<.36f)
+                return fail("GENERATE TRACK accepted a low-novelty whole song");
+            if(song->getSongId()!=composer.getSongGenerationSeed())
+                return fail("candidate scorer selected one song but processor published another");
         }
     }
 
