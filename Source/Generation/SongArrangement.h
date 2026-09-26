@@ -56,7 +56,9 @@ public:
     juce::String getHarmonySummary() const;
     juce::String getHarmonicRhythmSummary() const;
     juce::String getMelodyArchetypeName() const;
+    std::vector<int> getProgressionFingerprint() const;
     std::vector<int> getHarmonyFingerprint() const;
+    std::vector<int> getMelodyFingerprint() const;
     std::vector<int> getStructureFingerprint() const;
     int getHarmonyProgressionLength() const noexcept { return harmonyPlan.progressionLength; }
 
