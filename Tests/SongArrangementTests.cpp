@@ -257,9 +257,10 @@ int main()
     sonara::SongArrangement fMinor,cMinor;
     fMinor.generateComposition("emotional progressive house 128 BPM F minor",128.0,0x778899ULL);
     cMinor.generateComposition("emotional progressive house 128 BPM C minor",128.0,0x778899ULL);
-    if(fMinor.getHarmonyFingerprint()!=cMinor.getHarmonyFingerprint()
-       ||fMinor.getMelodyFingerprint()!=cMinor.getMelodyFingerprint())
-    {std::cerr<<"Key transposition changed normalized composition identity\n";return 28;}
+    if(fMinor.getHarmonyFingerprint()!=cMinor.getHarmonyFingerprint())
+    {std::cerr<<"Key transposition changed normalized harmony identity\n";return 28;}
+    if(fMinor.getMelodyFingerprint()!=cMinor.getMelodyFingerprint())
+    {std::cerr<<"Key transposition changed normalized melody identity\n";return 32;}
 
     // Same key/BPM/genre: variation must come from composition, not transposition.
     std::set<uint64_t> fixedHarmony,fixedMelody,fixedBass,fixedDrums,fixedPluck;
