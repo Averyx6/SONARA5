@@ -32,7 +32,7 @@ private:
     int64_t ageSamples=0; int holdCounter=0; float heldL=0.f,heldR=0.f;
 };
 class SonaraEngine {
-public: SonaraEngine(); void prepare(double,int,int); void render(juce::AudioBuffer<float>&,juce::MidiBuffer&); void setPatch(const SoundDNA&); void allNotesOff() noexcept { synth.allNotesOff(0, false); } const SoundDNA& patch()const noexcept{return dna;}
+public: SonaraEngine(); void prepare(double,int,int); void render(juce::AudioBuffer<float>&,juce::MidiBuffer&); void setPatch(const SoundDNA&); void allNotesOff() noexcept { synth.allNotesOff(0, false); } bool hasActiveVoices() noexcept; const SoundDNA& patch()const noexcept{return dna;}
 private:
     static float readFractional(const juce::AudioBuffer<float>&,int,int,float) noexcept; float readDelay(int,float) const noexcept; void applyPendingPatch() noexcept; void processChorus(juce::AudioBuffer<float>&) noexcept; void processDelay(juce::AudioBuffer<float>&) noexcept;
     juce::Synthesiser synth; SoundDNA dna,pendingDNA,audioDNA; juce::SpinLock pendingLock; bool patchPending=false; double sr=44100.0; juce::Reverb reverb; juce::Reverb::Parameters reverbParams; juce::AudioBuffer<float> chorusBuffer,delayBuffer; int chorusWrite=0,delayWrite=0; float chorusPhase=0.f;
