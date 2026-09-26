@@ -91,6 +91,7 @@ private:
 
     sonara::SonaraEngine engine;
     std::array<sonara::SonaraEngine,musicalLaneCount> songEngines;
+    juce::Reverb songReverb;
     sonara::PromptGenerator generator; sonara::CyanoryxBridge cyanoryx; sonara::MutationLocks locks; sonara::DrumSynth drumSynth;
     sonara::ReferenceAnalyzer referenceAnalyzer; sonara::ReferenceAnalysis reference; bool referenceLoaded=false, referenceMelodyPreview=false;
     sonara::AudioExporter audioExporter;
