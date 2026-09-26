@@ -401,11 +401,26 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
 void SonaraAudioProcessor::randomizeEverything(const juce::String& prompt)
 {
     locks={};
-    const juce::String soundBrief=prompt+" • completely new standalone signature synth, unique oscillator character, polished transient, controlled low end";
+    auto q=prompt.trim();
+    auto lower=q.toLowerCase();
+
+    const bool hasBpm=lower.contains(" bpm");
+    const bool hasKey=lower.contains(" minor")||lower.contains(" major");
+
+    auto& rng=juce::Random::getSystemRandom();
+    static constexpr int bpms[]={122,124,126,128,130,132,136,140,150,174};
+    static constexpr const char* keys[]={"C minor","D minor","E minor","F minor","G minor","A minor","C major","D major","G major","A major"};
+
+    if(!hasBpm)q+=", "+juce::String(bpms[rng.nextInt((int)(sizeof(bpms)/sizeof(bpms[0])))])+" BPM";
+    if(!hasKey)q+=", "+juce::String(keys[rng.nextInt((int)(sizeof(keys)/sizeof(keys[0])))]);
+    q+=", completely fresh composition, new harmony, new groove, new melody contour, new drum kit, new bass and sub";
+
+    const juce::String soundBrief=q+" • completely new standalone signature synth, unique oscillator character, polished transient, controlled low end";
     generatePatch(soundBrief);
-    generateTrack(prompt);
-    generationStatus="EVERYTHING RANDOMIZED • brand-new song + melody + structure + sounds";
+    generateTrack(q);
+    generationStatus="EVERYTHING RANDOMIZED • new song + melody + structure + drums + bass + sub + SoundDNA";
 }
+
 
 juce::String SonaraAudioProcessor::makeSurprisePrompt()
 {
