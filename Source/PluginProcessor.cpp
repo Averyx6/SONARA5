@@ -8,6 +8,7 @@ SonaraAudioProcessor::SonaraAudioProcessor()
 {
     sessionSalt = static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64())
                 ^ static_cast<uint64_t>(juce::Time::getHighResolutionTicks());
+    for(auto& e:songEngines)e.setLowCpuMode(true);
     patchHistory.push_back(engine.patch());
     historyIndex = 0;
 }
@@ -21,6 +22,10 @@ void SonaraAudioProcessor::prepareToPlay(double sr, int bs)
     engine.prepare(sr, bs, getTotalNumOutputChannels());
     for (auto& e : songEngines) e.prepare(sr, bs, getTotalNumOutputChannels());
     drumSynth.prepare(sr);
+    songReverb.reset();
+    juce::Reverb::Parameters rp;
+    rp.roomSize=.34f;rp.damping=.48f;rp.wetLevel=.075f;rp.dryLevel=.985f;rp.width=.82f;
+    songReverb.setParameters(rp);
 
     const int channels = juce::jmax(1, getTotalNumOutputChannels());
     for (auto& b : songScratch)
@@ -412,6 +417,11 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
 
     const int drumCount=collectDrumTriggers(*a,start,numSamples);
     drumSynth.render(out,drumTriggers.data(),drumCount);
+
+    if(out.getNumChannels()>=2)
+        songReverb.processStereo(out.getWritePointer(0),out.getWritePointer(1),numSamples);
+    else if(out.getNumChannels()==1)
+        songReverb.processMono(out.getWritePointer(0),numSamples);
 
     const float masterRc=1.f/(juce::MathConstants<float>::twoPi*24.f);
     const float masterDt=1.f/(float)previewSampleRate;
