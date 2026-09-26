@@ -848,17 +848,17 @@ bool SonaraAudioProcessor::loadProject(const juce::File& file)
 
 bool SonaraAudioProcessor::exportFullMix(const juce::File& file)
 {
-    auto a=arrangementSnapshot();if(!a){generationStatus="Generate a track first";return false;}generationStatus="Rendering 24-bit full mix";generationProgress.store(.01f);const bool ok=audioExporter.renderFullMix(*a,file,44100.0,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;});generationStatus=ok?"24-bit full mix ready":"Full mix export failed";return ok;
+    auto a=arrangementSnapshot();if(!a){generationStatus="Generate a track first";return false;}generationStatus="Rendering 24-bit full mix";generationProgress.store(.01f);const bool ok=audioExporter.renderFullMix(*a,file,44100.0,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;});generationProgress.store(ok?1.f:0.f);generationStatus=ok?"24-bit full mix ready • "+file.getFullPathName():"Full mix export failed";return ok;
 }
 
 bool SonaraAudioProcessor::exportSelectedLaneAudio(const juce::File& file)
 {
-    auto a=arrangementSnapshot();if(!a)return false;const bool ok=audioExporter.renderSelectedLane(*a,selectedLane.load(),file,44100.0,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;});generationStatus=ok?"Selected lane WAV ready":"Lane export failed";return ok;
+    auto a=arrangementSnapshot();if(!a)return false;const bool ok=audioExporter.renderSelectedLane(*a,selectedLane.load(),file,44100.0,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;});generationProgress.store(ok?1.f:0.f);generationStatus=ok?"Selected lane WAV ready • "+file.getFullPathName():"Lane export failed";return ok;
 }
 
 bool SonaraAudioProcessor::exportAllStems(const juce::File& directory)
 {
-    auto a=arrangementSnapshot();if(!a)return false;const bool ok=audioExporter.renderAllStems(*a,directory,44100.0,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;});generationStatus=ok?"All 24-bit stems ready":"Stem export failed";return ok;
+    auto a=arrangementSnapshot();if(!a)return false;const bool ok=audioExporter.renderAllStems(*a,directory,44100.0,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;});generationProgress.store(ok?1.f:0.f);generationStatus=ok?"All 24-bit stems ready • "+directory.getFullPathName():"Stem export failed";return ok;
 }
 
 void SonaraAudioProcessor::setMacro(Macro macro, float normalized)
