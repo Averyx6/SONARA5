@@ -74,6 +74,8 @@ public:
     double getPreviewBpm() const noexcept { return previewBpm; }
     uint64_t getSongGenerationSeed() const noexcept { return lastSongSeed.load(std::memory_order_relaxed); }
     float getMelodyNovelty() const noexcept { return lastMelodyNovelty.load(std::memory_order_relaxed); }
+    float getHarmonyNovelty() const noexcept { return lastHarmonyNovelty.load(std::memory_order_relaxed); }
+    float getSongNovelty() const noexcept { return lastSongNovelty.load(std::memory_order_relaxed); }
     void setMacro(Macro,float normalized);
     void setLaneMix(int laneIndex,LaneMixParameter,float value) noexcept;
     LaneMixState getLaneMix(int laneIndex) const noexcept;
@@ -109,7 +111,10 @@ private:
     uint64_t sessionSalt=0;
     std::atomic<uint64_t> lastSongSeed{0};
     std::atomic<float> lastMelodyNovelty{1.f};
+    std::atomic<float> lastHarmonyNovelty{1.f};
+    std::atomic<float> lastSongNovelty{1.f};
     std::deque<std::vector<int>> melodyHistory;
+    std::deque<std::vector<int>> harmonyHistory,bassHistory,drumHistory,pluckHistory,structureHistory;
     std::atomic<bool> previewPlaying{false}; std::atomic<int64_t> previewSample{0}; std::atomic<bool> songPlaying{false}; std::atomic<int64_t> songSample{0}; std::atomic<int> songFadeRemaining{0}; std::atomic<int> selectedLane{9};
     double previewSampleRate=44100.0,previewBpm=128.0; int64_t previewLengthSamples=1; int maximumBlockSize=512;
     std::shared_ptr<const sonara::SongArrangement> arrangement;
