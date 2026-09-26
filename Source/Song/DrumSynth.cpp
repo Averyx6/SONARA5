@@ -34,9 +34,9 @@ void DrumSynth::configureKit(const SoundDNA& kick,const SoundDNA& snare,const So
     clapTone=juce::jlimit(.15f,.50f,.20f+.22f*perc.macroBrightness+.08f*perc.macroMovement);
     clapDecay=decayFor(.075f+.075f*normRelease(perc));
     clapGain=juce::jlimit(.14f,.34f,.18f+.11f*perc.macroImpact+.03f*perc.drive);
-    percDecay=decayFor(.035f+.055f*normRelease(perc));
-    percGain=juce::jlimit(.08f,.22f,.10f+.08f*perc.macroImpact+.03f*perc.drive);
-    percToneHz=520.f+680.f*juce::jlimit(0.f,1.f,perc.macroBrightness);
+    percDecay=decayFor(.018f+.028f*normRelease(perc));
+    percGain=juce::jlimit(.035f,.095f,.045f+.030f*perc.macroImpact+.012f*perc.drive);
+    percToneHz=620.f+520.f*juce::jlimit(0.f,1.f,perc.macroBrightness);
 
     crashNoise=juce::jlimit(.36f,.62f,.42f+.16f*normCutoff(hats)+.05f*hats.noiseLevel);
     crashTone=juce::jlimit(.05f,.16f,.07f+.08f*hats.macroBrightness);
