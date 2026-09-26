@@ -256,6 +256,153 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
 
 void SonaraAudioProcessorEditor::timerCallback(){playbackProgress=p.isSongPlaying()?p.songPosition01():p.previewPosition01();pulse+=.065f;if(pulse>juce::MathConstants<float>::twoPi)pulse=0.f;soundView.animation=pulse;patchName.setText(p.currentPatch().name,juce::dontSendNotification);statusLine.setText(p.generationStatus,juce::dontSendNotification);connect.setButtonText("CYANORYX • BRIDGE READY");playSong.setButtonText(p.isSongPlaying()?"PLAYING SONG":"PLAY SONG");previewSound.setButtonText(p.isPreviewPlaying()?"PREVIEWING":"PREVIEW SOUND");auto a=p.arrangementSnapshot();selectedLaneLabel.setText(a&&juce::isPositiveAndBelow(p.getSelectedLane(),(int)a->getLanes().size())?"SELECTED • "+a->getLanes()[(size_t)p.getSelectedLane()].name:"SELECTED • none",juce::dontSendNotification);if(activeTab==4&&p.hasReference())referenceSummary.setText(p.getReferenceSummary(),juce::dontSendNotification);timeline.repaint();pianoRoll.repaint();soundView.repaint();repaint();}
 
-void SonaraAudioProcessorEditor::paint(juce::Graphics& g){auto r=getLocalBounds().toFloat();juce::ColourGradient b(bg0,0,0,bg1,r.getWidth(),r.getHeight(),false);g.setGradientFill(b);g.fillAll();g.setColour(purple.withAlpha(.07f+.025f*std::sin(pulse)));g.fillEllipse(r.getCentreX()-360,r.getCentreY()-330,720,660);g.setColour(cyan.withAlpha(.035f));g.fillEllipse(r.getRight()-430,40,380,380);g.setColour(text);g.setFont(juce::FontOptions(32.f).withStyle("Bold"));g.drawText("SONARA",30,18,220,38,juce::Justification::left);g.setColour(cyan);g.setFont(11.f);g.drawText("AI MUSIC CREATOR • SOUND + DRUM + TRACK",32,51,360,18,juce::Justification::left);const auto left=juce::Rectangle<float>(22,118,210,(float)getHeight()-195),right=juce::Rectangle<float>((float)getWidth()-244,118,222,(float)getHeight()-195);g.setColour(panel.withAlpha(.96f));g.fillRoundedRectangle(left,12);g.fillRoundedRectangle(right,12);g.setColour(juce::Colour(0xff24324a));g.drawRoundedRectangle(left,12,1);g.drawRoundedRectangle(right,12,1);g.setColour(dim);g.setFont(10.f);g.drawText("PROMPT PRESETS",38,134,165,18,juce::Justification::left);g.drawText("PERFORMANCE / SOUND DNA",getWidth()-226,134,190,18,juce::Justification::left);g.setColour(juce::Colour(0xff17243a));g.fillRoundedRectangle(252,118,(float)getWidth()-516,(float)getHeight()-195,12);g.setColour(juce::Colour(0xff263650));g.drawRoundedRectangle(252,118,(float)getWidth()-516,(float)getHeight()-195,12,1);g.setColour(text.withAlpha(.75f));g.setFont(10.f);g.drawText("MUTATION LOCKS",35,getHeight()-265,170,16,juce::Justification::left);if(activeTab==4){g.setColour(cyan.withAlpha(.75f));g.drawText("REFERENCE / RESOUND",270,238,220,18,juce::Justification::left);}if(activeTab==6){g.setColour(cyan.withAlpha(.75f));g.drawText("24-BIT AUDIO + STEM EXPORT",270,238,260,18,juce::Justification::left);}const float progress=juce::jlimit(0.f,1.f,p.generationProgress.load());const auto prog=juce::Rectangle<float>(30,(float)getHeight()-40,(float)getWidth()-60,5);g.setColour(juce::Colour(0xff16243a));g.fillRoundedRectangle(prog,3);g.setColour(cyan);g.fillRoundedRectangle(prog.withWidth(prog.getWidth()*progress),3);}
+void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
+{
+    auto r=getLocalBounds().toFloat();
+    juce::ColourGradient b(bg0,0,0,bg1,r.getWidth(),r.getHeight(),false);
+    g.setGradientFill(b);g.fillAll();
+
+    g.setColour(purple.withAlpha(.07f+.025f*std::sin(pulse)));
+    g.fillEllipse(r.getCentreX()-360,r.getCentreY()-330,720,660);
+    g.setColour(cyan.withAlpha(.035f));
+    g.fillEllipse(r.getRight()-430,40,380,380);
+
+    g.setColour(text);g.setFont(juce::FontOptions(32.f).withStyle("Bold"));
+    g.drawText("SONARA",30,18,220,38,juce::Justification::left);
+    g.setColour(cyan);g.setFont(11.f);
+    g.drawText("AI MUSIC CREATOR • SOUND + DRUM + TRACK",32,51,360,18,juce::Justification::left);
+
+    const auto left=juce::Rectangle<float>(22,118,210,(float)getHeight()-195);
+    const auto right=juce::Rectangle<float>((float)getWidth()-244,118,222,(float)getHeight()-195);
+    g.setColour(panel.withAlpha(.96f));g.fillRoundedRectangle(left,12);g.fillRoundedRectangle(right,12);
+    g.setColour(juce::Colour(0xff24324a));g.drawRoundedRectangle(left,12,1);g.drawRoundedRectangle(right,12,1);
+
+    const bool instrumentTab=activeTab==0;
+    g.setColour(dim);g.setFont(10.f);
+    g.drawText(instrumentTab?"SOUND PRESETS":"SONG / STYLE PRESETS",38,134,165,18,juce::Justification::left);
+
+    juce::String rightTitle="SONG INSPECTOR";
+    if(activeTab==0) rightTitle="PERFORMANCE / SOUND DNA";
+    else if(activeTab==2) rightTitle="DRUM GENERATOR";
+    else if(activeTab==3) rightTitle="FX / MIX INSPECTOR";
+    else if(activeTab==4) rightTitle="REFERENCE ANALYSIS";
+    else if(activeTab==5) rightTitle="MIDI INSPECTOR";
+    else if(activeTab==6) rightTitle="EXPORT STATUS";
+    g.drawText(rightTitle,getWidth()-226,134,190,18,juce::Justification::left);
+
+    g.setColour(juce::Colour(0xff17243a));
+    g.fillRoundedRectangle(252,118,(float)getWidth()-516,(float)getHeight()-195,12);
+    g.setColour(juce::Colour(0xff263650));
+    g.drawRoundedRectangle(252,118,(float)getWidth()-516,(float)getHeight()-195,12,1);
+
+    g.setColour(cyan.withAlpha(.72f));g.setFont(9.f);
+    g.drawText(instrumentTab?"SOUND PROMPT • SOUND DESIGN ONLY":"SONG / ARRANGEMENT PROMPT • COMPOSITION + GROOVE + STRUCTURE",
+               270,120,getWidth()-570,15,juce::Justification::left);
+
+    if(instrumentTab)
+    {
+        g.setColour(text.withAlpha(.75f));g.setFont(10.f);
+        g.drawText("MUTATION LOCKS",35,getHeight()-265,170,16,juce::Justification::left);
+    }
+
+    if(activeTab==4)
+    {
+        g.setColour(cyan.withAlpha(.75f));
+        g.drawText("REFERENCE / RESOUND",270,238,220,18,juce::Justification::left);
+    }
+    if(activeTab==6)
+    {
+        g.setColour(cyan.withAlpha(.75f));
+        g.drawText("24-BIT AUDIO + STEM EXPORT",270,238,260,18,juce::Justification::left);
+    }
+
+    auto a=p.arrangementSnapshot();
+    const int rx=getWidth()-226;
+    int ry=168;
+
+    if(!instrumentTab && a)
+    {
+        static const char* noteNames[]={"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
+        const int pc=((a->getRootMidi()%12)+12)%12;
+        const juce::String key=juce::String(noteNames[pc])+(a->isMinor()?" minor":" major");
+        int noteCount=0;
+        for(const auto& lane:a->getLanes()) noteCount+=(int)lane.notes.size();
+
+        juce::String seedHex=juce::String::toHexString((juce::int64)p.getSongGenerationSeed()).toUpperCase();
+        if(seedHex.length()>8) seedHex=seedHex.substring(seedHex.length()-8);
+
+        const auto lower=songPrompt.getText().toLowerCase();
+        juce::String style="EDM";
+        if(lower.contains("progressive house")) style="PROGRESSIVE HOUSE";
+        else if(lower.contains("future rave")) style="FUTURE RAVE";
+        else if(lower.contains("tech house")) style="TECH HOUSE";
+        else if(lower.contains("drum and bass")||lower.contains("dnb")) style="DRUM & BASS";
+        else if(lower.contains("electro pop")||lower.contains("pop")) style="ELECTRO POP";
+        else if(lower.contains("cinematic")) style="CINEMATIC EDM";
+        const juce::String energy=(lower.contains("powerful")||lower.contains("energetic")||lower.contains("aggressive")||lower.contains("huge"))?"HIGH":
+                                  (lower.contains("soft")||lower.contains("calm")||lower.contains("mellow"))?"LOW":"MEDIUM";
+
+        const auto card=[&](const juce::String& label,const juce::String& value,int y)
+        {
+            const auto box=juce::Rectangle<float>((float)rx, (float)y, 186.f, 44.f);
+            g.setColour(juce::Colour(0xff0b1524));g.fillRoundedRectangle(box,7.f);
+            g.setColour(juce::Colour(0xff263650));g.drawRoundedRectangle(box,7.f,1.f);
+            g.setColour(dim);g.setFont(8.5f);g.drawText(label,rx+10,y+6,166,12,juce::Justification::left);
+            g.setColour(text);g.setFont(11.f);g.drawFittedText(value,rx+10,y+20,166,17,juce::Justification::left,1);
+        };
+
+        if(activeTab==1)
+        {
+            card("STYLE",style,ry);ry+=52;
+            card("KEY / TEMPO",key+" • "+juce::String(a->getBpm(),0)+" BPM",ry);ry+=52;
+            card("ENERGY",energy,ry);ry+=52;
+            card("GENERATED CONTENT",juce::String((int)a->getLanes().size())+" lanes • "+juce::String(noteCount)+" notes",ry);ry+=52;
+            card("FRESH GENERATION ID",seedHex.isEmpty()?"—":seedHex,ry);ry+=58;
+            g.setColour(cyan.withAlpha(.15f));g.fillRoundedRectangle((float)rx,(float)ry,186.f,48.f,8.f);
+            g.setColour(cyan);g.setFont(9.f);
+            g.drawFittedText("FULL SONG SEED CHANGES\nDRUMS • HARMONY • BASS • SYNTHS • MELODY • FX",
+                             rx+9,ry+7,168,34,juce::Justification::centred,2);
+        }
+        else if(activeTab==2)
+        {
+            int drumNotes=0;
+            for(int i=0;i<juce::jmin(4,(int)a->getLanes().size());++i) drumNotes+=(int)a->getLanes()[(size_t)i].notes.size();
+            card("DRUM PROMPT STYLE",style,ry);ry+=52;
+            card("CURRENT DRUM EVENTS",juce::String(drumNotes)+" hits",ry);ry+=52;
+            card("MODE","REGENERATE DRUMS ONLY",ry);ry+=58;
+            g.setColour(cyan);g.setFont(9.f);
+            g.drawFittedText("Melody, chords and bass stay intact when GENERATE DRUMS is used.",
+                             rx,ry,186,54,juce::Justification::topLeft,4);
+        }
+        else if(activeTab==3)
+        {
+            const int laneIndex=p.getSelectedLane();
+            if(juce::isPositiveAndBelow(laneIndex,(int)a->getLanes().size()))
+            {
+                const auto& lane=a->getLanes()[(size_t)laneIndex];
+                card("SELECTED LANE",lane.name,ry);ry+=52;
+                card("MIDI EVENTS",juce::String((int)lane.notes.size()),ry);ry+=52;
+                card("SOUND DNA",lane.sound.name,ry);
+            }
+        }
+        else if(activeTab==5)
+        {
+            card("ARRANGEMENT",juce::String((int)a->getLanes().size())+" editable MIDI lanes",ry);ry+=52;
+            card("SONG LENGTH",juce::String(a->getBars())+" bars",ry);ry+=52;
+            card("EXPORT","FULL MIDI + SELECTED MIDI + REF MIDI",ry);
+        }
+        else if(activeTab==6)
+        {
+            card("FULL MIX","24-BIT WAV",ry);ry+=52;
+            card("STEMS","24-BIT LANE WAVS",ry);ry+=52;
+            card("EDITABLE","FULL + SELECTED MIDI",ry);
+        }
+    }
+
+    const float progress=juce::jlimit(0.f,1.f,p.generationProgress.load());
+    const auto prog=juce::Rectangle<float>(30,(float)getHeight()-40,(float)getWidth()-60,5);
+    g.setColour(juce::Colour(0xff16243a));g.fillRoundedRectangle(prog,3);
+    g.setColour(cyan);g.fillRoundedRectangle(prog.withWidth(prog.getWidth()*progress),3);
+}
 
 void SonaraAudioProcessorEditor::resized(){const int w=getWidth(),h=getHeight();const int tabY=82,gap=5,tabW=(w-60-6*gap)/7;juce::TextButton* tabs[]={&tabInstrument,&tabSong,&tabDrums,&tabFx,&tabReference,&tabMidi,&tabExport};for(int i=0;i<7;++i)tabs[i]->setBounds(30+i*(tabW+gap),tabY,tabW,30);connect.setBounds(w-250,24,220,34);int py=160;for(auto& b:presets){b.setBounds(35,py,184,31);py+=36;}const int lockY=h-240;juce::ToggleButton* locks1[]={&lockOsc,&lockUnison,&lockEnv,&lockFilter};juce::ToggleButton* locks2[]={&lockMod,&lockSources,&lockTone,&lockFx};for(int i=0;i<4;++i){locks1[i]->setBounds(34+(i%2)*94,lockY+(i/2)*30,90,27);locks2[i]->setBounds(34+(i%2)*94,lockY+64+(i/2)*30,90,27);}const int cx=270,cw=w-550;soundPrompt.setBounds(cx,138,cw,36);songPrompt.setBounds(cx,138,cw,36);auto layoutRow=[&](std::initializer_list<juce::Component*> items,int y,int height=38){const int n=(int)items.size();if(n<=0)return;const int g=6,cell=(cw-g*(n-1))/n;int x=cx;for(auto* c:items){c->setBounds(x,y,cell,height);x+=cell+g;}};layoutRow({&generateSound,&generateTrack,&generateDrums,&similar,&mutate,&randomize,&undo,&redo},184);layoutRow({&loadReference,&importMidi,&resound,&rebuildReference},184);layoutRow({&saveSoundButton,&loadSoundButton,&saveProjectButton,&loadProjectButton,&exportMixButton,&exportStemsButton},184);const int upperY=230,upperH=230;soundView.setBounds(cx,upperY,cw,upperH);timeline.setBounds(cx,upperY,cw,upperH);referenceSummary.setBounds(cx+28,upperY+48,cw-56,upperH-72);pianoRoll.setBounds(cx,upperY+upperH+9,cw,juce::jmax(105,h-upperY-upperH-200));patchName.setBounds(cx+18,upperY+8,cw-36,22);selectedLaneLabel.setBounds(cx,h-154,190,20);layoutRow({&dragPreviewMidi,&dragFullMidi,&dragLaneMidi,&dragReferenceMidi,&dragFullAudio,&dragLaneAudio,&dragStems},h-128,34);previewSound.setBounds(cx,h-84,120,34);playSong.setBounds(cx+128,h-84,112,34);stop.setBounds(cx+248,h-84,70,34);bpm.setBounds(cx+328,h-84,juce::jmax(140,cw-328),34);playbackBar.setBounds(cx,h-44,cw,15);statusLine.setBounds(cx,h-27,cw,18);variation1.setBounds(w-226,164,42,28);variation2.setBounds(w-180,164,42,28);variation3.setBounds(w-134,164,42,28);variation4.setBounds(w-88,164,42,28);captureA.setBounds(w-226,200,88,30);captureB.setBounds(w-130,200,88,30);recallA.setBounds(w-226,236,88,30);recallB.setBounds(w-130,236,88,30);const int mx=w-225,my=292;macroBrightness.setBounds(mx,my,92,92);macroMovement.setBounds(mx+96,my,92,92);macroSpace.setBounds(mx,my+104,92,92);macroImpact.setBounds(mx+96,my+104,92,92);updateModeVisibility();}
