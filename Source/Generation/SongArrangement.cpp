@@ -595,30 +595,90 @@ void SongArrangement::addHarmony(uint64_t seed)
 void SongArrangement::addMelody(uint64_t seed, bool energetic)
 {
     ArrangementLane lead{"LEAD",1,false}, counter{"COUNTER",7,false};
-    const int scaleMinor[] = {0,2,3,5,7,8,10,12};
-    const int scaleMajor[] = {0,2,4,5,7,9,11,12};
-    const int* scale = minor ? scaleMinor : scaleMajor;
-    static constexpr int moves[] = {-3,-2,-1,-1,0,1,1,2,3};
 
-    const auto stylePrompt=sourcePrompt.toLowerCase();
-    const bool tech=stylePrompt.contains("tech house")||stylePrompt.contains("minimal house");
-    const bool dnb=stylePrompt.contains("drum and bass")||stylePrompt.contains("dnb");
-    const bool cinematic=stylePrompt.contains("cinematic")||stylePrompt.contains("film");
-    const bool pop=stylePrompt.contains("pop")||stylePrompt.contains("radio");
-    const bool progressive=stylePrompt.contains("progressive house")||stylePrompt.contains("melodic house");
-    const bool trance=stylePrompt.contains("trance");
-    const bool tropical=stylePrompt.contains("tropical");
-    const int globalArchetype=plan.melodyArchetype;
+    static constexpr int minorScale[7]={0,2,3,5,7,8,10};
+    static constexpr int majorScale[7]={0,2,4,5,7,9,11};
+    const int* scale=minor?minorScale:majorScale;
+    const int third=minor?3:4;
+
+    static constexpr int minorProgressions[8][4]={
+        {0,8,3,10},{0,10,8,10},{0,3,10,8},{0,5,8,7},
+        {0,8,5,10},{0,7,8,5},{0,10,5,8},{0,3,5,10}
+    };
+    static constexpr int majorProgressions[8][4]={
+        {0,7,9,5},{0,9,5,7},{0,5,9,7},{9,5,0,7},
+        {0,4,5,7},{0,9,7,5},{0,5,7,9},{0,7,5,4}
+    };
+
+    static constexpr double rhythmPos[10][8]={
+        {0.0,1.0,2.0,3.0,0,0,0,0},
+        {0.5,1.5,2.5,3.5,0,0,0,0},
+        {0.0,.75,1.5,2.25,3.25,0,0,0},
+        {0.0,1.5,3.0,0,0,0,0,0},
+        {0.0,.5,1.0,1.5,2.0,2.5,3.0,3.5},
+        {0.0,.75,1.5,2.5,3.25,0,0,0},
+        {0.0,1.25,2.75,0,0,0,0,0},
+        {0.0,.5,1.25,2.0,2.75,3.5,0,0},
+        {.5,1.25,2.0,3.0,3.5,0,0,0},
+        {0.0,.25,1.5,2.0,2.5,3.75,0,0}
+    };
+    static constexpr int rhythmCount[10]={4,4,5,3,8,5,3,6,5,6};
+
+    const auto p=sourcePrompt.toLowerCase();
+    const bool tech=p.contains("tech house")||p.contains("minimal house");
+    const bool dnb=p.contains("drum and bass")||p.contains("dnb");
+    const bool cinematic=p.contains("cinematic")||p.contains("film");
+    const bool pop=p.contains("pop")||p.contains("radio");
+    const bool progressive=p.contains("progressive house")||p.contains("melodic house");
+    const bool trance=p.contains("trance");
+    const bool tropical=p.contains("tropical");
+
+    const int architecture=plan.melodyArchetype%12;
+    const int rhythmBase=plan.rhythmFamily%10;
+
+    auto scaleNote=[&](int degree,int registerSemitones)
+    {
+        int oct=0;
+        while(degree<0){degree+=7;--oct;}
+        while(degree>=7){degree-=7;++oct;}
+        return juce::jlimit(48,100,rootMidi+registerSemitones+scale[degree]+12*oct);
+    };
+
+    auto sectionForBar=[&](int bar)->std::pair<const ArrangementSection*,int>
+    {
+        for(size_t i=0;i<sections.size();++i)
+            if(sectionContains(sections[i],bar))return {&sections[i],(int)i};
+        return {nullptr,0};
+    };
+
+    auto chordInfo=[&](const ArrangementSection* section,int sectionIndex,int bar)
+    {
+        struct ChordInfo { int rootOffset=0; int degreeIndex=0; };
+        if(section==nullptr)return ChordInfo{};
+        const int localBar=bar-section->startBar;
+        const bool chorus=section->name.contains("CHORUS");
+        const bool finalHook=section->name.contains("FINAL");
+        const bool useAlt=chorus||finalHook||(sectionIndex%3==2&&random01(seed,210+sectionIndex)>.55f);
+        const int progressionIndex=useAlt?plan.alternateProgressionIndex:plan.progressionIndex;
+        const int* progression=minor?minorProgressions[progressionIndex]:majorProgressions[progressionIndex];
+        const int offset=progression[(localBar+(sectionIndex%2))%4];
+
+        int nearest=0;
+        int best=999;
+        for(int d=0;d<7;++d)
+        {
+            const int diff=std::abs(scale[d]-offset);
+            if(diff<best){best=diff;nearest=d;}
+        }
+        return ChordInfo{offset,nearest};
+    };
 
     for(int bar=0;bar<bars;++bar)
     {
-        const ArrangementSection* section=nullptr;
-        int sectionIndex=0;
-        for(size_t si=0;si<sections.size();++si)
-            if(sectionContains(sections[si],bar)){section=&sections[si];sectionIndex=(int)si;break;}
+        const auto [section,sectionIndex]=sectionForBar(bar);
+        if(section==nullptr)continue;
 
-        const juce::String sectionName=section?section->name:juce::String();
-        const float energy=section?section->energy:.4f;
+        const juce::String sectionName=section->name;
         const bool intro=sectionName.contains("INTRO");
         const bool verse=sectionName.contains("VERSE");
         const bool build=sectionName.contains("BUILD");
@@ -626,137 +686,267 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         const bool breakdown=sectionName.contains("BREAKDOWN");
         const bool chorus=sectionName.contains("CHORUS");
         const bool finalHook=sectionName.contains("FINAL")||sectionName.contains("HOOK");
-        const int localBar=section?bar-section->startBar:bar;
+        const int localBar=bar-section->startBar;
+        const float energy=section->energy;
 
-        bool leadActive=!intro;
-        if(intro) leadActive=localBar>=juce::jmax(2,section?section->bars/2:4);
-        if(breakdown) leadActive=(localBar%2==0);
-        if(!leadActive) continue;
+        bool active=!intro;
+        if(intro)active=localBar>=juce::jmax(2,section->bars/2);
+        if(breakdown)active=(localBar%2==0);
+        if(!active)continue;
 
-        const int phraseBlock=localBar/juce::jmax(1,plan.phraseBars);
-        const int developmentBlock=plan.development>.70f?phraseBlock:(plan.development>.48f?phraseBlock/2:0);
+        const int phraseBars=juce::jmax(2,plan.phraseBars);
+        const int barInPhrase=localBar%phraseBars;
+        const int phraseIndex=localBar/phraseBars;
+
+        // DROP and FINAL HOOK share a recognizable song identity, but the final hook
+        // develops it. Other sections get genuinely separate theme seeds.
+        const int themeGroup=(drop||finalHook)?3:(chorus?5:sectionIndex);
+        const int devPhrase=(plan.development>.72f)?phraseIndex:
+                            (plan.development>.48f?phraseIndex/2:0);
         const uint64_t phraseSeed=mix64(seed
-            ^ ((uint64_t)sectionIndex+1ULL)*0x9e3779b97f4a7c15ULL
-            ^ ((uint64_t)developmentBlock+1ULL)*0xbf58476d1ce4e5b9ULL);
+            ^ ((uint64_t)themeGroup+1ULL)*0x9e3779b97f4a7c15ULL
+            ^ ((uint64_t)devPhrase+1ULL)*0xbf58476d1ce4e5b9ULL
+            ^ ((uint64_t)architecture+1ULL)*0x94d049bb133111ebULL);
 
-        int motif[8]{};
-        int degree=static_cast<int>(random01(phraseSeed,100)*7.f);
-        int contour=(static_cast<int>(random01(phraseSeed,101)*5.f)+globalArchetype)%5;
-        if(progressive&&sectionName.contains("BUILD"))contour=1;
-        if(cinematic&&breakdown)contour=2;
-        for(int i=0;i<8;++i)
+        const auto chord=chordInfo(section,sectionIndex,bar);
+        const int registerBase=tech?12:((drop||chorus||finalHook)?24:12);
+        const int startDegree=(plan.startingDegree
+            +(int)(random01(phraseSeed,0x2001)*7.f)
+            +barInPhrase)%7;
+
+        int family=(rhythmBase+sectionIndex+(int)(random01(phraseSeed,0x2002)*3.f))%10;
+        if(tech)family=(family%2)?1:3;
+        else if(dnb)family=random01(phraseSeed,0x2003)>.5f?4:7;
+        else if(cinematic)family=random01(phraseSeed,0x2004)>.5f?3:6;
+        else if(trance)family=random01(phraseSeed,0x2005)>.45f?4:7;
+
+        int count=rhythmCount[family];
+        if(architecture==2)count=juce::jmin(count,4);      // octave anthem
+        if(architecture==3)count=juce::jmin(count,3);      // sparse motif
+        if(architecture==4)count=juce::jlimit(2,4,count);  // lyrical
+        if(architecture==5)count=juce::jmax(count,6);      // sync riff
+        if(architecture==10)count=juce::jmax(count,5);     // offbeat hook
+        if(plan.density>.80f&&!cinematic)count=juce::jmin(8,count+1);
+        if(plan.density<.52f)count=juce::jmax(2,count-1);
+
+        double positions[8]{};
+        for(int i=0;i<count;++i)positions[i]=rhythmPos[family][i];
+
+        // Each architecture changes the actual rhythmic construction, not just pitches.
+        if(architecture==2)
         {
-            int move=moves[juce::jlimit(0,8,(int)(random01(phraseSeed,120+i)*9.f))];
-            if(tech&&i>0&&random01(phraseSeed,140+i)<.38f)move=0;
-            if(pop&&i%4==2&&random01(phraseSeed,150+i)<.52f)move=(i%8<4?1:-1);
-            if(progressive&&i==4)move=juce::jmax(move,2);
-            if(trance&&i%3==0)move=juce::jmax(move,1);
-            if(tropical&&i%4==3)move=juce::jmin(move,0);
-            if(contour==1&&i<4)move=juce::jmax(move,0);
-            if(contour==2&&i>=4)move=juce::jmin(move,0);
-            if(contour==3&&i%2==0)move=juce::jmax(move,1);
-            if(contour==4&&i%3==2)move=-juce::jmax(1,std::abs(move));
-            degree=juce::jlimit(0,7,degree+move);
-            motif[i]=degree;
-            if(i>=plan.motifLength)motif[i]=motif[i%plan.motifLength];
+            static constexpr double p2[4]={0.0,1.5,2.5,3.5};
+            for(int i=0;i<count;++i)positions[i]=p2[i];
+        }
+        else if(architecture==3)
+        {
+            static constexpr double p3[3]={0.5,2.0,3.25};
+            for(int i=0;i<count;++i)positions[i]=p3[i];
+        }
+        else if(architecture==4)
+        {
+            static constexpr double p4[4]={0.0,1.25,2.5,3.25};
+            for(int i=0;i<count;++i)positions[i]=p4[i];
+        }
+        else if(architecture==5)
+        {
+            static constexpr double p5[8]={0.0,.5,1.25,1.75,2.25,2.75,3.25,3.75};
+            count=juce::jmin(8,count);
+            for(int i=0;i<count;++i)positions[i]=p5[i];
+        }
+        else if(architecture==10)
+        {
+            static constexpr double p10[6]={.5,1.0,1.75,2.5,3.0,3.5};
+            count=juce::jmin(6,count);
+            for(int i=0;i<count;++i)positions[i]=p10[i];
         }
 
-        int steps=4;
-        if(build||chorus)steps=6;
-        if(drop||finalHook||energetic)steps=8;
-        if(breakdown)steps=3;
-        if(tech){steps=(drop||chorus||finalHook)?6:4;}
-        if(dnb){steps=(drop||chorus||finalHook)?12:8;}
-        if(cinematic){steps=breakdown?3:((drop||finalHook)?6:4);}
-        if(pop){steps=(drop||chorus||finalHook)?8:6;}
-        if(trance&&drop)steps=12;
-        if(finalHook&&!tech&&random01(phraseSeed,180)>.55f)steps=12;
-        if(plan.density>.78f&&!cinematic)steps=juce::jmin(12,steps+2);
-        else if(plan.density<.55f)steps=juce::jmax(3,steps-2);
-
-        const int rhythmMode=(static_cast<int>(random01(phraseSeed,181)*6.f)+(int)(plan.syncopation*5.f))%6;
-        const double baseStep=4.0/steps;
-        const double b=bar*beatsPerBar;
-        const int barInPhrase=localBar/juce::jmax(1,plan.phraseBars)==phraseBlock ? localBar%plan.phraseBars : 0;
-        const bool phraseEnd=barInPhrase==plan.phraseBars-1;
-
-        for(int i=0;i<steps;++i)
+        int lastDegree=startDegree;
+        int repeated=0;
+        for(int i=0;i<count;++i)
         {
-            const uint64_t salt=(uint64_t)bar*128ULL+(uint64_t)i;
-            const bool anchor=i==0||i==steps/2;
-            float restChance=verse?.24f:(breakdown?.42f:(drop||finalHook?.08f:.16f));
-            if(tech)restChance=drop?.22f:.34f;
-            else if(dnb)restChance=drop?.06f:.13f;
-            else if(cinematic)restChance=breakdown?.30f:.22f;
-            else if(pop)restChance=drop?.08f:.15f;
-            else if(progressive&&drop)restChance=.055f;
-            restChance=juce::jlimit(.02f,.58f,restChance+(plan.restAmount-.18f)*.72f-(plan.density-.65f)*.28f);
-            if(!anchor&&random01(phraseSeed,220+salt)<restChance)continue;
+            const uint64_t salt=(uint64_t)bar*256ULL+(uint64_t)i;
+            const bool strong=positions[i]<.08||std::abs(std::fmod(positions[i],1.0))<.08;
 
-            int motifIndex=(i+barInPhrase*2+rhythmMode)%juce::jmax(1,plan.motifLength);
-            int d=motif[motifIndex];
-            if(random01(phraseSeed,300+salt)>.70f)
-                d=juce::jlimit(0,7,d+(random01(phraseSeed,310+salt)>.5f?1:-1));
-            if(tech&&i>0&&random01(phraseSeed,315+salt)<.35f)d=motif[(motifIndex+7)%8];
-            if(pop&&i>=steps/2&&random01(phraseSeed,316+salt)<.34f)d=motif[i%juce::jmax(1,steps/2)];
+            float restChance=plan.restAmount;
+            if(drop||finalHook)restChance*=.34f;
+            if(verse)restChance*=1.18f;
+            if(breakdown)restChance=juce::jmax(restChance,.30f);
+            if(tech)restChance=juce::jmax(restChance,.24f);
+            if(architecture==3)restChance*=.55f; // already sparse by construction
+            if(!strong&&random01(phraseSeed,0x2100+salt)<restChance)continue;
 
-            if(build&&barInPhrase>=2&&i>steps/2)d=juce::jlimit(0,7,d+1);
-            if(finalHook&&barInPhrase==3&&i>=steps/2)d=juce::jlimit(0,7,d+1);
+            int degree=startDegree;
+            int octaveExtra=0;
 
-            int octave=(drop||chorus||finalHook)?24:12;
-            if(breakdown)octave=12;
-            if(tech)octave=12;
-            if(dnb&&drop)octave=24;
-            if(cinematic&&breakdown)octave=12;
-            if(finalHook&&random01(phraseSeed,320+salt)>.74f)octave+=12;
-            if(verse&&random01(phraseSeed,325+salt)<.15f)octave-=12;
+            switch(architecture)
+            {
+                case 0: // CALL / RESPONSE
+                {
+                    const int cell=i%4;
+                    const int call[]={0,2,4,3};
+                    degree=startDegree+call[cell];
+                    if(barInPhrase>=phraseBars/2)
+                    {
+                        const int answer[]={4,2,1,0};
+                        degree=startDegree+answer[cell];
+                        if(i==count-1)degree=chord.degreeIndex;
+                    }
+                    break;
+                }
+                case 1: // ARPEGGIATED HOOK
+                {
+                    static constexpr int chordDegrees[6]={0,2,4,2,4,1};
+                    degree=chord.degreeIndex+chordDegrees[(i+barInPhrase)%6];
+                    if(i%3==2&&random01(phraseSeed,0x2200+salt)>.52f)octaveExtra=12;
+                    break;
+                }
+                case 2: // OCTAVE ANTHEM
+                {
+                    const int cell=i%4;
+                    const int anthem[]={0,0,4,2};
+                    degree=startDegree+anthem[cell];
+                    octaveExtra=(cell==1||((barInPhrase+i)%4==3))?12:0;
+                    break;
+                }
+                case 3: // SPARSE SIGNATURE MOTIF
+                {
+                    const int sparse[]={0,3,1};
+                    degree=startDegree+sparse[i%3];
+                    if(barInPhrase%2==1&&i==1)degree+=2;
+                    break;
+                }
+                case 4: // LONG LYRIC LINE
+                {
+                    const int direction=((phraseSeed>>8)&1ULL)?1:-1;
+                    degree=startDegree+direction*(barInPhrase*2+i);
+                    if(i==count-1&&barInPhrase==phraseBars-1)degree=chord.degreeIndex;
+                    break;
+                }
+                case 5: // SYNCOPATED RIFF
+                {
+                    static constexpr int riff[8]={0,0,3,1,4,2,1,5};
+                    degree=startDegree+riff[(i+barInPhrase)%8];
+                    break;
+                }
+                case 6: // PEDAL TONE + MOVING ANSWER
+                {
+                    if(i%2==0)degree=startDegree;
+                    else degree=startDegree+1+((barInPhrase+i*2)%5);
+                    break;
+                }
+                case 7: // SEQUENCED CELL
+                {
+                    static constexpr int cell[3]={0,2,1};
+                    const int transposition=(barInPhrase%4==0?0:(barInPhrase%4==1?2:(barInPhrase%4==2?4:1)));
+                    degree=startDegree+cell[i%3]+transposition;
+                    break;
+                }
+                case 8: // FALLING HOOK
+                {
+                    degree=startDegree+6-((i+barInPhrase*2)%7);
+                    if(i==count-1)degree=chord.degreeIndex;
+                    break;
+                }
+                case 9: // RISING LIFT + RESOLUTION
+                {
+                    const int span=i+barInPhrase*2;
+                    degree=startDegree+(span%7);
+                    if(barInPhrase==phraseBars-1&&i>=count-2)degree=chord.degreeIndex;
+                    break;
+                }
+                case 10: // OFFBEAT HOOK
+                {
+                    static constexpr int off[6]={0,2,0,4,1,3};
+                    degree=startDegree+off[i%6];
+                    break;
+                }
+                default: // WIDE LEAP / RESOLVE
+                {
+                    static constexpr int leap[8]={0,4,1,5,2,0,4,1};
+                    degree=startDegree+leap[(i+barInPhrase)%8];
+                    if(i>0&&i%2==0)degree=lastDegree+(degree>lastDegree?-1:1);
+                    break;
+                }
+            }
 
-            double pos=i*baseStep;
-            if(rhythmMode==1&&i%2==1)pos+=baseStep*.22;
-            else if(rhythmMode==2&&i%3==2)pos-=baseStep*.18;
-            else if(rhythmMode==3&&i>0&&i%4==0)pos+=baseStep*.35;
-            else if(rhythmMode==4&&i%2==0)pos+=baseStep*.10;
-            if(!anchor&&random01(phraseSeed,350+salt)<plan.syncopation)
-                pos+=(random01(phraseSeed,351+salt)>.5f?1.0:-1.0)*baseStep*(.08+.18*plan.syncopation);
-            pos=juce::jlimit(0.0,3.92,pos);
+            // Strong beats gravitate toward the current harmony so radical variation
+            // remains musical rather than random.
+            if(strong&&random01(phraseSeed,0x2300+salt)<.58f)
+            {
+                const int toneChoice=(int)(random01(phraseSeed,0x2310+salt)*3.f)%3;
+                if(toneChoice==0)degree=chord.degreeIndex;
+                else if(toneChoice==1)degree=chord.degreeIndex+2;
+                else degree=chord.degreeIndex+4;
+            }
 
-            double length=juce::jlimit(.11,1.15,
-                baseStep*(.38+.82*random01(phraseSeed,400+salt)));
-            if(tech)length=juce::jmin(length,.28);
-            else if(dnb)length=juce::jmin(length,.24);
-            else if(cinematic)length=juce::jlimit(.28,1.55,length*1.65);
-            else if(pop)length=juce::jlimit(.16,.72,length);
-            const int velocity=juce::jlimit(50,127,
-                62+(int)(energy*38.f)+(anchor?6:0)+(int)(random01(phraseSeed,420+salt)*18.f)-9);
+            // Phrase cadence is intentionally explicit.
+            const bool phraseEnding=(barInPhrase==phraseBars-1&&i==count-1);
+            if(phraseEnding)
+            {
+                if(plan.cadenceStyle==0)degree=chord.degreeIndex;
+                else if(plan.cadenceStyle==1)degree=0;
+                else if(plan.cadenceStyle==2)degree=2;
+                else degree=4;
+                octaveExtra=0;
+            }
 
-            addNote(lead,rootMidi+octave+scale[d],b+pos,length,velocity);
+            while(degree<0)degree+=7;
+            while(degree>=14)degree-=7;
+
+            if(degree==lastDegree)++repeated;else repeated=0;
+            if(repeated>=2){degree=(degree+2)%7;repeated=0;}
+
+            int registerNow=registerBase+octaveExtra;
+            if(cinematic&&breakdown)registerNow=12;
+            if(finalHook&&plan.octaveRange>=2&&random01(phraseSeed,0x2400+salt)>.74f)registerNow+=12;
+            if(verse&&random01(phraseSeed,0x2410+salt)<.16f)registerNow-=12;
+
+            double pos=positions[i];
+            if(!strong&&plan.syncopation>.45f&&random01(phraseSeed,0x2500+salt)<plan.syncopation*.42f)
+                pos+=random01(phraseSeed,0x2510+salt)>.5f?.125:-.125;
+            pos=juce::jlimit(0.0,3.90,pos);
+
+            double length=.34;
+            if(architecture==4)length=.68+random01(phraseSeed,0x2600+salt)*.68;
+            else if(architecture==3)length=.30+random01(phraseSeed,0x2610+salt)*.42;
+            else if(architecture==2)length=.24+random01(phraseSeed,0x2620+salt)*.30;
+            else if(tech||dnb||architecture==5||architecture==10)length=.12+random01(phraseSeed,0x2630+salt)*.16;
+            else length=.20+random01(phraseSeed,0x2640+salt)*.42;
+
+            const int velocity=juce::jlimit(52,124,
+                60+(int)(energy*38.f)+(strong?7:0)+(int)(random01(phraseSeed,0x2700+salt)*14.f)-7);
+
+            addNote(lead,scaleNote(degree,registerNow),bar*beatsPerBar+pos,length,velocity);
+            lastDegree=degree;
         }
 
-        if((phraseEnd||finalHook)&&random01(phraseSeed,500+bar)>.22f)
+        // Build sections climb toward the next section with a musically clear pickup.
+        if(build&&barInPhrase>=phraseBars/2)
         {
-            const int d=motif[(5+rhythmMode+barInPhrase)%8];
-            addNote(lead,rootMidi+(finalHook?36:(drop||chorus?24:12))+scale[d],
-                    b+3.5,.22+random01(phraseSeed,510+bar)*.22,
-                    finalHook?118:96+(int)(energy*18.f));
+            const int pickupDegree=juce::jlimit(0,13,startDegree+barInPhrase+2);
+            addNote(lead,scaleNote(pickupDegree,registerBase),
+                    bar*beatsPerBar+3.5,.16,juce::jlimit(72,122,80+(int)(energy*34.f)));
         }
 
-        if((drop||chorus||finalHook)&&!tech&&random01(phraseSeed,600+bar)>.28f)
+        // Counter melody is generated from an independent rhythm/contour family and
+        // deliberately occupies the second half of the bar so it answers the lead.
+        if((drop||chorus||finalHook)&&!tech)
         {
-            const uint64_t counterSeed=mix64(phraseSeed^0x434f554e544552ULL);
-            int counterDegree=static_cast<int>(random01(counterSeed,10)*7.f);
-            const int counterCount=finalHook?5:4;
+            const uint64_t cs=mix64(phraseSeed^0x434f554e544552ULL);
+            const int counterCount=finalHook?4:3;
+            int cd=(startDegree+3+(int)(random01(cs,1)*4.f))%7;
             for(int i=0;i<counterCount;++i)
             {
-                if(i>0&&random01(counterSeed,30+bar*8+i)<.18f)continue;
-                int move=moves[juce::jlimit(0,8,(int)(random01(counterSeed,50+i+bar)*9.f))];
-                counterDegree=juce::jlimit(0,7,counterDegree+move);
+                if(i>0&&random01(cs,20+bar*8+i)<.18f)continue;
                 const double pos=1.75+i*(2.0/counterCount)
-                    +(i%2?(.08*(random01(counterSeed,70+i+bar)-.5)):0.0);
-                const int octave=finalHook?24:12;
-                addNote(counter,rootMidi+octave+scale[counterDegree],
-                        b+juce::jlimit(0.0,3.85,pos),
-                        .14+.24*random01(counterSeed,90+i+bar),
-                        juce::jlimit(46,104,56+(int)(energy*28.f)+(int)(random01(counterSeed,110+i+bar)*10.f)));
+                    +(i%2?.08*(random01(cs,40+i+bar)-.5):0.0);
+                const int move=((int)(random01(cs,60+i+bar)*5.f)-2);
+                cd=juce::jlimit(0,6,cd+move);
+                const int reg=finalHook?24:12;
+                addNote(counter,scaleNote(cd,reg),bar*beatsPerBar+juce::jlimit(0.0,3.85,pos),
+                        .14+.20*random01(cs,90+i+bar),
+                        juce::jlimit(48,100,56+(int)(energy*25.f)+(int)(random01(cs,110+i+bar)*10.f)));
             }
         }
     }
@@ -764,6 +954,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
     lanes.push_back(std::move(lead));
     lanes.push_back(std::move(counter));
 }
+
 
 void SongArrangement::addFx(uint64_t seed)
 {
