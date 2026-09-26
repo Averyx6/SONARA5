@@ -36,6 +36,8 @@ public:
     void regenerateDrums(const juce::String& prompt);
     void startSongPreview();
     void startSongPreviewAtBar(int bar);
+    void pauseSongPreview();
+    void resumeSongPreview();
     void stopSongPreview();
     bool isSongPlaying() const noexcept { return songPlaying.load(); }
     double songPosition01() const noexcept;
