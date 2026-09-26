@@ -59,6 +59,9 @@ private:
         int chordMode=0;
         int arpMode=0;
         int melodyArchetype=0;
+        int rhythmFamily=0;
+        int startingDegree=0;
+        int cadenceStyle=0;
         int motifLength=8;
         int phraseBars=4;
         int octaveRange=2;
