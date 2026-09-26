@@ -754,183 +754,224 @@ void SongArrangement::addHarmony(uint64_t seed)
 {
     ArrangementLane bass{"BASS",2,false}, sub{"SUB",3,false}, chords{"CHORDS",4,false}, pluck{"PLUCK",5,false}, pad{"PAD",6,false};
 
-    static constexpr int minorProgressions[8][4] = {
-        {0,8,3,10}, {0,10,8,10}, {0,3,10,8}, {0,5,8,7},
-        {0,8,5,10}, {0,7,8,5}, {0,10,5,8}, {0,3,5,10}
-    };
-    static constexpr int majorProgressions[8][4] = {
-        {0,7,9,5}, {0,9,5,7}, {0,5,9,7}, {9,5,0,7},
-        {0,4,5,7}, {0,9,7,5}, {0,5,7,9}, {0,7,5,4}
-    };
-    const int progressionIndex=plan.progressionIndex;
-    const int alternateIndex=plan.alternateProgressionIndex;
-    const int third=minor?3:4;
     const int bassMode=plan.bassMode;
     const int chordMode=plan.chordMode;
     const int arpMode=plan.arpMode;
-    static constexpr int arpPatterns[6][8] = {
-        {0,1,2,1,0,1,2,1},
-        {0,2,1,2,0,2,1,2},
-        {0,1,2,0,2,1,0,2},
-        {2,1,0,1,2,1,0,1},
-        {0,2,0,1,2,0,2,1},
-        {1,0,2,1,0,2,1,2}
+
+    static constexpr int arpPatterns[6][8]={
+        {0,1,2,1,3,1,2,1},
+        {0,2,1,3,0,2,1,2},
+        {0,1,3,0,2,1,0,3},
+        {2,1,0,1,3,1,0,1},
+        {0,3,0,1,2,0,3,1},
+        {1,0,2,1,3,2,1,0}
     };
 
-    for(int bar=0;bar<bars;++bar)
+    auto sectionAtBeat=[&](double beat)->std::pair<const ArrangementSection*,int>
     {
-        const ArrangementSection* section=nullptr;
-        int sectionIndex=0;
-        for(size_t si=0;si<sections.size();++si)
-            if(sectionContains(sections[si],bar)){section=&sections[si];sectionIndex=(int)si;break;}
+        const int bar=juce::jlimit(0,bars-1,(int)std::floor(beat/beatsPerBar));
+        for(size_t i=0;i<sections.size();++i)
+            if(sectionContains(sections[i],bar))return {&sections[i],(int)i};
+        return {nullptr,0};
+    };
 
-        const float energy=section?section->energy:.4f;
-        const juce::String sectionName=section?section->name:juce::String();
-        const bool drop=sectionName.contains("DROP")||sectionName.contains("HOOK");
-        const bool chorus=sectionName.contains("CHORUS");
-        const bool breakdown=sectionName.contains("BREAKDOWN");
-        const bool verse=sectionName.contains("VERSE");
+    auto foldBass=[&](int note)
+    {
+        while(note<32)note+=12;
+        while(note>52)note-=12;
+        return note;
+    };
+
+    // CHORDS and PAD interpret the same Harmony DNA differently.
+    for(size_t hi=0;hi<harmonyEvents.size();++hi)
+    {
+        const auto& event=harmonyEvents[hi];
+        const auto [section,sectionIndex]=sectionAtBeat(event.beat);
+        if(section==nullptr)continue;
+
+        const auto sectionName=section->name;
         const bool intro=sectionName.contains("INTRO");
+        const bool verse=sectionName.contains("VERSE");
+        const bool build=sectionName.contains("BUILD");
+        const bool drop=sectionName.contains("DROP")||sectionName.contains("HOOK");
+        const bool breakdown=sectionName.contains("BREAKDOWN");
+        const bool chorus=sectionName.contains("CHORUS");
         const bool finalHook=sectionName.contains("FINAL");
-        const int localBar=section?bar-section->startBar:bar;
-        const bool useAlt=chorus||finalHook||(sectionIndex%3==2&&random01(seed,210+sectionIndex)>.55f);
-        const int* progression=minor
-            ? minorProgressions[useAlt?alternateIndex:progressionIndex]
-            : majorProgressions[useAlt?alternateIndex:progressionIndex];
+        const float energy=section->energy;
 
-        const int degree=progression[(localBar + (sectionIndex%2))%4];
-        const int root=rootMidi+degree;
-        const double b=bar*beatsPerBar;
-        const uint64_t bs=(uint64_t)bar*131ULL;
+        auto tones=chordTonesFor(event);
+        for(auto& n:tones)n+=12;
 
-        if(!intro || localBar>=juce::jmax(1,section?section->bars/2:2))
-        {
-            const float bassChance=breakdown?.46f:1.f;
-            if(random01(seed,2900+bs)<bassChance)
-            {
-                if(bassMode==0)
-                {
-                    for(int q=0;q<4;++q)
-                        if(drop||chorus||q%2==0)
-                        {
-                            int n=root-12;
-                            if((drop||finalHook) && q==3 && random01(seed,3000+bs+q)>.45f) n+=(finalHook?12:7);
-                            addNote(bass,n,b+q,(drop||chorus)?.62:1.35,
-                                    juce::jlimit(66,120,84+(int)(energy*22.f)+(int)(random01(seed,3010+bs+q)*10.f)));
-                        }
-                }
-                else if(bassMode==1)
-                {
-                    static constexpr double pos[6]={0.0,.75,1.5,2.0,2.75,3.5};
-                    for(int i=0;i<((drop||chorus)?6:4);++i)
-                    {
-                        int n=root-12;
-                        if(i==2||i==5)n+=7;
-                        addNote(bass,n,b+pos[i],.38,78+(int)(energy*24.f)+(i%2)*4);
-                    }
-                }
-                else if(bassMode==2)
-                {
-                    static constexpr double pos[5]={0.0,1.0,1.75,2.5,3.25};
-                    for(int i=0;i<((drop||finalHook)?5:3);++i)
-                        addNote(bass,root-12+(i==4?12:0),b+pos[i],.44,
-                                82+(int)(energy*22.f)+(int)(random01(seed,3020+bs+i)*8.f));
-                }
-                else if(bassMode==3)
-                {
-                    static constexpr double pos[7]={0.0,.5,1.25,2.0,2.5,3.0,3.75};
-                    const int count=(drop||chorus)?7:4;
-                    for(int i=0;i<count;++i)
-                    {
-                        const int movement=(i==2?7:(i==5?12:0));
-                        addNote(bass,root-12+movement,b+pos[i],.30,
-                                76+(int)(energy*27.f)+(int)(random01(seed,3030+bs+i)*7.f));
-                    }
-                }
-                else
-                {
-                    addNote(bass,root-12,b,.76,98);
-                    if(!breakdown)addNote(bass,root-12,b+1.5,.36,86);
-                    addNote(bass,root-5,b+2.0,.64,(drop||chorus)?108:91);
-                    if(drop||finalHook)addNote(bass,root,b+3.25,.34,98);
-                }
-            }
-        }
+        int repeats=1;
+        if(drop||chorus||finalHook)
+            repeats=(chordMode==0?1:(chordMode==1?2:(chordMode==2?4:2)));
+        else if(build)
+            repeats=chordMode>=3?2:1;
 
-        // Dedicated SUB is intentionally simpler than BASS: clean mono fundamentals,
-        // no upper movement, and section-aware note lengths to avoid low-end overlap.
-        if(!intro || localBar>=juce::jmax(1,section?section->bars/2:2))
-        {
-            if(breakdown)
-            {
-                if(localBar%2==0)
-                    addNote(sub,juce::jlimit(24,48,root-24),b,3.35,58+(int)(energy*18.f));
-            }
-            else if(drop||chorus||finalHook)
-            {
-                const int subSteps=(bassMode==1||bassMode==3)?4:2;
-                const double subStep=4.0/subSteps;
-                for(int s=0;s<subSteps;++s)
-                {
-                    if(s>0&&random01(seed,3040+bs+s)<.08f)continue;
-                    addNote(sub,juce::jlimit(24,48,root-24),b+s*subStep,
-                            juce::jmin(1.55,subStep*.78),68+(int)(energy*20.f));
-                }
-            }
-            else
-            {
-                addNote(sub,juce::jlimit(24,48,root-24),b,1.72,62+(int)(energy*16.f));
-                if(verse&&random01(seed,3048+bs)>.46f)
-                    addNote(sub,juce::jlimit(24,48,root-24),b+2.0,1.55,58+(int)(energy*14.f));
-            }
-        }
-
-        const int repeats=breakdown?1:((drop||chorus||finalHook)?(chordMode==2?2:4):(verse&&chordMode==4?2:1));
-        const double unit=4.0/repeats;
-        const double chordLen=breakdown?3.55:((drop||chorus)?(chordMode==0?.70:juce::jmin(.72,unit*.68)):juce::jmin(3.45,unit*.86));
+        const double unit=event.length/(double)repeats;
         for(int r=0;r<repeats;++r)
         {
-            if(verse&&r>0&&random01(seed,3050+bs+r)<.28f)continue;
-            const double cb=b+r*unit+(((drop||chorus)&&chordMode==3&&r%2)?0.11:0.0);
-            int notes[3]={root+12,root+12+third,root+19};
-            const int inversion=(localBar+r+progressionIndex+chordMode+sectionIndex)%3;
-            if(inversion>=1)notes[0]+=12;
-            if(inversion>=2)notes[1]+=12;
-            std::sort(notes,notes+3);
-            const int baseVel=62+(int)(energy*25.f)+(int)(random01(seed,3100+bs+r)*9.f);
-            addNote(chords,notes[0],cb,chordLen,juce::jlimit(48,112,baseVel));
-            addNote(chords,notes[1],cb,chordLen,juce::jlimit(46,110,baseVel-3));
-            addNote(chords,notes[2],cb,chordLen,juce::jlimit(44,108,baseVel-5));
-            if(finalHook && (r%2==0||chordMode==1))
-                addNote(chords,notes[2]+12,cb,chordLen*.78,juce::jlimit(42,102,baseVel-12));
+            const uint64_t rs=(uint64_t)hi*97ULL+(uint64_t)r;
+            if(verse&&r>0&&random01(domains.voicing,0x5100+rs)<.26f)continue;
+
+            double startBeat=event.beat+r*unit;
+            if((drop||chorus)&&chordMode==3&&r%2)startBeat+=.10;
+            const double len=juce::jmin(unit*.88,drop||chorus?1.20:event.length*.92);
+            const int baseVel=juce::jlimit(45,116,58+(int)(energy*28.f)+(int)(random01(domains.voicing,0x5200+rs)*10.f));
+
+            addNote(chords,tones[0],startBeat,len,baseVel);
+            addNote(chords,tones[1],startBeat,len,juce::jmax(42,baseVel-3));
+            addNote(chords,tones[2],startBeat,len,juce::jmax(40,baseVel-5));
+
+            if(event.extension>0&&random01(domains.voicing,0x5300+rs)<(.52f+harmonyPlan.extensionProbability))
+                addNote(chords,tones[3],startBeat,juce::jmin(len*.92,1.6),juce::jmax(38,baseVel-9));
+
+            if(finalHook&&r%2==0&&random01(domains.voicing,0x5400+rs)<.58f)
+                addNote(chords,tones[2]+12,startBeat,juce::jmin(len*.78,1.1),juce::jmax(36,baseVel-13));
         }
 
-        if(intro||breakdown||verse||chorus)
+        // PAD is not a copy of CHORDS: it uses upper voices, often omits the root,
+        // holds through changes, and can emphasize extensions/suspensions.
+        if(intro||verse||breakdown||chorus)
         {
-            if(random01(seed,3190+bar)>.18f)
+            const float padChance=breakdown?.94f:(intro?.82f:.68f);
+            if(random01(domains.pad,0x6100+hi)<padChance)
             {
-                const int padOct=(static_cast<int>(random01(seed,3200+bar/4)*2.f))*12;
-                const double start=b+(random01(seed,3210+bar)>.78f?.25:0.0);
-                const double len=3.20+random01(seed,3220+bar)*.58;
-                addNote(pad,root+12+padOct,start,len,47+(int)(random01(seed,3230+bar)*10.f));
-                addNote(pad,root+12+third+padOct,start,len,44+(int)(random01(seed,3240+bar)*9.f));
-                addNote(pad,root+19+padOct,start,len,42+(int)(random01(seed,3250+bar)*9.f));
+                const double padStart=event.beat+(random01(domains.pad,0x6110+hi)<.22f?.25:0.0);
+                const double padLen=juce::jmin(event.length*1.18,8.0);
+                const int octave=random01(domains.pad,0x6120+hi)>.64f?12:0;
+
+                addNote(pad,tones[1]+octave,padStart,padLen,42+(int)(random01(domains.pad,0x6130+hi)*10.f));
+                addNote(pad,tones[2]+octave,padStart,padLen,40+(int)(random01(domains.pad,0x6140+hi)*9.f));
+
+                if(event.extension>0||random01(domains.pad,0x6150+hi)<harmonyPlan.extensionProbability)
+                    addNote(pad,tones[3]+octave,padStart,padLen*.94,37+(int)(random01(domains.pad,0x6160+hi)*9.f));
+
+                if(random01(domains.pad,0x6170+hi)<.34f)
+                    addNote(pad,tones[0]+12+octave,padStart,padLen*.82,36+(int)(random01(domains.pad,0x6180+hi)*8.f));
+            }
+        }
+    }
+
+    // BASS gets an independent groove. Harmony supplies legal roots/tension only;
+    // the exact chord MIDI is never copied.
+    for(int bar=0;bar<bars;++bar)
+    {
+        const double barBeat=bar*beatsPerBar;
+        const auto [section,sectionIndex]=sectionAtBeat(barBeat);
+        if(section==nullptr)continue;
+
+        const auto name=section->name;
+        const bool intro=name.contains("INTRO");
+        const bool verse=name.contains("VERSE");
+        const bool build=name.contains("BUILD");
+        const bool drop=name.contains("DROP")||name.contains("HOOK");
+        const bool breakdown=name.contains("BREAKDOWN");
+        const bool chorus=name.contains("CHORUS");
+        const bool finalHook=name.contains("FINAL");
+        const int localBar=bar-section->startBar;
+        const float energy=section->energy;
+        const uint64_t bs=(uint64_t)bar*173ULL;
+
+        if(!intro||localBar>=juce::jmax(1,section->bars/2))
+        {
+            static constexpr double pos0[4]={0.0,1.0,2.0,3.0};
+            static constexpr double pos1[6]={0.0,.75,1.5,2.0,2.75,3.5};
+            static constexpr double pos2[5]={0.0,1.0,1.75,2.5,3.25};
+            static constexpr double pos3[7]={0.0,.5,1.25,2.0,2.5,3.0,3.75};
+            static constexpr double pos4[5]={0.0,1.5,2.0,2.75,3.5};
+
+            const double* positions=pos0;
+            int count=drop||chorus?4:2;
+            if(bassMode==1){positions=pos1;count=(drop||chorus)?6:4;}
+            else if(bassMode==2){positions=pos2;count=(drop||finalHook)?5:3;}
+            else if(bassMode==3){positions=pos3;count=(drop||chorus)?7:4;}
+            else if(bassMode==4){positions=pos4;count=(drop||chorus)?5:3;}
+
+            if(breakdown)count=juce::jmin(count,2);
+
+            for(int i=0;i<count;++i)
+            {
+                const double pos=positions[i];
+                if(i>0&&random01(domains.bass,0x7100+bs+i)<(verse?.20f:.08f))continue;
+                const auto* h=harmonyAtBeat(barBeat+pos);
+                if(h==nullptr)continue;
+
+                int degree=h->scaleDegree;
+                int note=rootMidi+scaleSemitoneForDegree(degree)-12;
+
+                const float move=random01(domains.bass,0x7200+bs+i);
+                if(i>0&&move<harmonyPlan.passingProbability)
+                {
+                    // diatonic approach/passing note rather than a copied chord root
+                    const int dir=random01(domains.bass,0x7210+bs+i)>.5f?1:-1;
+                    note=rootMidi+scaleSemitoneForDegree(degree+dir)-12;
+                }
+                else if(move<.34f&&i%3==2)note+=7;
+                else if(move>.84f&&(drop||finalHook))note+=12;
+
+                note=foldBass(note);
+                const double len=bassMode==3?.28:(drop||chorus?.48:.72);
+                addNote(bass,note,barBeat+pos,len,
+                        juce::jlimit(62,120,76+(int)(energy*28.f)+(int)(random01(domains.bass,0x7300+bs+i)*12.f)));
             }
         }
 
+        // SUB owns its own rhythm domain and only follows harmonic fundamentals.
+        if(!intro||localBar>=juce::jmax(1,section->bars/2))
+        {
+            int subCount=1;
+            double positions[4]={0.0,2.0,3.0,1.0};
+            if(drop||chorus||finalHook)
+                subCount=random01(domains.sub,0x7400+bs)>.52f?2:3;
+            else if(verse&&random01(domains.sub,0x7410+bs)>.62f)
+                subCount=2;
+            if(breakdown)subCount=(localBar%2==0)?1:0;
+
+            for(int i=0;i<subCount;++i)
+            {
+                const double pos=positions[i];
+                const auto* h=harmonyAtBeat(barBeat+pos);
+                if(h==nullptr)continue;
+                int note=rootMidi+scaleSemitoneForDegree(h->scaleDegree)-24;
+                while(note<24)note+=12;
+                while(note>47)note-=12;
+                const double len=subCount==1?juce::jmin(3.30,4.0-pos):juce::jmin(1.45,4.0-pos);
+                addNote(sub,note,barBeat+pos,len,
+                        juce::jlimit(52,96,60+(int)(energy*22.f)+(int)(random01(domains.sub,0x7420+bs+i)*8.f)));
+            }
+        }
+
+        // PLUCK owns its rhythm; at each onset it asks Harmony DNA for the local
+        // chord, then mixes chord tones with scale passing tones.
         if((energy>.5f||chorus)&&!breakdown)
         {
-            const int chordTones[3]={0,third,7};
-            const int steps=(drop||finalHook)?8:(chorus?6:4);
-            for(int e=0;e<steps;++e)
+            const int steps=(drop||finalHook)?8:(chorus?6:(build?6:4));
+            for(int i=0;i<steps;++i)
             {
-                if(e>0&&random01(seed,3300+bs+e)<((drop||finalHook)?.07f:.20f))continue;
-                const int toneIndex=arpPatterns[arpMode][(e+localBar+sectionIndex)%8];
-                int note=root+24+chordTones[toneIndex];
-                if(finalHook&&e%4==3&&random01(seed,3310+bs+e)>.42f)note+=12;
-                const double pos=b+e*(4.0/steps)+((e%2)?(random01(seed,3320+bs+e)-.5)*.035:0.0);
-                addNote(pluck,note,pos,.13+random01(seed,3330+bs+e)*.19,
-                        56+(int)(energy*22.f)+(int)(random01(seed,3340+bs+e)*13.f));
+                const uint64_t ps=bs+(uint64_t)i;
+                if(i>0&&random01(domains.pluck,0x8100+ps)<(drop?.08f:.20f))continue;
+
+                double pos=i*(4.0/steps);
+                if(i%2&&random01(domains.pluck,0x8110+ps)<.45f)
+                    pos+=((random01(domains.pluck,0x8120+ps)-.5f)*.08f);
+
+                const auto* h=harmonyAtBeat(barBeat+pos);
+                if(h==nullptr)continue;
+                const auto tones=chordTonesFor(*h);
+                const int patternIndex=arpPatterns[arpMode][(i+bar+sectionIndex)%8];
+
+                int note=tones[(size_t)(patternIndex%4)]+24;
+                if(random01(domains.pluck,0x8130+ps)<harmonyPlan.passingProbability)
+                {
+                    const int dir=random01(domains.pluck,0x8140+ps)>.5f?1:-1;
+                    note=rootMidi+scaleSemitoneForDegree(h->scaleDegree+dir)+24;
+                }
+                if(finalHook&&i%4==3&&random01(domains.pluck,0x8150+ps)>.50f)note+=12;
+
+                addNote(pluck,note,barBeat+juce::jlimit(0.0,3.90,pos),
+                        .11+random01(domains.pluck,0x8160+ps)*.22,
+                        juce::jlimit(48,108,54+(int)(energy*24.f)+(int)(random01(domains.pluck,0x8170+ps)*14.f)));
             }
         }
     }
