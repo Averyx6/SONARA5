@@ -101,8 +101,8 @@ void DrumSynth::render(juce::AudioBuffer<float>& b,const DrumTrigger* triggers,i
         if(snareEnv>0.00005f)
         {
             const float x=noise();
-            const float hp=x-.58f*hatHpIn;
-            hatHpIn=x;
+            const float hp=x-.58f*snareHpIn;
+            snareHpIn=x;
             snarePhase+=snareInc;
             if(snarePhase>juce::MathConstants<double>::twoPi)snarePhase-=juce::MathConstants<double>::twoPi;
             const float tone=(float)std::sin(snarePhase)*snareTone*snareEnv;
@@ -131,10 +131,11 @@ void DrumSynth::render(juce::AudioBuffer<float>& b,const DrumTrigger* triggers,i
 
         if(percEnv>0.00005f)
         {
-            const float t=1.f-percEnv;
-            const float tone=(float)std::sin(t*juce::MathConstants<float>::twoPi*percToneHz*.010f);
-            const float click=noise()*.22f;
-            out+=(tone*.78f+click)*percEnv*percVelocity*percGain;
+            percPhase+=juce::MathConstants<double>::twoPi*percToneHz/sr;
+            if(percPhase>juce::MathConstants<double>::twoPi)percPhase-=juce::MathConstants<double>::twoPi;
+            const float tone=(float)std::sin(percPhase);
+            const float click=noise()*.18f;
+            out+=(tone*.82f+click)*percEnv*percVelocity*percGain;
             percEnv*=percDecay;
         }
 
