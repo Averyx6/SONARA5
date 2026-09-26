@@ -132,6 +132,16 @@ int main()
         }
 
         p.startSongPreviewAtBar(dropBar);
+        {
+            float pausePeak=0.f;double pauseEnergy=0.0;
+            if(renderSeconds(p,sr,.12,blockSize,pausePeak,pauseEnergy)<0.0)return fail("pre-pause render failed");
+            const auto pausedAt=p.songPosition01();
+            p.pauseSongPreview();
+            if(p.isSongPlaying()||p.songPosition01()+1.0e-6<pausedAt)return fail("pause did not preserve position");
+            p.resumeSongPreview();
+            if(!p.isSongPlaying())return fail("resume did not restart preview");
+        }
+
         float peak=0.f;double energy=0.0;
         const double elapsed=renderSeconds(p,sr,30.0,blockSize,peak,energy);
         if(elapsed<0.0||energy<=1.0e-6)return fail("30-second preview unsafe or silent");
