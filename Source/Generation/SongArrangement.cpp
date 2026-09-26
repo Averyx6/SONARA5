@@ -57,10 +57,345 @@ float SongArrangement::random01(uint64_t seed, uint64_t salt) noexcept
     return static_cast<float>(mix64(seed ^ salt) & 0x00ffffffULL) / 16777215.0f;
 }
 
+void SongArrangement::buildSeedDomains(uint64_t master)
+{
+    masterSeed=master;
+    domains.structure   = mix64(master ^ 0x5354525543545552ULL); // STRUCTUR
+    domains.harmony     = mix64(master ^ 0x4841524d4f4e5955ULL); // HARMONYU
+    domains.voicing     = mix64(master ^ 0x564f4943494e4755ULL); // VOICINGU
+    domains.drums       = mix64(master ^ 0x4452554d535f5345ULL); // DRUMS_SE
+    domains.bass        = mix64(master ^ 0x424153535f534545ULL); // BASS_SEE
+    domains.sub         = mix64(master ^ 0x5355425f53454544ULL); // SUB_SEED
+    domains.pluck       = mix64(master ^ 0x504c55434b534545ULL); // PLUCKSEE
+    domains.pad         = mix64(master ^ 0x5041445f53454544ULL); // PAD_SEED
+    domains.melody      = mix64(master ^ 0x4d454c4f44595345ULL); // MELODYSE
+    domains.counter     = mix64(master ^ 0x434f554e54455253ULL); // COUNTERS
+    domains.fx          = mix64(master ^ 0x46585f5345454455ULL); // FX_SEEDU
+    domains.soundPalette= mix64(master ^ 0x534f554e4450414cULL); // SOUNDPAL
+}
+
+int SongArrangement::scaleSemitoneForDegree(int degree) const noexcept
+{
+    static constexpr int minorScale[7]={0,2,3,5,7,8,10};
+    static constexpr int majorScale[7]={0,2,4,5,7,9,11};
+    const int* scale=minor?minorScale:majorScale;
+    int octave=0;
+    while(degree<0){degree+=7;--octave;}
+    while(degree>=7){degree-=7;++octave;}
+    return scale[degree]+12*octave;
+}
+
+std::array<int,4> SongArrangement::chordTonesFor(const HarmonyEvent& event) const noexcept
+{
+    const int d=juce::jlimit(0,6,event.scaleDegree);
+    const int root=rootMidi+scaleSemitoneForDegree(d);
+    int third=root+(scaleSemitoneForDegree(d+2)-scaleSemitoneForDegree(d));
+    const int fifth=root+(scaleSemitoneForDegree(d+4)-scaleSemitoneForDegree(d));
+
+    // A borrowed dominant in minor raises the third, providing real dominant tension.
+    if(event.borrowed&&minor&&d==4)third=root+4;
+
+    int fourth=root+(scaleSemitoneForDegree(d+6)-scaleSemitoneForDegree(d)); // diatonic seventh
+    if(event.extension==2)fourth=root+14;      // add9
+    else if(event.extension==3)third=root+2;   // sus2
+    else if(event.extension==4)third=root+5;   // sus4
+
+    std::array<int,4> notes{root,third,fifth,fourth};
+
+    int inversion=juce::jlimit(0,2,event.inversion);
+    for(int i=0;i<inversion;++i)notes[(size_t)i]+=12;
+    std::sort(notes.begin(),notes.end());
+
+    // Voicing style changes spacing without changing harmonic identity.
+    switch(event.voicingStyle%6)
+    {
+        case 1: notes[2]+=12; break;                    // open fifth
+        case 2: notes[1]+=12; std::sort(notes.begin(),notes.end()); break;
+        case 3: notes[0]-=12; break;                    // wider root
+        case 4: notes[3]+=12; break;                    // high extension
+        case 5: notes[0]-=12; notes[2]+=12; break;      // wide/drop-style
+        default: break;
+    }
+    return notes;
+}
+
+void SongArrangement::buildHarmonyPlan(uint64_t seed)
+{
+    harmonyPlan=HarmonyPlan{};
+    const auto p=sourcePrompt.toLowerCase();
+    const bool tech=p.contains("tech house")||p.contains("minimal house");
+    const bool cinematic=p.contains("cinematic")||p.contains("film");
+    const bool pop=p.contains("pop")||p.contains("radio");
+    const bool progressive=p.contains("progressive")||p.contains("melodic house");
+    const bool dreamy=p.contains("dreamy");
+    const bool aggressive=p.contains("aggressive")||p.contains("powerful")||p.contains("hard");
+    const bool uplifting=p.contains("uplifting")||p.contains("bright");
+
+    // Progression length is a musical decision, not a fixed four-chord template.
+    if(tech)
+        harmonyPlan.progressionLength=random01(seed,0x3101)>.72f?3:2;
+    else if(cinematic)
+        harmonyPlan.progressionLength=random01(seed,0x3102)>.42f?8:6;
+    else if(progressive)
+    {
+        const float r=random01(seed,0x3103);
+        harmonyPlan.progressionLength=r<.18f?3:(r<.60f?4:(r<.83f?6:8));
+    }
+    else if(pop)
+        harmonyPlan.progressionLength=random01(seed,0x3104)>.78f?6:4;
+    else
+    {
+        static constexpr int lengths[5]={2,3,4,6,8};
+        harmonyPlan.progressionLength=lengths[(int)(random01(seed,0x3105)*5.f)%5];
+    }
+
+    harmonyPlan.cadenceStyle=(int)(random01(seed,0x3110)*4.f)%4;
+    harmonyPlan.rhythmMode=(int)(random01(seed,0x3111)*6.f)%6;
+    harmonyPlan.registerBase=progressive||cinematic?60:57;
+    harmonyPlan.tension=.20f+.58f*random01(seed,0x3112);
+    harmonyPlan.extensionProbability=.08f+.28f*random01(seed,0x3113);
+    harmonyPlan.suspensionProbability=.04f+.22f*random01(seed,0x3114);
+    harmonyPlan.passingProbability=.04f+.18f*random01(seed,0x3115);
+    harmonyPlan.borrowedProbability=minor?(.03f+.15f*random01(seed,0x3116)):.025f;
+    harmonyPlan.pedalIntro=random01(seed,0x3117)<(cinematic?.72f:.48f);
+    harmonyPlan.pedalVerse=tech||random01(seed,0x3118)<.16f;
+
+    if(dreamy){harmonyPlan.extensionProbability=juce::jmax(harmonyPlan.extensionProbability,.28f);harmonyPlan.suspensionProbability=juce::jmax(harmonyPlan.suspensionProbability,.24f);}
+    if(aggressive){harmonyPlan.extensionProbability*=.45f;harmonyPlan.tension=juce::jmax(harmonyPlan.tension,.58f);}
+    if(uplifting)harmonyPlan.cadenceStyle=0;
+
+    // Build progression from functional scale-degree families. This produces many
+    // normalized progressions rather than selecting one of eight fixed loops.
+    const int n=harmonyPlan.progressionLength;
+    harmonyPlan.mainDegrees.fill(0);
+    harmonyPlan.alternateDegrees.fill(0);
+
+    int first=0;
+    if(pop&&random01(seed,0x3120)>.78f)first=5;          // vi start in major/pop
+    if(minor&&random01(seed,0x3121)>.88f)first=5;       // VI opening
+    harmonyPlan.mainDegrees[0]=first;
+
+    for(int i=1;i<n;++i)
+    {
+        const bool final=i==n-1;
+        int candidates[7]={0,5,2,6,3,4,1};
+        int candidateCount=7;
+
+        if(tech)
+        {
+            int techPool[4]={0,5,6,3};
+            const int pick=(int)(random01(seed,0x3130+i)*4.f)%4;
+            harmonyPlan.mainDegrees[(size_t)i]=techPool[pick];
+        }
+        else if(final)
+        {
+            // End loops with dominant/leading/pre-dominant tension often enough
+            // to create a meaningful return to the first chord.
+            const float r=random01(seed,0x3140+i);
+            harmonyPlan.mainDegrees[(size_t)i]=r<.48f?4:(r<.82f?6:3);
+        }
+        else
+        {
+            const int prev=harmonyPlan.mainDegrees[(size_t)i-1];
+            int pick=(int)(random01(seed,0x3150+i*17)*candidateCount)%candidateCount;
+            int d=candidates[pick];
+            if(d==prev)d=candidates[(pick+2+(i%3))%candidateCount];
+            if(i==1&&d==0)d=minor?5:3;
+            harmonyPlan.mainDegrees[(size_t)i]=d;
+        }
+    }
+
+    // Alternate progression is related but not a rotation/copy.
+    for(int i=0;i<n;++i)
+    {
+        int d=harmonyPlan.mainDegrees[(size_t)i];
+        const float r=random01(seed,0x3200+i*23);
+        if(i==0&&r<.55f)d=0;
+        else if(r<.30f)d=(d+2)%7;
+        else if(r<.56f)d=(d+4)%7;
+        else if(r<.72f)d=(d+6)%7;
+        harmonyPlan.alternateDegrees[(size_t)i]=d;
+    }
+    bool same=true;
+    for(int i=0;i<n;++i)if(harmonyPlan.alternateDegrees[(size_t)i]!=harmonyPlan.mainDegrees[(size_t)i]){same=false;break;}
+    if(same&&n>1)harmonyPlan.alternateDegrees[1]=(harmonyPlan.alternateDegrees[1]+3)%7;
+
+    // Harmonic rhythm patterns are stored independently of progression roots.
+    for(int i=0;i<8;++i)
+    {
+        double barsPerChord=1.0;
+        switch(harmonyPlan.rhythmMode)
+        {
+            case 0: barsPerChord=1.0; break;
+            case 1: barsPerChord=(i%3==0?2.0:1.0); break;
+            case 2: barsPerChord=(i%2==0?.5:1.0); break;
+            case 3: barsPerChord=(i%4==3?.5:1.5); break;
+            case 4: barsPerChord=(i%3==1?.5:.75); break;
+            default: barsPerChord=(i%2==0?2.0:.5); break;
+        }
+        if(tech)barsPerChord=juce::jmax(1.0,barsPerChord);
+        if(cinematic)barsPerChord=juce::jmax(1.0,barsPerChord);
+        harmonyPlan.rhythmBars[(size_t)i]=barsPerChord;
+        harmonyPlan.inversions[(size_t)i]=(int)(random01(domains.voicing,0x3300+i*31)*3.f)%3;
+        harmonyPlan.voicingStyles[(size_t)i]=(int)(random01(domains.voicing,0x3400+i*37)*6.f)%6;
+    }
+}
+
+void SongArrangement::buildHarmonyTimeline(uint64_t seed)
+{
+    harmonyEvents.clear();
+    const int n=juce::jmax(1,harmonyPlan.progressionLength);
+
+    for(size_t si=0;si<sections.size();++si)
+    {
+        const auto& section=sections[si];
+        const auto name=section.name;
+        const bool intro=name.contains("INTRO");
+        const bool build=name.contains("BUILD");
+        const bool breakdown=name.contains("BREAKDOWN");
+        const bool chorus=name.contains("CHORUS");
+        const bool drop=name.contains("DROP");
+        const bool finalHook=name.contains("FINAL")||name.contains("HOOK");
+        const bool verse=name.contains("VERSE");
+
+        const bool useAlt=chorus||finalHook||(drop&&random01(seed,0x4100+si)>.64f);
+        const auto& sequence=useAlt?harmonyPlan.alternateDegrees:harmonyPlan.mainDegrees;
+
+        double beat=(double)section.startBar*beatsPerBar;
+        const double endBeat=(double)(section.startBar+section.bars)*beatsPerBar;
+        int step=(int)((si*2+(int)(random01(seed,0x4110+si)*n))%n);
+
+        while(beat<endBeat-.001)
+        {
+            int degree=sequence[(size_t)(step%n)];
+
+            if(intro&&harmonyPlan.pedalIntro&&beat<(section.startBar+section.bars/2.0)*beatsPerBar)
+                degree=0;
+            if(verse&&harmonyPlan.pedalVerse&&((step%3)!=2))
+                degree=0;
+
+            double barsLen=harmonyPlan.rhythmBars[(size_t)(step%8)];
+            if(build)barsLen=juce::jmax(.5,barsLen*.5);
+            if(breakdown)barsLen=juce::jmin(2.0,barsLen*1.75);
+            if(drop&&barsLen>1.0)barsLen=1.0;
+
+            double length=juce::jmax(2.0,barsLen*beatsPerBar);
+            length=juce::jmin(length,endBeat-beat);
+
+            // Last build chord intentionally increases tension into the next section.
+            if(build&&beat+length>=endBeat-.01)
+                degree=(harmonyPlan.cadenceStyle%2==0)?4:6;
+
+            HarmonyEvent event;
+            event.beat=beat;
+            event.length=length;
+            event.scaleDegree=juce::jlimit(0,6,degree);
+            event.inversion=harmonyPlan.inversions[(size_t)(step%8)];
+            event.voicingStyle=harmonyPlan.voicingStyles[(size_t)(step%8)];
+            event.sectionIndex=(int)si;
+            event.borrowed=minor&&event.scaleDegree==4&&random01(seed,0x4200+(uint64_t)harmonyEvents.size())<harmonyPlan.borrowedProbability;
+
+            const float ext=random01(seed,0x4300+(uint64_t)harmonyEvents.size());
+            if(ext<harmonyPlan.suspensionProbability)
+                event.extension=random01(seed,0x4310+(uint64_t)harmonyEvents.size())>.5f?3:4;
+            else if(ext<harmonyPlan.suspensionProbability+harmonyPlan.extensionProbability)
+                event.extension=random01(seed,0x4320+(uint64_t)harmonyEvents.size())>.5f?1:2;
+
+            harmonyEvents.push_back(event);
+            beat+=length;
+            ++step;
+        }
+    }
+
+    std::sort(harmonyEvents.begin(),harmonyEvents.end(),
+              [](const HarmonyEvent& a,const HarmonyEvent& b){return a.beat<b.beat;});
+}
+
+const SongArrangement::HarmonyEvent* SongArrangement::harmonyAtBeat(double beat) const noexcept
+{
+    if(harmonyEvents.empty())return nullptr;
+    const HarmonyEvent* best=&harmonyEvents.front();
+    for(const auto& event:harmonyEvents)
+    {
+        if(event.beat>beat+.0001)break;
+        best=&event;
+        if(beat<event.beat+event.length-.0001)return &event;
+    }
+    return best;
+}
+
+uint64_t SongArrangement::computeHarmonyId() const noexcept
+{
+    uint64_t h=0x4841524d4f4e5955ULL;
+    for(const auto& e:harmonyEvents)
+    {
+        const uint64_t beatQ=(uint64_t)std::llround(e.beat*4.0);
+        const uint64_t lenQ=(uint64_t)std::llround(e.length*4.0);
+        h=mix64(h ^ (uint64_t)(e.scaleDegree+1)*0x9e3779b97f4a7c15ULL ^ beatQ ^ (lenQ<<8)
+                  ^ ((uint64_t)e.inversion<<24) ^ ((uint64_t)e.voicingStyle<<28)
+                  ^ ((uint64_t)e.extension<<32));
+    }
+    return h;
+}
+
+uint64_t SongArrangement::computeMelodyId() const noexcept
+{
+    const ArrangementLane* lead=nullptr;
+    for(const auto& lane:lanes)if(lane.name=="LEAD"){lead=&lane;break;}
+    if(lead==nullptr)return 0;
+    uint64_t h=0x4d454c4f44594944ULL;
+    int previous=rootMidi;
+    for(size_t i=0;i<lead->notes.size()&&i<128;++i)
+    {
+        const auto& n=lead->notes[i];
+        const int interval=juce::jlimit(-24,24,n.note-previous);
+        const uint64_t onset=(uint64_t)std::llround(n.beat*8.0);
+        const uint64_t length=(uint64_t)std::llround(n.length*16.0);
+        h=mix64(h ^ (uint64_t)(interval+25) ^ (onset<<8) ^ (length<<32));
+        previous=n.note;
+    }
+    return h;
+}
+
+juce::String SongArrangement::getMelodyArchetypeName() const
+{
+    static constexpr const char* names[]={
+        "CALL / RESPONSE","ARPEGGIATED HOOK","OCTAVE ANTHEM","SPARSE MOTIF",
+        "LYRICAL LINE","SYNCOPATED RIFF","PEDAL + ANSWER","SEQUENCED CELL",
+        "FALLING HOOK","RISING LIFT","OFFBEAT HOOK","WIDE LEAP"
+    };
+    return names[juce::jlimit(0,11,plan.melodyArchetype)];
+}
+
+juce::String SongArrangement::getHarmonySummary() const
+{
+    static constexpr const char* minorRoman[]={"i","ii°","III","iv","v","VI","VII"};
+    static constexpr const char* majorRoman[]={"I","ii","iii","IV","V","vi","vii°"};
+    const auto* roman=minor?minorRoman:majorRoman;
+    juce::StringArray parts;
+    for(int i=0;i<harmonyPlan.progressionLength;++i)
+        parts.add(roman[juce::jlimit(0,6,harmonyPlan.mainDegrees[(size_t)i])]);
+    return parts.joinIntoString(" - ");
+}
+
+juce::String SongArrangement::getHarmonicRhythmSummary() const
+{
+    juce::StringArray parts;
+    for(int i=0;i<harmonyPlan.progressionLength;++i)
+    {
+        const double v=harmonyPlan.rhythmBars[(size_t)i];
+        parts.add(v==.5?"1/2":juce::String(v,1));
+    }
+    return parts.joinIntoString(" / ")+" bars";
+}
+
 void SongArrangement::clear()
 {
     lanes.clear();
     sections.clear();
+    harmonyEvents.clear();
+    harmonyId=0;
+    melodyId=0;
 }
 
 int SongArrangement::parseRootMidi(const juce::String& raw, bool& minorOut)
