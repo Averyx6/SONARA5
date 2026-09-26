@@ -3,6 +3,7 @@
 #include <cmath>
 #include <iostream>
 #include <set>
+#include <map>
 #include <cstdint>
 
 namespace {
@@ -54,6 +55,14 @@ uint64_t leadFingerprintHash(const sonara::SongArrangement& a)
         prev=note.note;
     }
     h^=(uint64_t)lead->notes.size();h*=1099511628211ULL;
+    return h;
+}
+
+uint64_t vectorFingerprintHash(const std::vector<int>& values)
+{
+    uint64_t h=1469598103934665603ULL;
+    for(const int value:values){h^=(uint64_t)(value+4099);h*=1099511628211ULL;}
+    h^=(uint64_t)values.size();h*=1099511628211ULL;
     return h;
 }
 
@@ -142,7 +151,7 @@ bool melodyQualityOk(const sonara::SongArrangement& song,const sonara::Arrangeme
 
 int main()
 {
-    const juce::String prompt="emotional progressive house 128 BPM F minor energetic powerful";
+    const juce::String prompt="Emotional progressive house, 128 BPM, F minor, emotional memorable hook, huge melodic drop";
     sonara::SongArrangement a;
     a.generate(prompt,120.0,123456789ULL);
 
@@ -221,8 +230,11 @@ int main()
             }
         }
 
-    // TEST C: 30 generated songs may not produce an identical lead fingerprint.
+    // TEST C: repeated exact-prompt songs may not collapse to one normalized
+    // melody or one dominant Roman-numeral/harmonic-rhythm progression.
     std::set<uint64_t> fingerprints;
+    std::set<uint64_t> harmonyFingerprints;
+    std::map<uint64_t,int> progressionDistribution;
     for(uint64_t i=0;i<30;++i)
     {
         sonara::SongArrangement x;
@@ -230,7 +242,49 @@ int main()
         const auto hash=leadFingerprintHash(x);
         if(hash==0||!fingerprints.insert(hash).second)
         {std::cerr<<"Duplicate lead fingerprint in 30-song run\n";return 21;}
+        const auto harmonyHash=vectorFingerprintHash(x.getHarmonyFingerprint());
+        const auto progressionHash=vectorFingerprintHash(x.getProgressionFingerprint());
+        if(harmonyHash==0||!harmonyFingerprints.insert(harmonyHash).second)
+        {std::cerr<<"Duplicate normalized Harmony DNA in 30-song run\n";return 26;}
+        ++progressionDistribution[progressionHash];
     }
+    for(const auto& entry:progressionDistribution)
+        if(entry.second>9)
+        {std::cerr<<"One normalized progression dominated more than 30% of same-prompt songs\n";return 27;}
+
+    // Transposing an otherwise identical generation must not fool the novelty
+    // detector: normalized harmony and melody identities remain equivalent.
+    sonara::SongArrangement fMinor,cMinor;
+    fMinor.generateComposition("emotional progressive house 128 BPM F minor",128.0,0x778899ULL);
+    cMinor.generateComposition("emotional progressive house 128 BPM C minor",128.0,0x778899ULL);
+    if(fMinor.getHarmonyFingerprint()!=cMinor.getHarmonyFingerprint()
+       ||fMinor.getMelodyFingerprint()!=cMinor.getMelodyFingerprint())
+    {std::cerr<<"Key transposition changed normalized composition identity\n";return 28;}
+
+    // Same key/BPM/genre: variation must come from composition, not transposition.
+    std::set<uint64_t> fixedHarmony,fixedMelody,fixedBass,fixedDrums,fixedPluck;
+    for(uint64_t i=0;i<10;++i)
+    {
+        sonara::SongArrangement x;
+        x.generateComposition(prompt,128.0,0x990000ULL+i*0x314159ULL);
+        fixedHarmony.insert(vectorFingerprintHash(x.getHarmonyFingerprint()));
+        fixedMelody.insert(vectorFingerprintHash(x.getMelodyFingerprint()));
+        const auto* bass=findLane(x,"BASS");const auto* drums=findLane(x,"KICK");const auto* pluck=findLane(x,"PLUCK");
+        if(!bass||!drums||!pluck){std::cerr<<"Fixed-context composition lane missing\n";return 29;}
+        auto laneHash=[](const sonara::ArrangementLane& lane)
+        {
+            uint64_t h=1469598103934665603ULL;
+            for(const auto& note:lane.notes)
+            {
+                const int values[]={note.note,(int)std::llround(note.beat*8.0),(int)std::llround(note.length*16.0)};
+                for(const int value:values){h^=(uint64_t)(value+257);h*=1099511628211ULL;}
+            }
+            return h;
+        };
+        fixedBass.insert(laneHash(*bass));fixedDrums.insert(laneHash(*drums));fixedPluck.insert(laneHash(*pluck));
+    }
+    if(fixedHarmony.size()<8||fixedMelody.size()!=10||fixedBass.size()<7||fixedDrums.size()<6||fixedPluck.size()<7)
+    {std::cerr<<"Same-key/BPM/genre variation did not reach every composition subsystem\n";return 30;}
 
     // TEST B: genre language must alter melody grammar, not only SoundDNA.
     std::array<sonara::SongArrangement,4> genreSongs;
@@ -267,6 +321,13 @@ int main()
     for(size_t i=0;i<a.getLanes().size();++i)
         if(deterministic.getLanes()[i].notes.size()!=a.getLanes()[i].notes.size())
         {std::cerr<<"Determinism note count failed\n";return 19;}
+
+    const auto restored=sonara::SongArrangement::fromValueTree(a.toValueTree());
+    if(restored.getSongId()!=a.getSongId()||restored.getHarmonyId()!=a.getHarmonyId()
+       ||restored.getMelodyId()!=a.getMelodyId()
+       ||restored.getHarmonyFingerprint()!=a.getHarmonyFingerprint()
+       ||restored.getMelodyFingerprint()!=a.getMelodyFingerprint())
+    {std::cerr<<"Composition/Harmony DNA persistence roundtrip failed\n";return 31;}
 
     sonara::SongArrangement dnb;
     dnb.generate("energetic drum and bass 174 BPM D minor fast aggressive",128.0,4567ULL);
