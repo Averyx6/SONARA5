@@ -522,6 +522,11 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
 
         juce::String seedHex=juce::String::toHexString((juce::int64)p.getSongGenerationSeed()).toUpperCase();
         if(seedHex.length()>8) seedHex=seedHex.substring(seedHex.length()-8);
+        auto shortHex=[](uint64_t value)
+        {
+            auto result=juce::String::toHexString((juce::int64)value).toUpperCase();
+            return result.length()>8?result.substring(result.length()-8):result;
+        };
 
         const auto lower=songPrompt.getText().toLowerCase();
         juce::String style="EDM";
@@ -549,9 +554,13 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
             card("KEY / TEMPO",key+" • "+juce::String(a->getBpm(),0)+" BPM",ry);ry+=48;
             card("ENERGY",energy,ry);ry+=48;
             card("SONG ID",seedHex.isEmpty()?"—":seedHex,ry);ry+=48;
+            card("HARMONY / ID",a->getHarmonySummary()+" • "+shortHex(a->getHarmonyId()),ry);ry+=48;
+            card("HARMONIC RHYTHM",a->getHarmonicRhythmSummary(),ry);ry+=48;
+            card("MELODY / ID",a->getMelodyArchetypeName()+" • "+shortHex(a->getMelodyId()),ry);ry+=48;
             card("CURRENT SECTION",p.currentSectionName().isEmpty()?"READY":p.currentSectionName()
                  +" • BAR "+juce::String(p.currentSongBar()+1)+"/"+juce::String(a->getBars()),ry);ry+=48;
-            card("MELODY NOVELTY",juce::String(p.getMelodyNovelty()*100.f,0)+"%",ry);ry+=48;
+            card("NOVELTY • H / M / SONG",juce::String(p.getHarmonyNovelty()*100.f,0)+"% / "
+                 +juce::String(p.getMelodyNovelty()*100.f,0)+"% / "+juce::String(p.getSongNovelty()*100.f,0)+"%",ry);ry+=48;
             card("PREVIEW MODE",p.isSongPlaying()?"LOW CPU • PLAYING":"LOW CPU • READY",ry);ry+=48;
             card("GENERATED CONTENT",juce::String((int)a->getLanes().size())+" lanes • "+juce::String(noteCount)+" notes",ry);ry+=48;
 
