@@ -2,6 +2,7 @@
 #include "PromptGenerator.h"
 #include <cmath>
 #include <algorithm>
+#include <array>
 
 namespace sonara {
 namespace {
@@ -103,33 +104,103 @@ void SongArrangement::generate(const juce::String& prompt, double bpm, uint64_t 
 
 void SongArrangement::addDrums(uint64_t seed, bool energetic)
 {
-    ArrangementLane kick{"KICK", 10, true}, snare{"SNARE / CLAP", 10, true}, hats{"HATS", 10, true}, perc{"PERCUSSION", 10, true};
-    for (int bar = 0; bar < bars; ++bar)
+    ArrangementLane kick{"KICK",10,true}, snare{"SNARE / CLAP",10,true}, hats{"HATS",10,true}, perc{"PERCUSSION",10,true};
+    const auto p = sourcePrompt.toLowerCase();
+    const bool house = p.contains("house") || p.contains("future rave") || p.contains("edm");
+    const bool trap = p.contains("trap") || p.contains("hip hop");
+    const int groove = static_cast<int>(random01(seed, 11) * 4.f) % 4;
+    const int hatMode = static_cast<int>(random01(seed, 12) * 3.f) % 3;
+    const float swing = .015f + random01(seed,13) * .055f;
+
+    for(int bar=0;bar<bars;++bar)
     {
-        float energy = .4f;
-        for (const auto& s : sections) if (sectionContains(s, bar)) { energy = s.energy; break; }
-        const double b = bar * beatsPerBar;
-        const bool drop = energy > .8f;
-        const bool build = energy > .55f && energy <= .8f;
-        const bool intro = bar < 8;
+        float energy=.4f;
+        for(const auto& s:sections) if(sectionContains(s,bar)){energy=s.energy;break;}
+        const double b=bar*beatsPerBar;
+        const bool drop=energy>.8f, build=energy>.55f&&energy<=.8f, intro=bar<8;
+        const uint64_t bs=(uint64_t)bar*97ULL;
 
-        if (!intro || bar >= 4)
-            for (int q = 0; q < 4; ++q)
-                if (!intro || q == 0 || q == 2) addNote(kick, 36, b + q, .12, drop ? 118 : 104);
-
-        if (!intro) { addNote(snare, 38, b + 1.0, .12, 102); addNote(snare, 38, b + 3.0, .12, drop ? 112 : 104); }
-        const int hatSteps = (drop || build || energetic) ? 8 : 4;
-        for (int h = 0; h < hatSteps; ++h)
+        if(!intro || bar>=4)
         {
-            const double beat = b + h * (4.0 / hatSteps);
-            const int vel = 58 + static_cast<int>(25.f * random01(seed, static_cast<uint64_t>(bar * 16 + h)));
-            addNote(hats, (h % 4 == 3 && drop) ? 46 : 42, beat, .08, vel);
+            if(house)
+            {
+                for(int q=0;q<4;++q)
+                    if(!intro || q==0 || q==2 || bar>=6)
+                        addNote(kick,36,b+q,.10,drop?118:102+(q==0?4:0));
+                if((drop||build) && ((bar+groove)%4==3))
+                    addNote(kick,36,b+3.5,.08,88+(int)(random01(seed,1000+bs)*20.f));
+                if(drop && groove==2 && bar%2==0)
+                    addNote(kick,36,b+1.75,.07,86);
+            }
+            else if(trap)
+            {
+                addNote(kick,36,b,.11,drop?118:104);
+                if(random01(seed,1100+bs)>.35f) addNote(kick,36,b+1.5+.25*(groove%2),.09,96);
+                if(random01(seed,1110+bs)>.48f) addNote(kick,36,b+2.75,.09,104);
+                if(drop && random01(seed,1120+bs)>.5f) addNote(kick,36,b+3.5,.07,92);
+            }
+            else
+            {
+                addNote(kick,36,b,.11,108);
+                addNote(kick,36,b+2.0+(groove%2)*.5,.10,drop?116:100);
+                if(drop && random01(seed,1130+bs)>.38f) addNote(kick,36,b+3.25,.08,94);
+            }
         }
-        if (drop && bar % 2 == 1) { addNote(perc, 39, b + 2.5, .1, 78); addNote(perc, 37, b + 3.5, .1, 70); }
-        if ((bar == 23 || bar == 55) && build)
-            for (int s = 0; s < 16; ++s) addNote(snare, 38, b + s * .25, .06, 58 + s * 4);
+
+        if(!intro)
+        {
+            if(trap)
+            {
+                addNote(snare,38,b+2.0,.12,drop?114:104);
+                if(drop && random01(seed,1200+bs)>.55f) addNote(snare,39,b+1.75,.07,72);
+            }
+            else
+            {
+                addNote(snare,38,b+1.0,.12,98+(drop?12:0));
+                addNote(snare,38,b+3.0,.12,102+(drop?10:0));
+                if((bar+groove)%4==2) addNote(snare,39,b+2.75,.07,64+(int)(random01(seed,1210+bs)*18.f));
+            }
+        }
+
+        const int hatSteps = drop ? (hatMode==2?16:8) : ((build||energetic)?8:4);
+        for(int h=0;h<hatSteps;++h)
+        {
+            const bool strong=(h%(hatSteps/4)==0);
+            if(!strong && random01(seed,1300+bs+h)<(drop?.08f:.16f)) continue;
+            double beat=b+h*(4.0/hatSteps);
+            if(h%2==1) beat+=swing*(hatMode==1?1.0:.55);
+            const bool open = drop && ((h+groove)%8==3 || (hatMode==2 && h%8==7));
+            const int vel=juce::jlimit(36,112,52+(strong?15:0)+(int)(random01(seed,1400+bs+h)*34.f));
+            addNote(hats,open?46:42,beat,.055+(open?.10:0.0),vel);
+        }
+
+        if(drop)
+        {
+            const int percCount=1+((bar+groove)%3);
+            for(int k=0;k<percCount;++k)
+            {
+                const double pos=.5*((k*3+groove+bar)%8);
+                if(pos<.1) continue;
+                addNote(perc,(k%2)?37:39,b+pos,.07,62+(int)(random01(seed,1500+bs+k)*26.f));
+            }
+        }
+
+        if(build && (bar==23 || bar==55))
+        {
+            const int divisions = hatMode==2 ? 24 : 16;
+            for(int s=0;s<divisions;++s)
+            {
+                if(s<4 && groove==3 && s%2==1) continue;
+                addNote(snare,38,b+s*(4.0/divisions),.05,
+                        juce::jlimit(48,127,54+s*(64/divisions)+(int)(random01(seed,1600+s)*8.f)));
+            }
+        }
     }
-    lanes.push_back(std::move(kick)); lanes.push_back(std::move(snare)); lanes.push_back(std::move(hats)); lanes.push_back(std::move(perc));
+
+    lanes.push_back(std::move(kick));
+    lanes.push_back(std::move(snare));
+    lanes.push_back(std::move(hats));
+    lanes.push_back(std::move(perc));
 }
 
 void SongArrangement::addHarmony(uint64_t seed)
