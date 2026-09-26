@@ -150,7 +150,7 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     previewSound.onClick=[this]{p.startPreview();};playSong.onClick=[this]{p.startSongPreview();};stop.onClick=[this]{p.stopPreview();p.stopSongPreview();};bpm.onValueChange=[this]{p.setPreviewBpm(bpm.getValue());};
     connect.onClick=[this]{const auto packet=p.exportProjectForCyanoryx();juce::SystemClipboard::copyTextToClipboard(packet);showStatus(packet.isNotEmpty()?"Cyanoryx protocol v4 bundle copied":"Cyanoryx bundle unavailable");};
     loadReference.onClick=[this]{chooseReferenceAudio();};importMidi.onClick=[this]{chooseMidiImport();};
-    resound.onClick=[this]{p.resoundReference(soundPrompt.getText());};
+    resound.onClick=[this]{p.resoundReference(songPrompt.getText());};
     rebuildReference.onClick=[this]{p.rebuildInstrumentalFromReference(songPrompt.getText());setTab(1);};
     saveSoundButton.onClick=[this]{chooseSaveSound();};loadSoundButton.onClick=[this]{chooseLoadSound();};saveProjectButton.onClick=[this]{chooseSaveProject();};loadProjectButton.onClick=[this]{chooseLoadProject();};exportMixButton.onClick=[this]{chooseExportMix();};exportStemsButton.onClick=[this]{chooseExportStems();};
     macroBrightness.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::brightness,(float)macroBrightness.getValue());};macroMovement.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::movement,(float)macroMovement.getValue());};macroSpace.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::space,(float)macroSpace.getValue());};macroImpact.onValueChange=[this]{p.setMacro(SonaraAudioProcessor::Macro::impact,(float)macroImpact.getValue());};
@@ -187,7 +187,23 @@ void SonaraAudioProcessorEditor::chooseLoadProject(){fileChooser=std::make_uniqu
 void SonaraAudioProcessorEditor::chooseExportMix(){fileChooser=std::make_unique<juce::FileChooser>("Export 24-bit full mix",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("SONARA-Full-Mix.wav"),"*.wav");fileChooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[this](const juce::FileChooser& c){auto f=c.getResult();if(f!=juce::File{}){if(f.getFileExtension().isEmpty())f=f.withFileExtension(".wav");p.exportFullMix(f);}fileChooser.reset();});}
 void SonaraAudioProcessorEditor::chooseExportStems(){fileChooser=std::make_unique<juce::FileChooser>("Choose folder for SONARA stems",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),"*");fileChooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectDirectories,[this](const juce::FileChooser& c){const auto d=c.getResult();if(d.isDirectory())p.exportAllStems(d);fileChooser.reset();});}
 
-void SonaraAudioProcessorEditor::setTab(int index){activeTab=juce::jlimit(0,6,index);juce::TextButton* tabs[]={&tabInstrument,&tabSong,&tabDrums,&tabFx,&tabReference,&tabMidi,&tabExport};for(int i=0;i<7;++i){tabs[i]->setToggleState(i==activeTab,juce::dontSendNotification);tabs[i]->setColour(juce::TextButton::buttonColourId,i==activeTab?juce::Colour(0xff2d205a):juce::Colour(0xff0e1728));}updateModeVisibility();repaint();}
+void SonaraAudioProcessorEditor::setTab(int index)
+{
+    activeTab=juce::jlimit(0,6,index);
+    juce::TextButton* tabs[]={&tabInstrument,&tabSong,&tabDrums,&tabFx,&tabReference,&tabMidi,&tabExport};
+    for(int i=0;i<7;++i)
+    {
+        tabs[i]->setToggleState(i==activeTab,juce::dontSendNotification);
+        tabs[i]->setColour(juce::TextButton::buttonColourId,i==activeTab?juce::Colour(0xff2d205a):juce::Colour(0xff0e1728));
+    }
+
+    static const char* soundNames[]={"Progressive Lead","Future Rave","Warm Pluck","Deep Reese","Dream Pad","Tech House Bass","Cinematic Bell","Experimental"};
+    static const char* songNames[]={"Progressive House","Future Rave","Melodic EDM","Tech House","Drum & Bass","Electro Pop","Cinematic EDM","Experimental"};
+    for(int i=0;i<8;++i) presets[(size_t)i].setButtonText(activeTab==0?soundNames[i]:songNames[i]);
+
+    updateModeVisibility();
+    repaint();
+}
 void SonaraAudioProcessorEditor::updateModeVisibility(){
     const bool instrumentTab=activeTab==0;
     const bool songTab=activeTab==1;
@@ -202,6 +218,8 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     pianoRoll.setVisible(songTab||drumsTab||midiTab);
     soundView.setVisible(instrumentTab);
     referenceSummary.setVisible(referenceTab);
+    soundPrompt.setVisible(instrumentTab);
+    songPrompt.setVisible(!instrumentTab);
 
     generateSound.setVisible(instrumentTab);
     similar.setVisible(instrumentTab);
