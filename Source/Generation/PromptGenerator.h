@@ -13,7 +13,7 @@ struct MutationLocks {
         if(unison){candidate.unison=source.unison;candidate.detune=source.detune;candidate.unisonBlend=source.unisonBlend;candidate.phaseRandom=source.phaseRandom;}
         if(ampEnvelope){candidate.attack=source.attack;candidate.decay=source.decay;candidate.sustain=source.sustain;candidate.release=source.release;}
         if(filter){candidate.filterMode=source.filterMode;candidate.cutoff=source.cutoff;candidate.resonance=source.resonance;candidate.filterEnv=source.filterEnv;}
-        if(modulation){candidate.lfoRate=source.lfoRate;candidate.lfoCutoff=source.lfoCutoff;candidate.lfoPitch=source.lfoPitch;candidate.lfoMorphA=source.lfoMorphA;candidate.lfoMorphB=source.lfoMorphB;}
+        if(modulation){candidate.lfoShape=source.lfoShape;candidate.lfoRate=source.lfoRate;candidate.lfoCutoff=source.lfoCutoff;candidate.lfoPitch=source.lfoPitch;candidate.lfoMorphA=source.lfoMorphA;candidate.lfoMorphB=source.lfoMorphB;}
         if(sources){candidate.subLevel=source.subLevel;candidate.subOctave=source.subOctave;candidate.noiseLevel=source.noiseLevel;candidate.transientLevel=source.transientLevel;candidate.transientDecay=source.transientDecay;}
         if(tone){candidate.drive=source.drive;candidate.width=source.width;candidate.pitchEnv=source.pitchEnv;candidate.pitchEnvDecay=source.pitchEnvDecay;candidate.fmAmount=source.fmAmount;candidate.fmRatio=source.fmRatio;candidate.ringMod=source.ringMod;candidate.bitCrush=source.bitCrush;candidate.downsample=source.downsample;}
         if(spatialFx){candidate.chorus=source.chorus;candidate.chorusRate=source.chorusRate;candidate.chorusDepth=source.chorusDepth;candidate.reverb=source.reverb;candidate.delay=source.delay;}
