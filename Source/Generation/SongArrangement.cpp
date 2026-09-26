@@ -144,6 +144,67 @@ void SongArrangement::generate(const juce::String& prompt, double bpm, uint64_t 
                        flavour < .75f ? "dark thick body subtle modulation" :
                                         "airy animated wide heavy modulation";
         lane.sound = designer.generate(soundPrompt, mix64(seed + static_cast<uint64_t>(i) * 0x517cc1b727220a95ULL));
+
+        // Keep song playback lighter and cleaner than single-instrument design.
+        // Each role gets a bounded unison/FX/sub budget so low notes do not stack into mud.
+        if(lane.name=="BASS")
+        {
+            lane.sound.unison=juce::jlimit(1,2,lane.sound.unison);
+            lane.sound.width=juce::jmin(.18f,lane.sound.width);
+            lane.sound.subLevel=juce::jlimit(.10f,.34f,lane.sound.subLevel+.08f);
+            lane.sound.reverb=juce::jmin(.025f,lane.sound.reverb);
+            lane.sound.delay=0.f; lane.sound.chorus=0.f;
+            lane.sound.release=juce::jmin(.34f,lane.sound.release);
+        }
+        else if(lane.name=="CHORDS")
+        {
+            lane.sound.unison=juce::jlimit(1,3,lane.sound.unison);
+            lane.sound.subLevel=0.f; lane.sound.noiseLevel=juce::jmin(.04f,lane.sound.noiseLevel);
+            lane.sound.reverb=juce::jmin(.09f,lane.sound.reverb);
+            lane.sound.delay=juce::jmin(.045f,lane.sound.delay);
+            lane.sound.release=juce::jmin(.48f,lane.sound.release);
+        }
+        else if(lane.name=="PLUCK")
+        {
+            lane.sound.unison=juce::jlimit(1,2,lane.sound.unison);
+            lane.sound.subLevel=0.f;
+            lane.sound.reverb=juce::jmin(.055f,lane.sound.reverb);
+            lane.sound.delay=juce::jmin(.07f,lane.sound.delay);
+            lane.sound.release=juce::jmin(.26f,lane.sound.release);
+        }
+        else if(lane.name=="PAD")
+        {
+            lane.sound.unison=juce::jlimit(1,3,lane.sound.unison);
+            lane.sound.subLevel=0.f; lane.sound.noiseLevel=juce::jmin(.06f,lane.sound.noiseLevel);
+            lane.sound.reverb=juce::jmin(.14f,lane.sound.reverb);
+            lane.sound.delay=juce::jmin(.04f,lane.sound.delay);
+            lane.sound.release=juce::jmin(.78f,lane.sound.release);
+        }
+        else if(lane.name=="LEAD")
+        {
+            lane.sound.unison=juce::jlimit(2,4,lane.sound.unison);
+            lane.sound.subLevel=juce::jmin(.025f,lane.sound.subLevel);
+            lane.sound.reverb=juce::jmin(.10f,lane.sound.reverb);
+            lane.sound.delay=juce::jmin(.10f,lane.sound.delay);
+            lane.sound.release=juce::jmin(.44f,lane.sound.release);
+        }
+        else if(lane.name=="COUNTER")
+        {
+            lane.sound.unison=juce::jlimit(1,2,lane.sound.unison);
+            lane.sound.subLevel=0.f;
+            lane.sound.reverb=juce::jmin(.06f,lane.sound.reverb);
+            lane.sound.delay=juce::jmin(.05f,lane.sound.delay);
+            lane.sound.release=juce::jmin(.34f,lane.sound.release);
+        }
+        else if(lane.name=="FX / TRANSITIONS")
+        {
+            lane.sound.unison=1; lane.sound.subLevel=0.f;
+            lane.sound.chorus=juce::jmin(.08f,lane.sound.chorus);
+            lane.sound.reverb=juce::jmin(.08f,lane.sound.reverb);
+            lane.sound.delay=0.f;
+            lane.sound.release=juce::jmin(.45f,lane.sound.release);
+        }
+
         lane.sound.name = lane.name + " • Generated";
     }
 }
