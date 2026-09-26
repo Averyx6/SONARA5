@@ -34,6 +34,9 @@ void DrumSynth::configureKit(const SoundDNA& kick,const SoundDNA& snare,const So
     clapTone=juce::jlimit(.15f,.50f,.20f+.22f*perc.macroBrightness+.08f*perc.macroMovement);
     clapDecay=decayFor(.075f+.075f*normRelease(perc));
     clapGain=juce::jlimit(.14f,.34f,.18f+.11f*perc.macroImpact+.03f*perc.drive);
+    percDecay=decayFor(.035f+.055f*normRelease(perc));
+    percGain=juce::jlimit(.08f,.22f,.10f+.08f*perc.macroImpact+.03f*perc.drive);
+    percToneHz=520.f+680.f*juce::jlimit(0.f,1.f,perc.macroBrightness);
 
     crashNoise=juce::jlimit(.36f,.62f,.42f+.16f*normCutoff(hats)+.05f*hats.noiseLevel);
     crashTone=juce::jlimit(.05f,.16f,.07f+.08f*hats.macroBrightness);
@@ -58,7 +61,8 @@ void DrumSynth::trigger(int note,float v) noexcept
     else if(note==38){snareEnv=1.f;snareVelocity=v;}
     else if(note==42||note==46){hatEnv=note==46?1.35f:1.f;hatVelocity=v;}
     else if(note==39){clapEnv=1.f;clapVelocity=v;}
-    else if(note==49||note==57||note==37){crashEnv=1.f;crashVelocity=v;}
+    else if(note==37){percEnv=1.f;percVelocity=v;}
+    else if(note==49||note==57){crashEnv=1.f;crashVelocity=v;}
 }
 
 void DrumSynth::render(juce::AudioBuffer<float>& b,const DrumTrigger* triggers,int triggerCount) noexcept
@@ -123,6 +127,15 @@ void DrumSynth::render(juce::AudioBuffer<float>& b,const DrumTrigger* triggers,i
             const float burst=noise()*burstGate*(1.f-.38f*clapTone);
             out+=burst*clapEnv*clapVelocity*clapGain;
             clapEnv*=clapDecay;
+        }
+
+        if(percEnv>0.00005f)
+        {
+            const float t=1.f-percEnv;
+            const float tone=(float)std::sin(t*juce::MathConstants<float>::twoPi*percToneHz*.010f);
+            const float click=noise()*.22f;
+            out+=(tone*.78f+click)*percEnv*percVelocity*percGain;
+            percEnv*=percDecay;
         }
 
         if(crashEnv>0.00005f)
