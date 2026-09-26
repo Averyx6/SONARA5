@@ -130,6 +130,7 @@ SonaraAudioProcessor::SonaraAudioProcessor()
     // Lane order after drums: BASS, SUB, CHORDS, PLUCK, PAD, LEAD, COUNTER, FX.
     static constexpr int voiceBudget[musicalLaneCount]={2,1,4,2,4,4,2,1};
     for(int i=0;i<musicalLaneCount;++i)songEngines[(size_t)i].setVoiceLimit(voiceBudget[i]);
+    for(int i=0;i<12;++i){laneMixLevel[(size_t)i].store(1.f);laneMixPan[(size_t)i].store(0.f);laneMixWidth[(size_t)i].store(1.f);laneMixFx[(size_t)i].store(1.f);}
     patchHistory.push_back(engine.patch());
     historyIndex = 0;
 }
@@ -706,6 +707,8 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
             laneHpY[(size_t)i][(size_t)ch]=y1;
         }
 
+        const auto mix=getLaneMix(laneIndex);
+
         // BASS low end stays near-mono.
         if(i==0&&scratchView.getNumChannels()>=2)
         {
@@ -738,11 +741,31 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
             laneLpState[(size_t)i][1]=state;
         }
 
+        if(scratchView.getNumChannels()>=2)
+        {
+            auto* l=scratchView.getWritePointer(0);
+            auto* r=scratchView.getWritePointer(1);
+            const float requestedWidth=juce::jlimit(0.f,1.5f,mix.width);
+            const float width=i==1?0.f:(i==0?juce::jmin(.25f,requestedWidth):requestedWidth);
+            const float pan=juce::jlimit(-1.f,1.f,mix.pan);
+            const float panL=pan>0.f?1.f-pan:1.f;
+            const float panR=pan<0.f?1.f+pan:1.f;
+            for(int s=0;s<renderSamples;++s)
+            {
+                const float mid=.5f*(l[s]+r[s]);
+                const float side=.5f*(l[s]-r[s])*width;
+                l[s]=(mid+side)*panL;
+                r[s]=(mid-side)*panR;
+            }
+        }
+
+        const float mixedGain=laneGain[i]*mix.level;
+        const float sendGain=fxSend[i]*mix.fxSend;
         for(int ch=0;ch<out.getNumChannels();++ch)
         {
-            out.addFrom(ch,0,scratchView,ch,0,renderSamples,laneGain[i]);
-            if(fxSend[i]>0.f)
-                songFxBus.addFrom(ch,0,scratchView,ch,0,renderSamples,laneGain[i]*fxSend[i]);
+            out.addFrom(ch,0,scratchView,ch,0,renderSamples,mixedGain);
+            if(sendGain>0.f)
+                songFxBus.addFrom(ch,0,scratchView,ch,0,renderSamples,mixedGain*sendGain);
         }
     }
 
@@ -891,6 +914,31 @@ bool SonaraAudioProcessor::exportSelectedLaneAudio(const juce::File& file)
 bool SonaraAudioProcessor::exportAllStems(const juce::File& directory)
 {
     auto a=arrangementSnapshot();if(!a)return false;const bool ok=audioExporter.renderAllStems(*a,directory,44100.0,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;});generationProgress.store(ok?1.f:0.f);generationStatus=ok?"All 24-bit stems ready • "+directory.getFullPathName():"Stem export failed";return ok;
+}
+
+void SonaraAudioProcessor::setLaneMix(int laneIndex,LaneMixParameter parameter,float value) noexcept
+{
+    if(!juce::isPositiveAndBelow(laneIndex,12))return;
+    const size_t i=(size_t)laneIndex;
+    switch(parameter)
+    {
+        case LaneMixParameter::level: laneMixLevel[i].store(juce::jlimit(0.f,1.5f,value),std::memory_order_relaxed); break;
+        case LaneMixParameter::pan: laneMixPan[i].store(juce::jlimit(-1.f,1.f,value),std::memory_order_relaxed); break;
+        case LaneMixParameter::width: laneMixWidth[i].store(juce::jlimit(0.f,1.5f,value),std::memory_order_relaxed); break;
+        case LaneMixParameter::fxSend: laneMixFx[i].store(juce::jlimit(0.f,1.5f,value),std::memory_order_relaxed); break;
+    }
+}
+
+SonaraAudioProcessor::LaneMixState SonaraAudioProcessor::getLaneMix(int laneIndex) const noexcept
+{
+    LaneMixState state;
+    if(!juce::isPositiveAndBelow(laneIndex,12))return state;
+    const size_t i=(size_t)laneIndex;
+    state.level=laneMixLevel[i].load(std::memory_order_relaxed);
+    state.pan=laneMixPan[i].load(std::memory_order_relaxed);
+    state.width=laneMixWidth[i].load(std::memory_order_relaxed);
+    state.fxSend=laneMixFx[i].load(std::memory_order_relaxed);
+    return state;
 }
 
 void SonaraAudioProcessor::setMacro(Macro macro, float normalized)
