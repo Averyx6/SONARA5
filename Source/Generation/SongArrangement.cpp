@@ -82,17 +82,33 @@ int SongArrangement::parseRootMidi(const juce::String& raw, bool& minorOut)
     return 53; // F3
 }
 
-void SongArrangement::buildSections()
+void SongArrangement::buildSections(uint64_t seed)
 {
-    sections = {
-        {"INTRO",        0,  8, .22f},
-        {"VERSE / BREAK",8,  8, .38f},
-        {"BUILD 1",     16,  8, .62f},
-        {"DROP 1",      24, 16, .95f},
-        {"BREAKDOWN",   40,  8, .32f},
-        {"BUILD 2",     48,  8, .72f},
-        {"FINAL DROP",  56, 16, 1.00f}
+    struct Layout { int lengths[8]; };
+    static constexpr Layout layouts[] = {
+        {{8,8,8,12,8,8,4,16}},
+        {{4,12,8,16,8,8,4,12}},
+        {{8,8,4,16,12,8,4,12}},
+        {{4,8,8,12,8,12,8,12}}
     };
+
+    const int style = static_cast<int>(random01(seed, 0x51ec7100ULL) * 4.f) % 4;
+    const auto& l = layouts[style].lengths;
+    static constexpr const char* names[8] = {
+        "INTRO","VERSE","BUILD","DROP","BREAKDOWN","CHORUS","BUILD 2","FINAL HOOK"
+    };
+    static constexpr float energy[8] = {
+        .18f,.40f,.66f,.96f,.30f,.76f,.82f,1.00f
+    };
+
+    sections.clear();
+    int start = 0;
+    for (int i = 0; i < 8; ++i)
+    {
+        sections.push_back({ names[i], start, l[i], energy[i] });
+        start += l[i];
+    }
+    bars = start;
 }
 
 void SongArrangement::generate(const juce::String& prompt, double bpm, uint64_t seed)
@@ -102,7 +118,7 @@ void SongArrangement::generate(const juce::String& prompt, double bpm, uint64_t 
     tempo = juce::jlimit(60.0, 200.0, bpmFromPrompt(prompt, bpm));
     rootMidi = parseRootMidi(prompt, minor);
     bars = defaultBars;
-    buildSections();
+    buildSections(seed ^ 0x7a1f2d4bULL);
 
     const auto lower = prompt.toLowerCase();
     const bool energetic = lower.contains("energetic") || lower.contains("powerful") || lower.contains("festival") || lower.contains("hard") || lower.contains("edm");
@@ -548,7 +564,7 @@ SongArrangement SongArrangement::fromValueTree(const juce::ValueTree& root)
     SongArrangement a;
     if(!root.isValid()||root.getType().toString()!="SONARA_ARRANGEMENT")return a;
     a.sourcePrompt=root.getProperty("prompt","").toString();a.tempo=juce::jlimit(60.0,200.0,(double)root.getProperty("bpm",128.0));a.bars=juce::jlimit(1,512,(int)root.getProperty("bars",defaultBars));a.rootMidi=juce::jlimit(0,127,(int)root.getProperty("rootMidi",53));a.minor=(bool)root.getProperty("minor",true);a.sections.clear();a.lanes.clear();
-    auto st=root.getChildWithName("SECTIONS");for(int i=0;i<st.getNumChildren();++i){auto v=st.getChild(i);a.sections.push_back({v.getProperty("name","").toString(),(int)v.getProperty("startBar",0),(int)v.getProperty("bars",8),(float)v.getProperty("energy",.5)});}if(a.sections.empty())a.buildSections();
+    auto st=root.getChildWithName("SECTIONS");for(int i=0;i<st.getNumChildren();++i){auto v=st.getChild(i);a.sections.push_back({v.getProperty("name","").toString(),(int)v.getProperty("startBar",0),(int)v.getProperty("bars",8),(float)v.getProperty("energy",.5)});}if(a.sections.empty())a.buildSections(0x7a1f2d4bULL);
     auto lt=root.getChildWithName("LANES");for(int i=0;i<lt.getNumChildren();++i){auto l=lt.getChild(i);ArrangementLane lane;lane.name=l.getProperty("name","Lane").toString();lane.midiChannel=juce::jlimit(1,16,(int)l.getProperty("channel",1));lane.drums=(bool)l.getProperty("drums",false);auto dna=l.getChildWithName("SoundDNA");if(dna.isValid())lane.sound=SoundDNA::fromValueTree(dna);auto notes=l.getChildWithName("NOTES");for(int j=0;j<notes.getNumChildren();++j){auto n=notes.getChild(j);lane.notes.push_back({juce::jlimit(0,127,(int)n.getProperty("note",60)),juce::jlimit(1,127,(int)n.getProperty("velocity",100)),juce::jmax(0.0,(double)n.getProperty("beat",0.0)),juce::jmax(.03,(double)n.getProperty("length",.5))});}std::sort(lane.notes.begin(),lane.notes.end(),[](const ArrangementNote&x,const ArrangementNote&y){return x.beat<y.beat;});a.lanes.push_back(std::move(lane));}
     return a;
 }
