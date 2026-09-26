@@ -962,6 +962,38 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         }
     }
 
+    // Final musical polish: preserve pitch class and rhythm identity while
+    // octave-normalizing the line into a playable range and removing accidental
+    // section-boundary leaps/repeated-note runs.
+    std::sort(lead.notes.begin(),lead.notes.end(),
+              [](const ArrangementNote& a,const ArrangementNote& b){return a.beat<b.beat;});
+
+    int previousNote=-1;
+    int repeatedRun=0;
+    for(auto& n:lead.notes)
+    {
+        while(n.note<52)n.note+=12;
+        while(n.note>96)n.note-=12;
+
+        if(previousNote>=0)
+        {
+            while(n.note-previousNote>12&&n.note-12>=52)n.note-=12;
+            while(previousNote-n.note>12&&n.note+12<=96)n.note+=12;
+
+            repeatedRun=(n.note==previousNote)?repeatedRun+1:0;
+            if(repeatedRun>=3)
+            {
+                if(n.note+12<=96)n.note+=12;
+                else if(n.note-12>=52)n.note-=12;
+                repeatedRun=0;
+            }
+        }
+
+        n.length=juce::jlimit(.08,1.55,n.length);
+        n.velocity=juce::jlimit(48,124,n.velocity);
+        previousNote=n.note;
+    }
+
     lanes.push_back(std::move(lead));
     lanes.push_back(std::move(counter));
 }
