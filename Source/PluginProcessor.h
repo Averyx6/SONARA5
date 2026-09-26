@@ -31,8 +31,13 @@ public:
 
     void generateTrack(const juce::String& prompt);
     void regenerateDrums(const juce::String& prompt);
-    void startSongPreview(); void stopSongPreview(); bool isSongPlaying() const noexcept { return songPlaying.load(); }
+    void startSongPreview();
+    void startSongPreviewAtBar(int bar);
+    void stopSongPreview();
+    bool isSongPlaying() const noexcept { return songPlaying.load(); }
     double songPosition01() const noexcept;
+    int currentSongBar() const noexcept;
+    juce::String currentSectionName() const;
     std::shared_ptr<const sonara::SongArrangement> arrangementSnapshot() const noexcept { return std::atomic_load_explicit(&arrangement,std::memory_order_acquire); }
     bool writeArrangementMidiFile(const juce::File&) const;
     bool writeSelectedLaneMidiFile(const juce::File&) const;
@@ -97,6 +102,8 @@ private:
     std::shared_ptr<const sonara::SongArrangement> arrangement;
     std::array<juce::AudioBuffer<float>,musicalLaneCount> songScratch;
     std::array<juce::MidiBuffer,musicalLaneCount> songMidi;
+    std::array<std::array<float,2>,musicalLaneCount> laneHpX{},laneHpY{};
+    std::array<float,2> masterHpX{},masterHpY{};
     std::array<sonara::DrumTrigger,96> drumTriggers{};
     std::vector<sonara::SoundDNA> patchHistory; int historyIndex=-1; sonara::SoundDNA patchA,patchB; bool hasA=false,hasB=false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SonaraAudioProcessor)
