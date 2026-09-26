@@ -56,6 +56,88 @@ uint64_t leadFingerprintHash(const sonara::SongArrangement& a)
     h^=(uint64_t)lead->notes.size();h*=1099511628211ULL;
     return h;
 }
+
+double melodySkeletonSimilarity(const sonara::ArrangementLane& a,const sonara::ArrangementLane& b)
+{
+    const int n=juce::jmin(96,juce::jmin((int)a.notes.size(),(int)b.notes.size()));
+    if(n<8)return 0.0;
+
+    double score=0.0;
+    for(int i=1;i<n;++i)
+    {
+        const auto& ax=a.notes[(size_t)i];
+        const auto& ap=a.notes[(size_t)i-1];
+        const auto& bx=b.notes[(size_t)i];
+        const auto& bp=b.notes[(size_t)i-1];
+
+        const int ai=juce::jlimit(-12,12,ax.note-ap.note);
+        const int bi=juce::jlimit(-12,12,bx.note-bp.note);
+        const int ac=ai>0?1:(ai<0?-1:0);
+        const int bc=bi>0?1:(bi<0?-1:0);
+        const int ag=(int)std::llround((ax.beat-ap.beat)*8.0);
+        const int bg=(int)std::llround((bx.beat-bp.beat)*8.0);
+        const int al=(int)std::llround(ax.length*8.0);
+        const int bl=(int)std::llround(bx.length*8.0);
+
+        if(ai==bi)score+=.30;
+        if(ac==bc)score+=.22;
+        if(std::abs(ag-bg)<=1)score+=.30;
+        if(std::abs(al-bl)<=1)score+=.18;
+    }
+
+    const double sequence=score/(double)juce::jmax(1,n-1);
+    const double countRatio=(double)juce::jmin(a.notes.size(),b.notes.size())
+                           /(double)juce::jmax<size_t>(1,juce::jmax(a.notes.size(),b.notes.size()));
+    return juce::jlimit(0.0,1.0,sequence*(.86+.14*countRatio));
+}
+
+bool melodyQualityOk(const sonara::SongArrangement& song,const sonara::ArrangementLane& lead)
+{
+    if(lead.notes.size()<24||lead.notes.size()>700)return false;
+
+    const int root=((song.getRootMidi()%12)+12)%12;
+    const int minorScale[7]={0,2,3,5,7,8,10};
+    const int majorScale[7]={0,2,4,5,7,9,11};
+    const int* scale=song.isMinor()?minorScale:majorScale;
+
+    bool allowed[12]{};
+    for(int i=0;i<7;++i)allowed[(root+scale[i])%12]=true;
+
+    int hugeLeaps=0;
+    int repeatedRun=1;
+    int maxRepeated=1;
+    int minNote=127,maxNote=0;
+    double totalLength=0.0;
+    std::set<int> gapShapes;
+
+    for(size_t i=0;i<lead.notes.size();++i)
+    {
+        const auto& n=lead.notes[i];
+        if(!allowed[((n.note%12)+12)%12])return false;
+        if(n.note<48||n.note>100)return false;
+        if(n.length<.06||n.length>1.8)return false;
+        minNote=juce::jmin(minNote,n.note);maxNote=juce::jmax(maxNote,n.note);
+        totalLength+=n.length;
+
+        if(i>0)
+        {
+            const auto& p=lead.notes[i-1];
+            if(std::abs(n.note-p.note)>12)++hugeLeaps;
+            repeatedRun=(n.note==p.note)?repeatedRun+1:1;
+            maxRepeated=juce::jmax(maxRepeated,repeatedRun);
+            gapShapes.insert((int)std::llround((n.beat-p.beat)*8.0));
+        }
+    }
+
+    if(maxNote-minNote>48)return false;
+    if(hugeLeaps>(int)lead.notes.size()/5)return false;
+    if(maxRepeated>4)return false;
+    if(gapShapes.size()<2)return false;
+
+    const double avgLength=totalLength/(double)lead.notes.size();
+    return avgLength>=.10&&avgLength<=1.25;
+}
+
 }
 
 int main()
@@ -113,7 +195,9 @@ int main()
 
     const auto* leadA=findLane(a,"LEAD");
     const auto* leadFresh=findLane(fresh,"LEAD");
-    if(structuralDifference(*leadA,*leadFresh)<.55){std::cerr<<"Lead phrase family still too similar\n";return 13;}
+    if(!melodyQualityOk(a,*leadA)||!melodyQualityOk(fresh,*leadFresh))
+    {std::cerr<<"Generated lead failed musical quality constraints\n";return 24;}
+    if(structuralDifference(*leadA,*leadFresh)<.55||melodySkeletonSimilarity(*leadA,*leadFresh)>.68){std::cerr<<"Lead phrase family still too similar\n";return 13;}
 
     // TEST A: same prompt, 10 seeds, every lead pair must be materially different.
     const uint64_t freshnessSeeds[]={10101ULL,20202ULL,30303ULL,40404ULL,50505ULL,60606ULL,70707ULL,80808ULL,90909ULL,100010ULL};
@@ -125,22 +209,25 @@ int main()
             const auto* li=findLane(variants[i],"LEAD");
             const auto* lj=findLane(variants[j],"LEAD");
             if(!li||!lj){std::cerr<<"Freshness variant missing lead\n";return 14;}
-            if(structuralDifference(*li,*lj)<.34)
+            if(structuralDifference(*li,*lj)<.42||melodySkeletonSimilarity(*li,*lj)>.72)
             {
-                std::cerr<<"Same-prompt melody variants collapsed toward one phrase\n";
+                std::cerr<<"Same-prompt melody variants reused a rhythm/contour skeleton\n";
                 return 15;
+            }
+            if(!melodyQualityOk(variants[i],*li)||!melodyQualityOk(variants[j],*lj))
+            {
+                std::cerr<<"Fresh melody variant failed quality constraints\n";
+                return 25;
             }
         }
 
-    // TEST C: 20 generated songs may not produce an identical lead fingerprint.
-    std::set<uint64_t> fingerprints;
-    for(uint64_t i=0;i<20;++i)
+    // TEST C: 30 generated songs may not produce an identical lead fingerprint.\n    std::set<uint64_t> fingerprints;\n    for(uint64_t i=0;i<30;++i)
     {
         sonara::SongArrangement x;
         x.generate(prompt,120.0,0xabc000ULL+i*0x10203ULL);
         const auto hash=leadFingerprintHash(x);
         if(hash==0||!fingerprints.insert(hash).second)
-        {std::cerr<<"Duplicate lead fingerprint in 20-song run\n";return 21;}
+        {std::cerr<<"Duplicate lead fingerprint in 30-song run\n";return 21;}
     }
 
     // TEST B: genre language must alter melody grammar, not only SoundDNA.
