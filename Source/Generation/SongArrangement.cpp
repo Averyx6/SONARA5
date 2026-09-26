@@ -82,6 +82,40 @@ int SongArrangement::parseRootMidi(const juce::String& raw, bool& minorOut)
     return 53; // F3
 }
 
+void SongArrangement::buildSongPlan(uint64_t seed)
+{
+    const auto p=sourcePrompt.toLowerCase();
+    plan.structureStyle=(int)(random01(seed,0x1001)*4.f)%4;
+    plan.drumGroove=(int)(random01(seed,0x1002)*6.f)%6;
+    plan.hatMode=(int)(random01(seed,0x1003)*4.f)%4;
+    plan.progressionIndex=(int)(random01(seed,0x1004)*8.f)%8;
+    plan.alternateProgressionIndex=(int)(random01(seed,0x1005)*8.f)%8;
+    if(plan.alternateProgressionIndex==plan.progressionIndex)
+        plan.alternateProgressionIndex=(plan.alternateProgressionIndex+3)%8;
+    plan.bassMode=(int)(random01(seed,0x1006)*5.f)%5;
+    plan.chordMode=(int)(random01(seed,0x1007)*5.f)%5;
+    plan.arpMode=(int)(random01(seed,0x1008)*6.f)%6;
+    plan.melodyArchetype=(int)(random01(seed,0x1009)*8.f)%8;
+    plan.phraseBars=random01(seed,0x1010)>.62f?8:4;
+    plan.octaveRange=1+(int)(random01(seed,0x1011)*3.f);
+    plan.density=.46f+.42f*random01(seed,0x1012);
+    plan.syncopation=.12f+.58f*random01(seed,0x1013);
+    plan.restAmount=.08f+.30f*random01(seed,0x1014);
+    plan.development=.30f+.62f*random01(seed,0x1015);
+
+    if(p.contains("minimal")){plan.density*=.62f;plan.restAmount=juce::jmax(plan.restAmount,.30f);}
+    if(p.contains("complex")){plan.density=juce::jmin(1.f,plan.density+.18f);plan.development=juce::jmax(plan.development,.72f);}
+    if(p.contains("simple")){plan.density=juce::jmin(plan.density,.62f);plan.development=juce::jmin(plan.development,.48f);}
+    if(p.contains("syncopated"))plan.syncopation=juce::jmax(plan.syncopation,.70f);
+    if(p.contains("repetitive"))plan.development=juce::jmin(plan.development,.38f);
+    if(p.contains("evolving"))plan.development=juce::jmax(plan.development,.78f);
+    if(p.contains("short hook"))plan.phraseBars=4;
+    if(p.contains("long melody"))plan.phraseBars=8;
+    if(p.contains("drum and bass")||p.contains("dnb")){plan.density=juce::jmax(plan.density,.78f);plan.syncopation=juce::jmax(plan.syncopation,.66f);}
+    if(p.contains("tech house")){plan.density=juce::jmin(plan.density,.58f);plan.restAmount=juce::jmax(plan.restAmount,.24f);plan.octaveRange=1;}
+    if(p.contains("cinematic")){plan.phraseBars=8;plan.restAmount=juce::jmax(plan.restAmount,.22f);plan.development=juce::jmax(plan.development,.72f);}
+}
+
 void SongArrangement::buildSections(uint64_t seed)
 {
     struct Layout { int lengths[8]; };
@@ -92,7 +126,7 @@ void SongArrangement::buildSections(uint64_t seed)
         {{4,8,8,12,8,12,8,12}}
     };
 
-    const int style = static_cast<int>(random01(seed, 0x51ec7100ULL) * 4.f) % 4;
+    const int style = plan.structureStyle;
     const auto& l = layouts[style].lengths;
     static constexpr const char* names[8] = {
         "INTRO","VERSE","BUILD","DROP","BREAKDOWN","CHORUS","BUILD 2","FINAL HOOK"
@@ -118,6 +152,7 @@ void SongArrangement::generate(const juce::String& prompt, double bpm, uint64_t 
     tempo = juce::jlimit(60.0, 200.0, bpmFromPrompt(prompt, bpm));
     rootMidi = parseRootMidi(prompt, minor);
     bars = defaultBars;
+    buildSongPlan(seed ^ 0x6f4d2b19ULL);
     buildSections(seed ^ 0x7a1f2d4bULL);
 
     const auto lower = prompt.toLowerCase();
@@ -216,8 +251,8 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
     const bool house = p.contains("house") || p.contains("future rave") || p.contains("edm");
     const bool trap = p.contains("trap") || p.contains("hip hop");
     const bool dnb = p.contains("drum and bass") || p.contains("dnb");
-    const int groove = static_cast<int>(random01(seed, 11) * 6.f) % 6;
-    const int hatMode = static_cast<int>(random01(seed, 12) * 4.f) % 4;
+    const int groove = plan.drumGroove;
+    const int hatMode = plan.hatMode;
     const float swing = .012f + random01(seed,13) * .062f;
 
     for(int bar=0;bar<bars;++bar)
@@ -343,13 +378,12 @@ void SongArrangement::addHarmony(uint64_t seed)
         {0,7,9,5}, {0,9,5,7}, {0,5,9,7}, {9,5,0,7},
         {0,4,5,7}, {0,9,7,5}, {0,5,7,9}, {0,7,5,4}
     };
-    const int progressionIndex=static_cast<int>(random01(seed,201)*8.f)%8;
-    int alternateIndex=static_cast<int>(random01(seed,205)*8.f)%8;
-    if(alternateIndex==progressionIndex) alternateIndex=(alternateIndex+3)%8;
+    const int progressionIndex=plan.progressionIndex;
+    const int alternateIndex=plan.alternateProgressionIndex;
     const int third=minor?3:4;
-    const int bassMode=static_cast<int>(random01(seed,202)*5.f)%5;
-    const int chordMode=static_cast<int>(random01(seed,203)*5.f)%5;
-    const int arpMode=static_cast<int>(random01(seed,204)*6.f)%6;
+    const int bassMode=plan.bassMode;
+    const int chordMode=plan.chordMode;
+    const int arpMode=plan.arpMode;
     static constexpr int arpPatterns[6][8] = {
         {0,1,2,1,0,1,2,1},
         {0,2,1,2,0,2,1,2},
@@ -511,7 +545,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
     const bool progressive=stylePrompt.contains("progressive house")||stylePrompt.contains("melodic house");
     const bool trance=stylePrompt.contains("trance");
     const bool tropical=stylePrompt.contains("tropical");
-    const int globalArchetype=(int)(random01(seed,0x4d454c4f4459ULL)*8.f)%8;
+    const int globalArchetype=plan.melodyArchetype;
 
     for(int bar=0;bar<bars;++bar)
     {
