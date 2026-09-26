@@ -612,10 +612,11 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         if(breakdown) leadActive=(localBar%2==0);
         if(!leadActive) continue;
 
-        const int phraseBlock=localBar/4;
+        const int phraseBlock=localBar/juce::jmax(1,plan.phraseBars);
+        const int developmentBlock=plan.development>.70f?phraseBlock:(plan.development>.48f?phraseBlock/2:0);
         const uint64_t phraseSeed=mix64(seed
             ^ ((uint64_t)sectionIndex+1ULL)*0x9e3779b97f4a7c15ULL
-            ^ ((uint64_t)phraseBlock+1ULL)*0xbf58476d1ce4e5b9ULL);
+            ^ ((uint64_t)developmentBlock+1ULL)*0xbf58476d1ce4e5b9ULL);
 
         int motif[8]{};
         int degree=static_cast<int>(random01(phraseSeed,100)*7.f);
@@ -636,6 +637,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             if(contour==4&&i%3==2)move=-juce::jmax(1,std::abs(move));
             degree=juce::jlimit(0,7,degree+move);
             motif[i]=degree;
+            if(i>=plan.motifLength)motif[i]=motif[i%plan.motifLength];
         }
 
         int steps=4;
@@ -648,11 +650,14 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         if(pop){steps=(drop||chorus||finalHook)?8:6;}
         if(trance&&drop)steps=12;
         if(finalHook&&!tech&&random01(phraseSeed,180)>.55f)steps=12;
+        if(plan.density>.78f&&!cinematic)steps=juce::jmin(12,steps+2);
+        else if(plan.density<.55f)steps=juce::jmax(3,steps-2);
 
-        const int rhythmMode=static_cast<int>(random01(phraseSeed,181)*6.f)%6;
+        const int rhythmMode=(static_cast<int>(random01(phraseSeed,181)*6.f)+(int)(plan.syncopation*5.f))%6;
         const double baseStep=4.0/steps;
         const double b=bar*beatsPerBar;
-        const int barInPhrase=localBar%4;
+        const int barInPhrase=localBar/juce::jmax(1,plan.phraseBars)==phraseBlock ? localBar%plan.phraseBars : 0;
+        const bool phraseEnd=barInPhrase==plan.phraseBars-1;
 
         for(int i=0;i<steps;++i)
         {
@@ -664,9 +669,10 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             else if(cinematic)restChance=breakdown?.30f:.22f;
             else if(pop)restChance=drop?.08f:.15f;
             else if(progressive&&drop)restChance=.055f;
+            restChance=juce::jlimit(.02f,.58f,restChance+(plan.restAmount-.18f)*.72f-(plan.density-.65f)*.28f);
             if(!anchor&&random01(phraseSeed,220+salt)<restChance)continue;
 
-            int motifIndex=(i+barInPhrase*2+rhythmMode)%8;
+            int motifIndex=(i+barInPhrase*2+rhythmMode)%juce::jmax(1,plan.motifLength);
             int d=motif[motifIndex];
             if(random01(phraseSeed,300+salt)>.70f)
                 d=juce::jlimit(0,7,d+(random01(phraseSeed,310+salt)>.5f?1:-1));
@@ -689,6 +695,8 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             else if(rhythmMode==2&&i%3==2)pos-=baseStep*.18;
             else if(rhythmMode==3&&i>0&&i%4==0)pos+=baseStep*.35;
             else if(rhythmMode==4&&i%2==0)pos+=baseStep*.10;
+            if(!anchor&&random01(phraseSeed,350+salt)<plan.syncopation)
+                pos+=(random01(phraseSeed,351+salt)>.5f?1.0:-1.0)*baseStep*(.08+.18*plan.syncopation);
             pos=juce::jlimit(0.0,3.92,pos);
 
             double length=juce::jlimit(.11,1.15,
@@ -703,7 +711,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             addNote(lead,rootMidi+octave+scale[d],b+pos,length,velocity);
         }
 
-        if((barInPhrase==3||finalHook)&&random01(phraseSeed,500+bar)>.22f)
+        if((phraseEnd||finalHook)&&random01(phraseSeed,500+bar)>.22f)
         {
             const int d=motif[(5+rhythmMode+barInPhrase)%8];
             addNote(lead,rootMidi+(finalHook?36:(drop||chorus?24:12))+scale[d],
