@@ -85,7 +85,7 @@ int SongArrangement::parseRootMidi(const juce::String& raw, bool& minorOut)
 void SongArrangement::buildSongPlan(uint64_t seed)
 {
     const auto p=sourcePrompt.toLowerCase();
-    plan.structureStyle=(int)(random01(seed,0x1001)*4.f)%4;
+    plan.structureStyle=(int)((seed ^ (seed>>16)) & 3ULL);
     plan.drumGroove=(int)(random01(seed,0x1002)*6.f)%6;
     plan.hatMode=(int)(random01(seed,0x1003)*4.f)%4;
     plan.progressionIndex=(int)(random01(seed,0x1004)*8.f)%8;
