@@ -617,7 +617,7 @@ void SongArrangement::finalizeSoundPalette()
     for (size_t i = 0; i < lanes.size(); ++i)
     {
         auto& lane = lanes[i];
-        juce::String soundPrompt = prompt + " " + lane.name + " ";
+        juce::String soundPrompt = sourcePrompt + " " + lane.name + " ";
         if (lane.drums) soundPrompt += "tight punchy drum transient ";
         else if (lane.name == "BASS") soundPrompt += "deep controlled bass mono harmonic body ";
         else if (lane.name == "SUB") soundPrompt += "pure clean sine sub mono lowpass controlled no highs ";
