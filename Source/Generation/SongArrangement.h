@@ -34,6 +34,8 @@ public:
     static constexpr int defaultBars = 72;
 
     void generate(const juce::String& prompt, double bpm, uint64_t seed);
+    void generateComposition(const juce::String& prompt, double bpm, uint64_t seed);
+    void finalizeSoundPalette();
     void clear();
     bool writeMidiFile(const juce::File& destination) const;
     juce::ValueTree toValueTree() const;
@@ -54,6 +56,9 @@ public:
     juce::String getHarmonySummary() const;
     juce::String getHarmonicRhythmSummary() const;
     juce::String getMelodyArchetypeName() const;
+    std::vector<int> getHarmonyFingerprint() const;
+    std::vector<int> getStructureFingerprint() const;
+    int getHarmonyProgressionLength() const noexcept { return harmonyPlan.progressionLength; }
 
 private:
     struct SongPlan {
