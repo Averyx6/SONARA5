@@ -209,11 +209,11 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     soundPrompt.setTextToShowWhenEmpty("Describe one custom sound...",dim);
     songPrompt.setTextToShowWhenEmpty("Describe the whole song: genre, key, BPM, energy, drop, instruments...",dim);
 
-    std::array<juce::Button*,37> buttons {&generateSound,&generateTrack,&generateDrums,&similar,&mutate,&randomize,&undo,&redo,
+    std::array<juce::Button*,39> buttons {&generateSound,&generateTrack,&generateDrums,&randomizeEverythingButton,&surpriseMe,&similar,&mutate,&randomize,&undo,&redo,
         &variation1,&variation2,&variation3,&variation4,&captureA,&captureB,&recallA,&recallB,&connect,&previewSound,&playSong,&stop,
         &dragPreviewMidi,&dragFullMidi,&dragLaneMidi,&dragReferenceMidi,&dragFullAudio,&dragLaneAudio,&dragStems,
         &loadReference,&importMidi,&resound,&rebuildReference,&saveSoundButton,&loadSoundButton,&saveProjectButton,&loadProjectButton,&exportMixButton,&exportStemsButton};
-    for(auto* b:buttons){addAndMakeVisible(*b);styleButton(*b,b==&generateSound||b==&generateTrack||b==&generateDrums||b==&playSong||b==&resound||b==&rebuildReference||b==&exportMixButton||b==&exportStemsButton);}
+    for(auto* b:buttons){addAndMakeVisible(*b);styleButton(*b,b==&generateSound||b==&generateTrack||b==&generateDrums||b==&randomizeEverythingButton||b==&surpriseMe||b==&playSong||b==&resound||b==&rebuildReference||b==&exportMixButton||b==&exportStemsButton);}
 
     juce::TextButton* tabs[]={&tabInstrument,&tabSong,&tabDrums,&tabFx,&tabReference,&tabMidi,&tabExport};
     for(auto* t:tabs){addAndMakeVisible(*t);styleButton(*t);}
@@ -262,6 +262,18 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     generateSound.onClick=[this]{p.generatePatch(soundPrompt.getText());};
     generateTrack.onClick=[this]{p.generateTrack(songPrompt.getText());bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);setTab(1);};
     generateDrums.onClick=[this]{p.regenerateDrums(songPrompt.getText());p.setSelectedLane(0);setTab(2);};
+    randomizeEverythingButton.onClick=[this]{
+        p.randomizeEverything(songPrompt.getText().trim().isEmpty()?juce::String("fresh modern EDM"):songPrompt.getText());
+        bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);
+        setTab(1);
+    };
+    surpriseMe.onClick=[this]{
+        const auto q=p.makeSurprisePrompt();
+        songPrompt.setText(q);
+        p.randomizeEverything(q);
+        bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);
+        setTab(1);
+    };
     similar.onClick=[this]{p.generateSimilarPatch();};mutate.onClick=[this]{p.mutatePatch();};randomize.onClick=[this]{p.randomizePatch();};undo.onClick=[this]{p.undoPatch();};redo.onClick=[this]{p.redoPatch();};
     variation1.onClick=[this]{p.generateVariation(1);};variation2.onClick=[this]{p.generateVariation(2);};variation3.onClick=[this]{p.generateVariation(3);};variation4.onClick=[this]{p.generateVariation(4);};
     captureA.onClick=[this]{p.captureA();};captureB.onClick=[this]{p.captureB();};recallA.onClick=[this]{p.recallA();};recallB.onClick=[this]{p.recallB();};
@@ -346,6 +358,8 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     undo.setVisible(instrumentTab);
     redo.setVisible(instrumentTab);
     generateTrack.setVisible(songTab);
+    randomizeEverythingButton.setVisible(songTab);
+    surpriseMe.setVisible(songTab);
     generateDrums.setVisible(drumsTab);
 
     for(auto* b:std::array<juce::Component*,4>{&loadReference,&importMidi,&resound,&rebuildReference})b->setVisible(referenceTab);
@@ -523,4 +537,13 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
     g.setColour(cyan);g.fillRoundedRectangle(prog.withWidth(prog.getWidth()*progress),3);
 }
 
-void SonaraAudioProcessorEditor::resized(){const int w=getWidth(),h=getHeight();const int tabY=82,gap=5,tabW=(w-60-6*gap)/7;juce::TextButton* tabs[]={&tabInstrument,&tabSong,&tabDrums,&tabFx,&tabReference,&tabMidi,&tabExport};for(int i=0;i<7;++i)tabs[i]->setBounds(30+i*(tabW+gap),tabY,tabW,30);connect.setBounds(w-250,24,220,34);int py=160;for(auto& b:presets){b.setBounds(35,py,184,31);py+=36;}const int lockY=h-240;juce::ToggleButton* locks1[]={&lockOsc,&lockUnison,&lockEnv,&lockFilter};juce::ToggleButton* locks2[]={&lockMod,&lockSources,&lockTone,&lockFx};for(int i=0;i<4;++i){locks1[i]->setBounds(34+(i%2)*94,lockY+(i/2)*30,90,27);locks2[i]->setBounds(34+(i%2)*94,lockY+64+(i/2)*30,90,27);}const int cx=270,cw=w-550;soundPrompt.setBounds(cx,138,cw,36);songPrompt.setBounds(cx,138,cw,36);auto layoutRow=[&](std::initializer_list<juce::Component*> items,int y,int height=38){const int n=(int)items.size();if(n<=0)return;const int g=6,cell=(cw-g*(n-1))/n;int x=cx;for(auto* c:items){c->setBounds(x,y,cell,height);x+=cell+g;}};layoutRow({&generateSound,&generateTrack,&generateDrums,&similar,&mutate,&randomize,&undo,&redo},184);layoutRow({&loadReference,&importMidi,&resound,&rebuildReference},184);layoutRow({&saveSoundButton,&loadSoundButton,&saveProjectButton,&loadProjectButton,&exportMixButton,&exportStemsButton},184);const int upperY=230,upperH=230;soundView.setBounds(cx,upperY,cw,upperH);timeline.setBounds(cx,upperY,cw,upperH);referenceSummary.setBounds(cx+28,upperY+48,cw-56,upperH-72);pianoRoll.setBounds(cx,upperY+upperH+9,cw,juce::jmax(105,h-upperY-upperH-200));patchName.setBounds(cx+18,upperY+8,cw-36,22);selectedLaneLabel.setBounds(cx,h-154,190,20);layoutRow({&dragPreviewMidi,&dragFullMidi,&dragLaneMidi,&dragReferenceMidi,&dragFullAudio,&dragLaneAudio,&dragStems},h-128,34);previewSound.setBounds(cx,h-84,120,34);playSong.setBounds(cx+128,h-84,112,34);stop.setBounds(cx+248,h-84,70,34);bpm.setBounds(cx+328,h-84,juce::jmax(140,cw-328),34);playbackBar.setBounds(cx,h-44,cw,15);statusLine.setBounds(cx,h-27,cw,18);variation1.setBounds(w-226,164,42,28);variation2.setBounds(w-180,164,42,28);variation3.setBounds(w-134,164,42,28);variation4.setBounds(w-88,164,42,28);captureA.setBounds(w-226,200,88,30);captureB.setBounds(w-130,200,88,30);recallA.setBounds(w-226,236,88,30);recallB.setBounds(w-130,236,88,30);const int mx=w-225,my=292;macroBrightness.setBounds(mx,my,92,92);macroMovement.setBounds(mx+96,my,92,92);macroSpace.setBounds(mx,my+104,92,92);macroImpact.setBounds(mx+96,my+104,92,92);updateModeVisibility();}
+void SonaraAudioProcessorEditor::resized(){const int w=getWidth(),h=getHeight();const int tabY=82,gap=5,tabW=(w-60-6*gap)/7;juce::TextButton* tabs[]={&tabInstrument,&tabSong,&tabDrums,&tabFx,&tabReference,&tabMidi,&tabExport};for(int i=0;i<7;++i)tabs[i]->setBounds(30+i*(tabW+gap),tabY,tabW,30);connect.setBounds(w-250,24,220,34);int py=160;for(auto& b:presets){b.setBounds(35,py,184,31);py+=36;}const int lockY=h-240;juce::ToggleButton* locks1[]={&lockOsc,&lockUnison,&lockEnv,&lockFilter};juce::ToggleButton* locks2[]={&lockMod,&lockSources,&lockTone,&lockFx};for(int i=0;i<4;++i){locks1[i]->setBounds(34+(i%2)*94,lockY+(i/2)*30,90,27);locks2[i]->setBounds(34+(i%2)*94,lockY+64+(i/2)*30,90,27);}const int cx=270,cw=w-550;soundPrompt.setBounds(cx,138,cw,36);songPrompt.setBounds(cx,138,cw,36);auto layoutRow=[&](std::initializer_list<juce::Component*> items,int y,int height=38){const int n=(int)items.size();if(n<=0)return;const int g=6,cell=(cw-g*(n-1))/n;int x=cx;for(auto* c:items){c->setBounds(x,y,cell,height);x+=cell+g;}};if(activeTab==0)layoutRow({&generateSound,&similar,&mutate,&randomize,&undo,&redo},184);
+else if(activeTab==1)layoutRow({&generateTrack,&randomizeEverythingButton,&surpriseMe},184);
+else if(activeTab==2)layoutRow({&generateDrums},184);
+else if(activeTab==4)if(activeTab!=4){}
+else if(activeTab==6)if(activeTab!=6){}layoutRow({&loadReference,&importMidi,&resound,&rebuildReference},184);layoutRow({&saveSoundButton,&loadSoundButton,&saveProjectButton,&loadProjectButton,&exportMixButton,&exportStemsButton},184);const int upperY=230,upperH=230;soundView.setBounds(cx,upperY,cw,upperH);timeline.setBounds(cx,upperY,cw,upperH);referenceSummary.setBounds(cx+28,upperY+48,cw-56,upperH-72);pianoRoll.setBounds(cx,upperY+upperH+9,cw,juce::jmax(105,h-upperY-upperH-200));patchName.setBounds(cx+18,upperY+8,cw-36,22);selectedLaneLabel.setBounds(cx,h-154,190,20);if(activeTab==0)layoutRow({&dragPreviewMidi},h-128,34);
+else if(activeTab==1)layoutRow({&dragFullMidi,&dragLaneMidi},h-128,34);
+else if(activeTab==2)layoutRow({&dragLaneMidi},h-128,34);
+else if(activeTab==4)layoutRow({&dragReferenceMidi},h-128,34);
+else if(activeTab==5)layoutRow({&dragPreviewMidi,&dragFullMidi,&dragLaneMidi,&dragReferenceMidi},h-128,34);
+else if(activeTab==6)layoutRow({&dragFullAudio,&dragLaneAudio,&dragStems,&dragFullMidi,&dragLaneMidi},h-128,34);previewSound.setBounds(cx,h-84,120,34);playSong.setBounds(cx+128,h-84,112,34);stop.setBounds(cx+248,h-84,70,34);bpm.setBounds(cx+328,h-84,juce::jmax(140,cw-328),34);playbackBar.setBounds(cx,h-44,cw,15);statusLine.setBounds(cx,h-27,cw,18);variation1.setBounds(w-226,164,42,28);variation2.setBounds(w-180,164,42,28);variation3.setBounds(w-134,164,42,28);variation4.setBounds(w-88,164,42,28);captureA.setBounds(w-226,200,88,30);captureB.setBounds(w-130,200,88,30);recallA.setBounds(w-226,236,88,30);recallB.setBounds(w-130,236,88,30);const int mx=w-225,my=292;macroBrightness.setBounds(mx,my,92,92);macroMovement.setBounds(mx+96,my,92,92);macroSpace.setBounds(mx,my+104,92,92);macroImpact.setBounds(mx+96,my+104,92,92);updateModeVisibility();}
