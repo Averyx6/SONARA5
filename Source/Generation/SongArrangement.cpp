@@ -441,22 +441,26 @@ std::vector<int> SongArrangement::getMelodyFingerprint() const
     const int limit=juce::jmin(128,(int)lead->notes.size());
     fp.reserve((size_t)(limit*stride+1));
     const int tonic=((rootMidi%12)+12)%12;
-    int previous=lead->notes.front().note;
+    int previousScaleRelative=0;
     double previousBeat=lead->notes.front().beat;
     for(int i=0;i<limit;++i)
     {
         const auto& note=lead->notes[(size_t)i];
-        const int interval=i==0?0:juce::jlimit(-18,18,note.note-previous);
         const int scaleRelative=(((note.note-tonic)%12)+12)%12;
-        const int registerRelative=(note.note-rootMidi)/12;
+        int interval=i==0?0:scaleRelative-previousScaleRelative;
+        // Compare melodic motion in a canonical key-relative register. Absolute
+        // octave folding at MIDI safety boundaries must not make a transposed
+        // copy look novel; pitch class, contour and rhythm remain identical.
+        while(interval>6)interval-=12;
+        while(interval<-6)interval+=12;
         fp.push_back(scaleRelative);
         fp.push_back(interval+18);
         fp.push_back(interval>0?2:(interval<0?0:1));
-        fp.push_back(registerRelative);
+        fp.push_back(0);
         fp.push_back((int)std::llround(std::fmod(juce::jmax(0.0,note.beat),16.0)*4.0));
         fp.push_back(i==0?0:juce::jlimit(0,64,(int)std::llround((note.beat-previousBeat)*8.0)));
         fp.push_back(juce::jlimit(1,32,(int)std::llround(note.length*8.0)));
-        previous=note.note;
+        previousScaleRelative=scaleRelative;
         previousBeat=note.beat;
     }
     fp.push_back((int)lead->notes.size());
