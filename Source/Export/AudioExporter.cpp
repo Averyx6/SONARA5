@@ -42,7 +42,7 @@ bool AudioExporter::renderSelectedLane(const SongArrangement& a,int laneIndex,co
     std::unique_ptr<juce::AudioFormatWriter> writer;if(!createWavWriter(destination,sampleRate,writer))return false;
     constexpr int blockSize=512;const double spb=sampleRate*60.0/a.getBpm();const int64_t total=(int64_t)std::llround(a.getTotalBeats()*spb+sampleRate*3.0);
     juce::AudioBuffer<float> block(2,blockSize);juce::MidiBuffer midi;midi.ensureSize(8192);std::array<DrumTrigger,128> triggers{};
-    SonaraEngine synth;DrumSynth drums;if(lane.drums)drums.prepare(sampleRate);else{synth.prepare(sampleRate,blockSize,2);synth.setPatch(lane.sound);}
+    SonaraEngine synth;DrumSynth drums;if(lane.drums){drums.prepare(sampleRate);drums.configureKit(lane.sound,lane.sound,lane.sound,lane.sound);}else{synth.prepare(sampleRate,blockSize,2);synth.setPatch(lane.sound);}
     for(int64_t start=0;start<total;start+=blockSize){const int n=(int)juce::jmin<int64_t>(blockSize,total-start);block.clear();if(lane.drums){const int count=collectDrumTriggers(lane,start,n,a.getBpm(),sampleRate,triggers.data(),(int)triggers.size());drums.render(block,triggers.data(),count);}else{injectLaneMidi(lane,midi,start,n,a.getBpm(),sampleRate);synth.render(block,midi);}for(int ch=0;ch<2;++ch)for(int i=0;i<n;++i)block.setSample(ch,i,std::tanh(block.getSample(ch,i)*.86f));if(!writer->writeFromAudioSampleBuffer(block,0,n))return false;if(cb&&start%(blockSize*64)==0)cb((float)start/(float)total,"Rendering "+lane.name);}
     if(cb)cb(1.f,lane.name+" ready");return true;
 }
@@ -53,7 +53,7 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
     constexpr int blockSize=512;const auto& lanes=a.getLanes();const int firstMusical=4;const int musicalCount=juce::jmax(0,(int)lanes.size()-firstMusical);
     std::vector<std::unique_ptr<SonaraEngine>> engines;engines.reserve((size_t)musicalCount);std::vector<juce::MidiBuffer> midis((size_t)musicalCount);std::vector<juce::AudioBuffer<float>> scratch((size_t)musicalCount);
     for(int i=0;i<musicalCount;++i){auto e=std::make_unique<SonaraEngine>();e->prepare(sampleRate,blockSize,2);e->setPatch(lanes[(size_t)(firstMusical+i)].sound);midis[(size_t)i].ensureSize(8192);scratch[(size_t)i].setSize(2,blockSize);engines.push_back(std::move(e));}
-    DrumSynth drums;drums.prepare(sampleRate);std::array<DrumTrigger,256> triggers{};juce::AudioBuffer<float> block(2,blockSize);
+    DrumSynth drums;drums.prepare(sampleRate);if(lanes.size()>=4)drums.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);std::array<DrumTrigger,256> triggers{};juce::AudioBuffer<float> block(2,blockSize);
     const double spb=sampleRate*60.0/a.getBpm();const int64_t total=(int64_t)std::llround(a.getTotalBeats()*spb+sampleRate*4.0);
     for(int64_t start=0;start<total;start+=blockSize){const int n=(int)juce::jmin<int64_t>(blockSize,total-start);block.clear();
         for(int i=0;i<musicalCount;++i){auto& lane=lanes[(size_t)(firstMusical+i)];auto& m=midis[(size_t)i];auto& s=scratch[(size_t)i];injectLaneMidi(lane,m,start,n,a.getBpm(),sampleRate);s.clear();engines[(size_t)i]->render(s,m);const float gain=i==0?.72f:(i==4?.78f:.54f);for(int ch=0;ch<2;++ch)block.addFrom(ch,0,s,ch,0,n,gain);}
