@@ -174,6 +174,30 @@ int main()
     auto surprised=randomizer.arrangementSnapshot();
     if(!surprised||surprised->getLanes().size()!=12||surprised->getSections().size()!=8)return fail("SURPRISE ME arrangement incomplete");
 
+    // Reference audio path: create a real WAV and run the same analyser used by LOAD AUDIO.
+    auto referenceWav=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("sonara-reference-audio",".wav");
+    {
+        juce::WavAudioFormat wavFormat;
+        auto stream=std::make_unique<juce::FileOutputStream>(referenceWav);
+        if(!stream->openedOk())return fail("could not create reference WAV");
+        std::unique_ptr<juce::AudioFormatWriter> writer(
+            wavFormat.createWriterFor(stream.release(),44100.0,juce::AudioChannelSet::stereo(),24,{},0));
+        if(!writer)return fail("could not create WAV writer");
+        constexpr int samples=44100*2;
+        juce::AudioBuffer<float> tone(2,samples);
+        for(int i=0;i<samples;++i)
+        {
+            const float env=.35f+.15f*std::sin(juce::MathConstants<double>::twoPi*i/(44100.0*.5));
+            const float x=env*(float)std::sin(juce::MathConstants<double>::twoPi*220.0*i/44100.0);
+            tone.setSample(0,i,x);tone.setSample(1,i,x);
+        }
+        if(!writer->writeFromAudioSampleBuffer(tone,0,samples))return fail("reference WAV write failed");
+    }
+    if(!randomizer.analyseReferenceFile(referenceWav)||!randomizer.hasReference())
+        return fail("LOAD AUDIO analysis path failed");
+    referenceWav.deleteFile();
+
     // Reference/MIDI path: import -> analysis state -> RESOUND -> re-export.
     auto referenceMidi=juce::File::getSpecialLocation(juce::File::tempDirectory)
         .getNonexistentChildFile("sonara-reference-source",".mid");
