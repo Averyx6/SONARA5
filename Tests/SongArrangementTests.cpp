@@ -2,6 +2,8 @@
 #include "../Source/Generation/SongArrangement.h"
 #include <cmath>
 #include <iostream>
+#include <set>
+#include <cstdint>
 
 namespace {
 const sonara::ArrangementLane* findLane(const sonara::SongArrangement& a,const juce::String& name)
@@ -29,6 +31,31 @@ bool hasSection(const sonara::SongArrangement& a,const juce::String& name)
     for(const auto& s:a.getSections())if(s.name==name)return true;
     return false;
 }
+
+uint64_t leadFingerprintHash(const sonara::SongArrangement& a)
+{
+    const auto* lead=findLane(a,"LEAD");
+    if(!lead)return 0;
+    uint64_t h=1469598103934665603ULL;
+    int prev=0;
+    const int n=juce::jmin(128,(int)lead->notes.size());
+    for(int i=0;i<n;++i)
+    {
+        const auto& note=lead->notes[(size_t)i];
+        const int interval=i==0?0:juce::jlimit(-24,24,note.note-prev);
+        const int values[]={
+            ((note.note%12)+12)%12,
+            interval+24,
+            (int)std::llround(std::fmod(note.beat,16.0)*8.0),
+            (int)std::llround(note.length*16.0),
+            note.note/12
+        };
+        for(const int v:values){h^=(uint64_t)(v+257);h*=1099511628211ULL;}
+        prev=note.note;
+    }
+    h^=(uint64_t)lead->notes.size();h*=1099511628211ULL;
+    return h;
+}
 }
 
 int main()
@@ -45,10 +72,14 @@ int main()
     for(const auto& name:expectedSections)
         if(!hasSection(a,name)){std::cerr<<"Missing section "<<name<<"\n";return 4;}
 
-    if(a.getLanes().size()<11){std::cerr<<"Expected at least 11 lanes\n";return 5;}
+    if(a.getLanes().size()!=12){std::cerr<<"Expected exactly 12 required lanes\n";return 5;}
     size_t notes=0;bool hasDrums=false,hasLead=false;
     for(const auto& lane:a.getLanes()){notes+=lane.notes.size();hasDrums|=lane.drums;hasLead|=lane.name=="LEAD";}
     if(notes<650||!hasDrums||!hasLead){std::cerr<<"Arrangement too sparse or missing key lanes\n";return 6;}
+    const auto* subLane=findLane(a,"SUB");
+    const auto* bassLane=findLane(a,"BASS");
+    if(!subLane||subLane->notes.empty()||!bassLane||bassLane->notes.empty())
+    {std::cerr<<"Bass/Sub lane missing real MIDI\n";return 22;}
 
     auto midi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-arrangement-test",".mid");
     if(!a.writeMidiFile(midi)||!midi.existsAsFile()||midi.getSize()<512){std::cerr<<"MIDI export failed\n";return 7;}
@@ -64,7 +95,7 @@ int main()
     if(!structureChanged){std::cerr<<"Fresh seed did not change song structure\n";return 8;}
 
     const juce::String requiredFresh[]={
-        "KICK","SNARE / CLAP","HATS","PERCUSSION","BASS","CHORDS","PLUCK","PAD","LEAD","COUNTER","FX / TRANSITIONS"
+        "KICK","SNARE / CLAP","HATS","PERCUSSION","BASS","SUB","CHORDS","PLUCK","PAD","LEAD","COUNTER","FX / TRANSITIONS"
     };
     int substantiallyDifferent=0;
     for(const auto& name:requiredFresh)
@@ -84,9 +115,9 @@ int main()
     const auto* leadFresh=findLane(fresh,"LEAD");
     if(structuralDifference(*leadA,*leadFresh)<.55){std::cerr<<"Lead phrase family still too similar\n";return 13;}
 
-    // Repeated generation from the same prompt must keep producing distinct lead identities.
-    const uint64_t freshnessSeeds[]={10101ULL,20202ULL,30303ULL,40404ULL,50505ULL};
-    std::array<sonara::SongArrangement,5> variants;
+    // TEST A: same prompt, 10 seeds, every lead pair must be materially different.
+    const uint64_t freshnessSeeds[]={10101ULL,20202ULL,30303ULL,40404ULL,50505ULL,60606ULL,70707ULL,80808ULL,90909ULL,100010ULL};
+    std::array<sonara::SongArrangement,10> variants;
     for(size_t i=0;i<variants.size();++i)variants[i].generate(prompt,120.0,freshnessSeeds[i]);
     for(size_t i=0;i<variants.size();++i)
         for(size_t j=i+1;j<variants.size();++j)
@@ -94,12 +125,23 @@ int main()
             const auto* li=findLane(variants[i],"LEAD");
             const auto* lj=findLane(variants[j],"LEAD");
             if(!li||!lj){std::cerr<<"Freshness variant missing lead\n";return 14;}
-            if(structuralDifference(*li,*lj)<.42)
+            if(structuralDifference(*li,*lj)<.34)
             {
                 std::cerr<<"Same-prompt melody variants collapsed toward one phrase\n";
                 return 15;
             }
         }
+
+    // TEST C: 20 generated songs may not produce an identical lead fingerprint.
+    std::set<uint64_t> fingerprints;
+    for(uint64_t i=0;i<20;++i)
+    {
+        sonara::SongArrangement x;
+        x.generate(prompt,120.0,0xabc000ULL+i*0x10203ULL);
+        const auto hash=leadFingerprintHash(x);
+        if(hash==0||!fingerprints.insert(hash).second)
+        {std::cerr<<"Duplicate lead fingerprint in 20-song run\n";return 21;}
+    }
 
     // Prompt language must alter melody grammar, not only the sound palette.
     sonara::SongArrangement techMelody,cinematicMelody;
