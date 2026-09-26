@@ -109,4 +109,27 @@ if(BUILD_TESTING)
         juce::juce_audio_utils juce::juce_dsp
         juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
     add_test(NAME sonara_arrangement_generation COMMAND SONARA_ArrangementTests)
+
+    juce_add_console_app(SONARA_PlaybackTests PRODUCT_NAME "SONARA Playback Acceptance Tests")
+    juce_generate_juce_header(SONARA_PlaybackTests)
+    target_sources(SONARA_PlaybackTests PRIVATE
+        Tests/PlaybackIntegrationTests.cpp
+        Source/PluginProcessor.cpp Source/PluginProcessor.h
+        Source/Engine/SonaraEngine.cpp Source/Engine/SonaraEngine.h
+        Source/Engine/SoundDNA.cpp Source/Engine/SoundDNA.h
+        Source/Generation/PromptGenerator.cpp Source/Generation/PromptGenerator.h
+        Source/Generation/SongArrangement.cpp Source/Generation/SongArrangement.h
+        Source/Integration/CyanoryxBridge.h
+        Source/Song/DrumSynth.cpp Source/Song/DrumSynth.h
+        Source/Reference/ReferenceAnalyzer.cpp Source/Reference/ReferenceAnalyzer.h
+        Source/Export/AudioExporter.cpp Source/Export/AudioExporter.h)
+    target_compile_definitions(SONARA_PlaybackTests PRIVATE
+        SONARA_HEADLESS_TEST=1
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0)
+    target_link_libraries(SONARA_PlaybackTests PRIVATE
+        juce::juce_audio_utils juce::juce_dsp
+        juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+    add_test(NAME sonara_full_playback_acceptance COMMAND SONARA_PlaybackTests)
 endif()
