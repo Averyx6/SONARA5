@@ -20,77 +20,9 @@ const sonara::ArrangementLane* laneNamed(const sonara::SongArrangement& a,const 
     return nullptr;
 }
 
-float melodySimilarity(const sonara::SongArrangement& a,const sonara::SongArrangement& b)
-{
-    const auto* x=laneNamed(a,"LEAD");
-    const auto* y=laneNamed(b,"LEAD");
-    if(x==nullptr||y==nullptr||x->notes.empty()||y->notes.empty())return 0.f;
-
-    const int n=juce::jmin(64,juce::jmin((int)x->notes.size(),(int)y->notes.size()));
-    if(n<8)return 0.f;
-
-    float score=0.f,weight=0.f;
-    for(int i=0;i<n;++i)
-    {
-        const auto& aN=x->notes[(size_t)i];
-        const auto& bN=y->notes[(size_t)i];
-
-        weight+=1.f;
-        if((aN.note%12)==(bN.note%12))score+=.52f;
-        if(std::abs(aN.beat-bN.beat)<.08)score+=.28f;
-        if(std::abs(aN.length-bN.length)<.08)score+=.20f;
-
-        if(i>0)
-        {
-            const int aInt=aN.note-x->notes[(size_t)i-1].note;
-            const int bInt=bN.note-y->notes[(size_t)i-1].note;
-            weight+=.45f;
-            if(aInt==bInt)score+=.32f;
-            else if((aInt>0)==(bInt>0)&&aInt!=0&&bInt!=0)score+=.13f;
-        }
-    }
-
-    const float countRatio=(float)juce::jmin(x->notes.size(),y->notes.size())
-                          /(float)juce::jmax<size_t>(1,juce::jmax(x->notes.size(),y->notes.size()));
-    const float normalized=weight>0.f?score/weight:0.f;
-    return juce::jlimit(0.f,1.f,normalized*.82f+countRatio*.18f);
-}
-
 std::vector<int> melodyFingerprint(const sonara::SongArrangement& a)
 {
-    std::vector<int> fp;
-    const auto* lead=laneNamed(a,"LEAD");
-    if(lead==nullptr||lead->notes.empty())return fp;
-    fp.reserve(96*7);
-
-    const int limit=juce::jmin(96,(int)lead->notes.size());
-    int prev=lead->notes.front().note;
-    double prevBeat=lead->notes.front().beat;
-
-    for(int i=0;i<limit;++i)
-    {
-        const auto& n=lead->notes[(size_t)i];
-        const int interval=i==0?0:juce::jlimit(-12,12,n.note-prev);
-        const int contour=interval>0?1:(interval<0?-1:0);
-        const int pitchClass=((n.note%12)+12)%12;
-        const int octave=n.note/12;
-        const int onset16=(int)std::llround(std::fmod(juce::jmax(0.0,n.beat),16.0)*4.0);
-        const int gap8=i==0?0:juce::jlimit(0,64,(int)std::llround((n.beat-prevBeat)*8.0));
-        const int length8=juce::jlimit(1,32,(int)std::llround(n.length*8.0));
-
-        fp.push_back(pitchClass);
-        fp.push_back(interval+12);
-        fp.push_back(contour+1);
-        fp.push_back(octave);
-        fp.push_back(onset16);
-        fp.push_back(gap8);
-        fp.push_back(length8);
-
-        prev=n.note;
-        prevBeat=n.beat;
-    }
-    fp.push_back((int)lead->notes.size());
-    return fp;
+    return a.getMelodyFingerprint();
 }
 
 float fingerprintSimilarity(const std::vector<int>& a,const std::vector<int>& b)
@@ -129,6 +61,110 @@ float fingerprintSimilarity(const std::vector<int>& a,const std::vector<int>& b)
 
     return juce::jlimit(0.f,1.f,juce::jmax(juce::jmax(rhythmSkeleton,contourSkeleton),
                                            juce::jmax(pitchIdentity,combined)));
+}
+
+float melodyRhythmSimilarity(const std::vector<int>& a,const std::vector<int>& b)
+{
+    if(a.empty()||b.empty())return 0.f;
+    constexpr int stride=7;
+    const int n=juce::jmin(((int)a.size()-1)/stride,((int)b.size()-1)/stride);
+    if(n<8)return 0.f;
+    float score=0.f;
+    for(int i=0;i<n;++i)
+    {
+        const int ai=i*stride,bi=i*stride;
+        if(std::abs(a[(size_t)ai+4]-b[(size_t)bi+4])<=1)score+=.42f;
+        if(std::abs(a[(size_t)ai+5]-b[(size_t)bi+5])<=1)score+=.36f;
+        if(std::abs(a[(size_t)ai+6]-b[(size_t)bi+6])<=1)score+=.22f;
+    }
+    const float countRatio=(float)juce::jmin(((int)a.size()-1)/stride,((int)b.size()-1)/stride)
+                          /(float)juce::jmax(1,juce::jmax(((int)a.size()-1)/stride,((int)b.size()-1)/stride));
+    return juce::jlimit(0.f,1.f,(score/(float)n)*(.84f+.16f*countRatio));
+}
+
+std::vector<int> lanePatternFingerprint(const sonara::SongArrangement& song,const juce::String& laneName)
+{
+    std::vector<int> fp;
+    const auto* lane=laneNamed(song,laneName);
+    if(lane==nullptr||lane->notes.empty())return fp;
+    const int limit=juce::jmin(128,(int)lane->notes.size());
+    fp.reserve((size_t)(limit*5+2));
+    fp.push_back(lane->drums?1:0);
+    int previous=lane->notes.front().note;
+    double previousBeat=lane->notes.front().beat;
+    for(int i=0;i<limit;++i)
+    {
+        const auto& note=lane->notes[(size_t)i];
+        fp.push_back(lane->drums?note:note.note-song.getRootMidi());
+        fp.push_back(i==0?0:juce::jlimit(-24,24,note.note-previous));
+        fp.push_back((int)std::llround(std::fmod(juce::jmax(0.0,note.beat),16.0)*4.0));
+        fp.push_back(i==0?0:juce::jlimit(0,64,(int)std::llround((note.beat-previousBeat)*8.0)));
+        fp.push_back(juce::jlimit(1,32,(int)std::llround(note.length*8.0)));
+        previous=note.note;
+        previousBeat=note.beat;
+    }
+    fp.push_back((int)lane->notes.size());
+    return fp;
+}
+
+std::vector<int> drumFingerprint(const sonara::SongArrangement& song)
+{
+    std::vector<int> fp;
+    for(const auto& name:{juce::String("KICK"),juce::String("SNARE / CLAP"),juce::String("HATS"),juce::String("PERCUSSION")})
+    {
+        const auto lane=lanePatternFingerprint(song,name);
+        fp.push_back(-1000-(int)fp.size());
+        fp.insert(fp.end(),lane.begin(),lane.end());
+    }
+    return fp;
+}
+
+float flatFingerprintSimilarity(const std::vector<int>& a,const std::vector<int>& b)
+{
+    if(a.empty()||b.empty())return 0.f;
+    const int n=juce::jmin((int)a.size(),(int)b.size());
+    float exact=0.f,near=0.f;
+    for(int i=0;i<n;++i)
+    {
+        if(a[(size_t)i]==b[(size_t)i])exact+=1.f;
+        else if(std::abs(a[(size_t)i]-b[(size_t)i])==1)near+=1.f;
+    }
+    const float countRatio=(float)n/(float)juce::jmax(a.size(),b.size());
+    return juce::jlimit(0.f,1.f,((exact+.30f*near)/(float)n)*(.82f+.18f*countRatio));
+}
+
+float harmonyQualityScore(const sonara::SongArrangement& song)
+{
+    const auto progression=song.getProgressionFingerprint();
+    if(progression.size()<5)return 0.f;
+    const int n=juce::jlimit(1,8,progression[0]);
+    std::array<bool,7> used{};
+    int unique=0,consecutiveRepeats=0;
+    for(int i=0;i<n;++i)
+    {
+        const int degree=juce::jlimit(0,6,progression[(size_t)(2+i*3)]);
+        if(!used[(size_t)degree]){used[(size_t)degree]=true;++unique;}
+        if(i>0&&degree==progression[(size_t)(2+(i-1)*3)])++consecutiveRepeats;
+    }
+    const float variety=n<=2?1.f:juce::jlimit(0.f,1.f,(float)unique/(float)juce::jmin(n,5));
+    const float repetition=1.f-(float)consecutiveRepeats/(float)juce::jmax(1,n-1);
+    const bool tonalCentre=used[0];
+    return juce::jlimit(0.f,1.f,.42f*variety+.34f*repetition+.24f*(tonalCentre?1.f:.55f));
+}
+
+float promptCompositionMatch(const juce::String& prompt,const sonara::SongArrangement& song)
+{
+    const auto p=prompt.toLowerCase();
+    const int n=song.getHarmonyProgressionLength();
+    float score=.82f;
+    if((p.contains("tech house")||p.contains("minimal house"))&&n>3)score-=.30f;
+    if((p.contains("cinematic")||p.contains("film"))&&n<6)score-=.24f;
+    if((p.contains("pop")||p.contains("radio"))&&(n<3||n>6))score-=.18f;
+    if((p.contains("progressive")||p.contains("melodic house"))&&(n<3||n>8))score-=.20f;
+    if(p.contains("minor")&&!song.isMinor())score-=.30f;
+    if(p.contains("major")&&song.isMinor())score-=.30f;
+    if(p.contains("emotional")&&song.getMelodyArchetypeName()=="SPARSE MOTIF")score-=.08f;
+    return juce::jlimit(0.f,1.f,score);
 }
 
 float melodyQualityScore(const sonara::SongArrangement& song)
@@ -408,17 +444,33 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
 {
     stopPreview();stopSongPreview();
     generationProgress.store(.03f);
-    generationStatus="Composing a genuinely new melody architecture";
+    generationStatus="Planning new harmony, melody and groove identities";
 
     const auto previous=arrangementSnapshot();
     const auto previousFingerprint=previous?melodyFingerprint(*previous):std::vector<int>{};
+    const auto previousHarmony=previous?previous->getHarmonyFingerprint():std::vector<int>{};
+    const auto previousBass=previous?lanePatternFingerprint(*previous,"BASS"):std::vector<int>{};
+    const auto previousDrums=previous?drumFingerprint(*previous):std::vector<int>{};
+    const auto previousPluck=previous?lanePatternFingerprint(*previous,"PLUCK"):std::vector<int>{};
+    const auto previousStructure=previous?previous->getStructureFingerprint():std::vector<int>{};
 
     std::shared_ptr<sonara::SongArrangement> made;
-    std::vector<int> acceptedFingerprint;
     std::shared_ptr<sonara::SongArrangement> bestCandidate;
-    std::vector<int> bestFingerprint;
+    std::vector<int> acceptedFingerprint,acceptedHarmony,acceptedBass,acceptedDrums,acceptedPluck,acceptedStructure;
+    std::vector<int> bestFingerprint,bestHarmony,bestBass,bestDrums,bestPluck,bestStructure;
     uint64_t seed=0,bestSeed=0;
-    float maxSimilarity=1.f,bestSimilarity=1.f,bestQuality=0.f,bestCombined=-1.f;
+    float melodySimilarityMax=1.f,harmonySimilarityMax=1.f,wholeSimilarityMax=1.f;
+    float bestMelodySimilarity=1.f,bestHarmonySimilarity=1.f,bestWholeSimilarity=1.f;
+    float bestQuality=0.f,bestPromptMatch=0.f,bestCombined=-1.f;
+
+    const auto maxFlatSimilarity=[](const std::vector<int>& candidate,
+                                    const std::vector<int>& previousValue,
+                                    const std::deque<std::vector<int>>& history)
+    {
+        float value=previousValue.empty()?0.f:flatFingerprintSimilarity(previousValue,candidate);
+        for(const auto& old:history)value=juce::jmax(value,flatFingerprintSimilarity(old,candidate));
+        return value;
+    };
 
     constexpr int maxAttempts=24;
     for(int attempt=0;attempt<maxAttempts;++attempt)
@@ -434,40 +486,83 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
                            ^ 0x534f4e475f465245ULL);
 
         auto candidate=std::make_shared<sonara::SongArrangement>();
-        candidate->generate(prompt,previewBpm,candidateSeed);
+        // Candidate generation deliberately stops before SoundDNA synthesis. The
+        // full palette is generated exactly once, after the winning composition
+        // plan has passed prompt, quality and whole-song novelty scoring.
+        candidate->generateComposition(prompt,previewBpm,candidateSeed);
         auto fingerprint=melodyFingerprint(*candidate);
+        auto harmony=candidate->getHarmonyFingerprint();
+        auto bass=lanePatternFingerprint(*candidate,"BASS");
+        auto drums=drumFingerprint(*candidate);
+        auto pluck=lanePatternFingerprint(*candidate,"PLUCK");
+        auto structure=candidate->getStructureFingerprint();
 
-        float similarity=previousFingerprint.empty()?0.f:fingerprintSimilarity(previousFingerprint,fingerprint);
+        float melodySim=previousFingerprint.empty()?0.f:fingerprintSimilarity(previousFingerprint,fingerprint);
+        float rhythmSim=previousFingerprint.empty()?0.f:melodyRhythmSimilarity(previousFingerprint,fingerprint);
         for(const auto& historic:melodyHistory)
-            similarity=juce::jmax(similarity,fingerprintSimilarity(historic,fingerprint));
+        {
+            melodySim=juce::jmax(melodySim,fingerprintSimilarity(historic,fingerprint));
+            rhythmSim=juce::jmax(rhythmSim,melodyRhythmSimilarity(historic,fingerprint));
+        }
 
-        const float quality=melodyQualityScore(*candidate);
-        const float combined=quality*.68f+(1.f-similarity)*.32f;
+        const float harmonySim=maxFlatSimilarity(harmony,previousHarmony,harmonyHistory);
+        const float bassSim=maxFlatSimilarity(bass,previousBass,bassHistory);
+        const float drumSim=maxFlatSimilarity(drums,previousDrums,drumHistory);
+        const float pluckSim=maxFlatSimilarity(pluck,previousPluck,pluckHistory);
+        const float structureSim=maxFlatSimilarity(structure,previousStructure,structureHistory);
+        const float wholeSim=juce::jlimit(0.f,1.f,
+              harmonySim*.35f+melodySim*.25f+rhythmSim*.12f+bassSim*.10f
+             +drumSim*.08f+pluckSim*.05f+structureSim*.05f);
 
-        if(!fingerprint.empty()&&quality>=.58f&&combined>bestCombined)
+        const float quality=melodyQualityScore(*candidate)*.70f+harmonyQualityScore(*candidate)*.30f;
+        const float promptMatch=promptCompositionMatch(prompt,*candidate);
+        const float novelty=1.f-wholeSim;
+        const float combined=quality*.40f+promptMatch*.30f+novelty*.30f;
+
+        if(!fingerprint.empty()&&!harmony.empty()&&quality>=.56f&&combined>bestCombined)
         {
             bestCombined=combined;
             bestQuality=quality;
-            bestSimilarity=similarity;
+            bestPromptMatch=promptMatch;
+            bestMelodySimilarity=melodySim;
+            bestHarmonySimilarity=harmonySim;
+            bestWholeSimilarity=wholeSim;
             bestSeed=candidateSeed;
             bestCandidate=candidate;
             bestFingerprint=fingerprint;
+            bestHarmony=harmony;
+            bestBass=bass;
+            bestDrums=drums;
+            bestPluck=pluck;
+            bestStructure=structure;
         }
 
         generationProgress.store(.08f+.018f*attempt);
 
-        // A song must be both truly novel and musically well-behaved.
-        if(!fingerprint.empty()&&similarity<.18f&&quality>=.72f)
+        // Harmony and melody both have hard identity gates. This prevents a tiny
+        // lead reroll from hiding a recycled chord/root skeleton.
+        if(!fingerprint.empty()&&!harmony.empty()&&melodySim<.72f&&harmonySim<.86f
+           &&wholeSim<.62f&&quality>=.70f&&promptMatch>=.70f)
         {
             made=std::move(candidate);
             acceptedFingerprint=std::move(fingerprint);
+            acceptedHarmony=std::move(harmony);
+            acceptedBass=std::move(bass);
+            acceptedDrums=std::move(drums);
+            acceptedPluck=std::move(pluck);
+            acceptedStructure=std::move(structure);
             seed=candidateSeed;
-            maxSimilarity=similarity;
+            melodySimilarityMax=melodySim;
+            harmonySimilarityMax=harmonySim;
+            wholeSimilarityMax=wholeSim;
             bestQuality=quality;
+            bestPromptMatch=promptMatch;
             break;
         }
 
-        generationStatus=(quality<.72f?"Rejecting weak melody":"Rejecting familiar melody")
+        generationStatus=(quality<.70f?"Rejecting weak composition":
+                          (harmonySim>=.86f?"Rejecting familiar harmony":
+                          (melodySim>=.72f?"Rejecting familiar melody":"Rejecting familiar whole song")))
                        +juce::String(" • trying composition ")
                        +juce::String(attempt+2)+"/"+juce::String(maxAttempts);
     }
@@ -478,8 +573,15 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     {
         made=std::move(bestCandidate);
         acceptedFingerprint=std::move(bestFingerprint);
+        acceptedHarmony=std::move(bestHarmony);
+        acceptedBass=std::move(bestBass);
+        acceptedDrums=std::move(bestDrums);
+        acceptedPluck=std::move(bestPluck);
+        acceptedStructure=std::move(bestStructure);
         seed=bestSeed;
-        maxSimilarity=bestSimilarity;
+        melodySimilarityMax=bestMelodySimilarity;
+        harmonySimilarityMax=bestHarmonySimilarity;
+        wholeSimilarityMax=bestWholeSimilarity;
     }
 
     if(!made)
@@ -489,14 +591,24 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
         return;
     }
 
-    if(!acceptedFingerprint.empty())
+    if(!acceptedFingerprint.empty()&&!acceptedHarmony.empty())
     {
         melodyHistory.push_back(acceptedFingerprint);
-        while(melodyHistory.size()>10)melodyHistory.pop_front();
+        harmonyHistory.push_back(acceptedHarmony);
+        bassHistory.push_back(acceptedBass);
+        drumHistory.push_back(acceptedDrums);
+        pluckHistory.push_back(acceptedPluck);
+        structureHistory.push_back(acceptedStructure);
+        const auto trim=[](auto& history){while(history.size()>10)history.pop_front();};
+        trim(melodyHistory);trim(harmonyHistory);trim(bassHistory);
+        trim(drumHistory);trim(pluckHistory);trim(structureHistory);
     }
 
+    made->finalizeSoundPalette();
     lastSongSeed.store(seed,std::memory_order_relaxed);
-    lastMelodyNovelty.store(juce::jlimit(0.f,1.f,1.f-maxSimilarity),std::memory_order_relaxed);
+    lastMelodyNovelty.store(juce::jlimit(0.f,1.f,1.f-melodySimilarityMax),std::memory_order_relaxed);
+    lastHarmonyNovelty.store(juce::jlimit(0.f,1.f,1.f-harmonySimilarityMax),std::memory_order_relaxed);
+    lastSongNovelty.store(juce::jlimit(0.f,1.f,1.f-wholeSimilarityMax),std::memory_order_relaxed);
     generationProgress.store(.66f);
     generationStatus="Loading fresh SoundDNA palette into the new composition";
 
@@ -516,9 +628,11 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(made),std::memory_order_release);
     selectedLane.store(lanes.size()>9?9:0);
     generationProgress.store(1.f);
-    generationStatus="NEW SONG READY • novelty "+juce::String((1.f-maxSimilarity)*100.f,0)
+    generationStatus="NEW SONG READY • whole "+juce::String((1.f-wholeSimilarityMax)*100.f,0)
+                   +"% • harmony "+juce::String((1.f-harmonySimilarityMax)*100.f,0)
+                   +"% • melody "+juce::String((1.f-melodySimilarityMax)*100.f,0)
                    +"% • quality "+juce::String(bestQuality*100.f,0)
-                   +"% • new architecture + rhythm + contour + harmony + sounds";
+                   +"% • prompt "+juce::String(bestPromptMatch*100.f,0)+"%";
 }
 
 void SonaraAudioProcessor::randomizeEverything(const juce::String& prompt)
