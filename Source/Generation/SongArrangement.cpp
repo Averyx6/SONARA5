@@ -95,8 +95,11 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     plan.bassMode=(int)(random01(seed,0x1006)*5.f)%5;
     plan.chordMode=(int)(random01(seed,0x1007)*5.f)%5;
     plan.arpMode=(int)(random01(seed,0x1008)*6.f)%6;
-    plan.melodyArchetype=(int)(random01(seed,0x1009)*8.f)%8;
-    plan.motifLength=4+(int)(random01(seed,0x100a)*5.f);
+    plan.melodyArchetype=(int)(random01(seed,0x1009)*12.f)%12;
+    plan.rhythmFamily=(int)(random01(seed,0x100b)*10.f)%10;
+    plan.startingDegree=(int)(random01(seed,0x100c)*7.f)%7;
+    plan.cadenceStyle=(int)(random01(seed,0x100d)*4.f)%4;
+    plan.motifLength=3+(int)(random01(seed,0x100a)*6.f);
     plan.phraseBars=random01(seed,0x1010)>.62f?8:4;
     plan.octaveRange=1+(int)(random01(seed,0x1011)*3.f);
     plan.density=.46f+.42f*random01(seed,0x1012);
@@ -110,13 +113,13 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     if(p.contains("emotional")){plan.octaveRange=juce::jmax(plan.octaveRange,2);plan.development=juce::jmax(plan.development,.66f);}
     if(p.contains("aggressive")||p.contains("powerful")){plan.density=juce::jmin(1.f,plan.density+.12f);plan.syncopation=juce::jmax(plan.syncopation,.46f);}
     if(p.contains("dreamy")){plan.phraseBars=8;plan.restAmount=juce::jmax(plan.restAmount,.22f);plan.density=juce::jmin(plan.density,.68f);}
-    if(p.contains("uplifting")){plan.melodyArchetype=(plan.melodyArchetype+1)%8;plan.octaveRange=juce::jmax(plan.octaveRange,2);}
+    if(p.contains("uplifting")){plan.melodyArchetype=(plan.melodyArchetype+1)%12;plan.octaveRange=juce::jmax(plan.octaveRange,2);}
     if(p.contains("catchy")||p.contains("memorable")){plan.motifLength=juce::jlimit(4,6,plan.motifLength);plan.development=juce::jlimit(.42f,.68f,plan.development);}
     if(p.contains("anthemic")){plan.octaveRange=3;plan.density=juce::jmax(plan.density,.68f);}
     if(p.contains("fast melody"))plan.density=juce::jmax(plan.density,.82f);
     if(p.contains("slow melody")){plan.density=juce::jmin(plan.density,.54f);plan.restAmount=juce::jmax(plan.restAmount,.24f);}
-    if(p.contains("dark"))plan.melodyArchetype=(plan.melodyArchetype+5)%8;
-    if(p.contains("bright"))plan.melodyArchetype=(plan.melodyArchetype+2)%8;
+    if(p.contains("dark"))plan.melodyArchetype=(plan.melodyArchetype+5)%12;
+    if(p.contains("bright"))plan.melodyArchetype=(plan.melodyArchetype+2)%12;
     if(p.contains("syncopated"))plan.syncopation=juce::jmax(plan.syncopation,.70f);
     if(p.contains("repetitive"))plan.development=juce::jmin(plan.development,.38f);
     if(p.contains("evolving"))plan.development=juce::jmax(plan.development,.78f);
