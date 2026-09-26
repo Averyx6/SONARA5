@@ -68,11 +68,11 @@ SonaraAudioProcessor::SonaraAudioProcessor()
 void SonaraAudioProcessor::prepareToPlay(double sr, int bs)
 {
     previewSampleRate = juce::jmax(8000.0, sr);
-    maximumBlockSize = juce::jmax(1, bs);
+    maximumBlockSize = juce::jmax(8192, bs);
     previewLengthSamples = (int64_t) std::llround(previewSampleRate * (60.0 / previewBpm) * 16.0);
 
-    engine.prepare(sr, bs, getTotalNumOutputChannels());
-    for (auto& e : songEngines) e.prepare(sr, bs, getTotalNumOutputChannels());
+    engine.prepare(sr, maximumBlockSize, getTotalNumOutputChannels());
+    for (auto& e : songEngines) e.prepare(sr, maximumBlockSize, getTotalNumOutputChannels());
     drumSynth.prepare(sr);
     songReverb.reset();
     juce::Reverb::Parameters rp;
@@ -406,7 +406,7 @@ void SonaraAudioProcessor::startSongPreviewAtBar(int bar)
     const double spb=previewSampleRate*60.0/a->getBpm();
     const int64_t start=(int64_t)std::llround((double)safeBar*sonara::SongArrangement::beatsPerBar*spb);
 
-    drumSynth.reset();
+    drumSynth.reset();songReverb.reset();
     for(auto& e:songEngines)e.allNotesOff();
     for(auto& x:laneHpX)x.fill(0.f);
     for(auto& y:laneHpY)y.fill(0.f);
@@ -423,7 +423,7 @@ void SonaraAudioProcessor::startSongPreviewAtBar(int bar)
 
 void SonaraAudioProcessor::stopSongPreview()
 {
-    songPlaying.store(false);songSample.store(0);drumSynth.reset();
+    songPlaying.store(false);songSample.store(0);drumSynth.reset();songReverb.reset();
     for(auto& e:songEngines)e.allNotesOff();
     for(auto& x:laneHpX)x.fill(0.f);
     for(auto& y:laneHpY)y.fill(0.f);
