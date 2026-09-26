@@ -4,7 +4,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
-#include <map>
+#include <vector>
 
 namespace {
 int fail(const juce::String& m){std::cerr<<"SONARA playback test failure: "<<m<<"\n";return 1;}
@@ -162,18 +162,19 @@ int main()
     randomizer.generateTrack(prompt);
     auto before=randomizer.arrangementSnapshot();
     if(!before)return fail("missing base arrangement");
-    std::map<juce::String,uint64_t> oldHashes;
+    std::vector<std::pair<juce::String,uint64_t>> oldHashes;
     for(const auto& name:{juce::String("KICK"),juce::String("BASS"),juce::String("SUB"),juce::String("CHORDS"),juce::String("LEAD")})
     {
         const auto* lane=laneNamed(*before,name);if(!lane)return fail("base lane missing "+name);
-        oldHashes[name]=laneHash(*lane);
+        oldHashes.push_back({name,laneHash(*lane)});
     }
     const auto oldSeed=randomizer.getSongGenerationSeed();
     randomizer.randomizeEverything(prompt);
     auto after=randomizer.arrangementSnapshot();
     if(!after||randomizer.getSongGenerationSeed()==oldSeed)return fail("RANDOMIZE EVERYTHING did not create a new song");
-    for(const auto& [name,hash]:oldHashes)
+    for(const auto& entry:oldHashes)
     {
+        const auto& name=entry.first;const auto hash=entry.second;
         const auto* lane=laneNamed(*after,name);if(!lane||laneHash(*lane)==hash)return fail("RANDOMIZE EVERYTHING kept "+name);
     }
 
