@@ -96,6 +96,7 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     plan.chordMode=(int)(random01(seed,0x1007)*5.f)%5;
     plan.arpMode=(int)(random01(seed,0x1008)*6.f)%6;
     plan.melodyArchetype=(int)(random01(seed,0x1009)*8.f)%8;
+    plan.motifLength=4+(int)(random01(seed,0x100a)*5.f);
     plan.phraseBars=random01(seed,0x1010)>.62f?8:4;
     plan.octaveRange=1+(int)(random01(seed,0x1011)*3.f);
     plan.density=.46f+.42f*random01(seed,0x1012);
@@ -109,8 +110,8 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     if(p.contains("syncopated"))plan.syncopation=juce::jmax(plan.syncopation,.70f);
     if(p.contains("repetitive"))plan.development=juce::jmin(plan.development,.38f);
     if(p.contains("evolving"))plan.development=juce::jmax(plan.development,.78f);
-    if(p.contains("short hook"))plan.phraseBars=4;
-    if(p.contains("long melody"))plan.phraseBars=8;
+    if(p.contains("short hook")){plan.phraseBars=4;plan.motifLength=juce::jmin(plan.motifLength,6);}
+    if(p.contains("long melody")){plan.phraseBars=8;plan.motifLength=juce::jmax(plan.motifLength,7);}
     if(p.contains("drum and bass")||p.contains("dnb")){plan.density=juce::jmax(plan.density,.78f);plan.syncopation=juce::jmax(plan.syncopation,.66f);}
     if(p.contains("tech house")){plan.density=juce::jmin(plan.density,.58f);plan.restAmount=juce::jmax(plan.restAmount,.24f);plan.octaveRange=1;}
     if(p.contains("cinematic")){plan.phraseBars=8;plan.restAmount=juce::jmax(plan.restAmount,.22f);plan.development=juce::jmax(plan.development,.72f);}
