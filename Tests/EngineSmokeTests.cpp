@@ -4,10 +4,11 @@
 #include <iostream>
 
 namespace {
-bool renderCase(double sampleRate, sonara::FilterMode mode, sonara::LfoShape lfoShape)
+bool renderCase(double sampleRate, sonara::FilterMode mode, sonara::LfoShape lfoShape, bool lowCpu=false)
 {
     constexpr int blockSize = 256;
     sonara::SonaraEngine engine;
+    engine.setLowCpuMode(lowCpu);
     engine.prepare(sampleRate, blockSize, 2);
 
     sonara::SoundDNA patch;
@@ -92,6 +93,13 @@ int main()
                               << ", LFO " << static_cast<int>(shape) << '\n';
                     return 1;
                 }
+
+    for(const auto sampleRate:sampleRates)
+        if(!renderCase(sampleRate,sonara::FilterMode::lowpass,sonara::LfoShape::triangle,true))
+        {
+            std::cerr<<"Low-CPU song engine smoke test failed at "<<sampleRate<<" Hz\n";
+            return 2;
+        }
 
     std::cout << "SONARA engine smoke tests passed\n";
     return 0;
