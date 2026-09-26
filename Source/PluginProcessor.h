@@ -104,7 +104,7 @@ private:
     std::atomic<uint64_t> lastSongSeed{0};
     std::atomic<float> lastMelodyNovelty{1.f};
     std::deque<std::vector<int>> melodyHistory;
-    std::atomic<bool> previewPlaying{false}; std::atomic<int64_t> previewSample{0}; std::atomic<bool> songPlaying{false}; std::atomic<int64_t> songSample{0}; std::atomic<int> selectedLane{9};
+    std::atomic<bool> previewPlaying{false}; std::atomic<int64_t> previewSample{0}; std::atomic<bool> songPlaying{false}; std::atomic<int64_t> songSample{0}; std::atomic<int> songFadeRemaining{0}; std::atomic<int> selectedLane{9};
     double previewSampleRate=44100.0,previewBpm=128.0; int64_t previewLengthSamples=1; int maximumBlockSize=512;
     std::shared_ptr<const sonara::SongArrangement> arrangement;
     std::array<juce::AudioBuffer<float>,musicalLaneCount> songScratch;
