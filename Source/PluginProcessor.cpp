@@ -1007,10 +1007,18 @@ void SonaraAudioProcessor::setLaneMix(int laneIndex,LaneMixParameter parameter,f
     const size_t i=(size_t)laneIndex;
     switch(parameter)
     {
-        case LaneMixParameter::level: laneMixLevel[i].store(juce::jlimit(0.f,1.5f,value),std::memory_order_relaxed); break;
-        case LaneMixParameter::pan: laneMixPan[i].store(juce::jlimit(-1.f,1.f,value),std::memory_order_relaxed); break;
-        case LaneMixParameter::width: laneMixWidth[i].store(juce::jlimit(0.f,1.5f,value),std::memory_order_relaxed); break;
-        case LaneMixParameter::fxSend: laneMixFx[i].store(juce::jlimit(0.f,1.5f,value),std::memory_order_relaxed); break;
+        case LaneMixParameter::level:
+            laneMixLevel[i].store(juce::jlimit(0.f,1.5f,value),std::memory_order_relaxed);
+            break;
+        case LaneMixParameter::pan:
+            laneMixPan[i].store(laneIndex==5?0.f:juce::jlimit(-1.f,1.f,value),std::memory_order_relaxed);
+            break;
+        case LaneMixParameter::width:
+            laneMixWidth[i].store(laneIndex==5?0.f:juce::jlimit(0.f,1.5f,value),std::memory_order_relaxed);
+            break;
+        case LaneMixParameter::fxSend:
+            laneMixFx[i].store(laneIndex==5?0.f:juce::jlimit(0.f,1.5f,value),std::memory_order_relaxed);
+            break;
     }
 }
 
