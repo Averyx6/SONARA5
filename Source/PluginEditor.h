@@ -62,6 +62,8 @@ private:
     void setTab(int);
     void styleButton(juce::Button&, bool accent=false);
     void configureMacro(juce::Slider&, const juce::String&);
+    void configureMixSlider(juce::Slider&,double min,double max,const juce::String& suffix);
+    void syncMixControls();
     void syncLockButtons();
     void beginExternalDrag(ExternalDragButton::Kind);
     void updateModeVisibility();
@@ -97,6 +99,7 @@ private:
     juce::TextButton tabInstrument{"INSTRUMENT"},tabSong{"SONG"},tabDrums{"DRUMS"},tabFx{"FX & MIX"},tabReference{"REFERENCE"},tabMidi{"MIDI"},tabExport{"EXPORT"};
     juce::ToggleButton lockOsc{"OSC"},lockUnison{"UNISON"},lockEnv{"ENV"},lockFilter{"FILTER"},lockMod{"MOD"},lockSources{"SUB/NOISE"},lockTone{"TONE"},lockFx{"FX"};
     juce::Slider macroBrightness,macroMovement,macroSpace,macroImpact,bpm;
+    juce::Slider mixLevel,mixPan,mixWidth,mixFx;
     juce::Label patchName, statusLine, selectedLaneLabel, referenceSummary;
 
     std::array<juce::TextButton,8> presets {{
