@@ -695,7 +695,7 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
     songFxBus.clear(0,renderSamples);
 
     // Lane order: BASS, SUB, CHORDS, PLUCK, PAD, LEAD, COUNTER, FX.
-    static constexpr float laneGain[musicalLaneCount]={.52f,.34f,.30f,.27f,.22f,.50f,.23f,.16f};
+    static constexpr float laneGain[musicalLaneCount]={.60f,.38f,.36f,.32f,.26f,.58f,.27f,.18f};
     static constexpr float hpHz[musicalLaneCount]={28.f,18.f,120.f,125.f,160.f,120.f,150.f,110.f};
     static constexpr float fxSend[musicalLaneCount]={0.f,0.f,.14f,.10f,.18f,.12f,.08f,.15f};
 
@@ -712,21 +712,15 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
         if(midi.isEmpty()&&!active)continue;
 
         scratch.clear(0,renderSamples);
-
-        // Non-owning view: render exactly the number of samples FL Studio asked for.
-        // This avoids advancing 8192 samples per small host block and avoids allocation.
-        juce::AudioBuffer<float> scratchView(scratch.getArrayOfWritePointers(),
-                                             scratch.getNumChannels(),
-                                             0,renderSamples);
-        songEngines[(size_t)i].render(scratchView,midi);
+        songEngines[(size_t)i].render(scratch,midi,renderSamples);
 
         const float rc=1.f/(juce::MathConstants<float>::twoPi*hpHz[i]);
         const float dt=1.f/(float)previewSampleRate;
         const float hpAlpha=rc/(rc+dt);
 
-        for(int ch=0;ch<scratchView.getNumChannels()&&ch<2;++ch)
+        for(int ch=0;ch<scratch.getNumChannels()&&ch<2;++ch)
         {
-            auto* d=scratchView.getWritePointer(ch);
+            auto* d=scratch.getWritePointer(ch);
             float x1=laneHpX[(size_t)i][(size_t)ch];
             float y1=laneHpY[(size_t)i][(size_t)ch];
             for(int s=0;s<renderSamples;++s)
@@ -742,10 +736,10 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
         const auto mix=getLaneMix(laneIndex);
 
         // BASS low end stays near-mono.
-        if(i==0&&scratchView.getNumChannels()>=2)
+        if(i==0&&scratch.getNumChannels()>=2)
         {
-            auto* l=scratchView.getWritePointer(0);
-            auto* r=scratchView.getWritePointer(1);
+            auto* l=scratch.getWritePointer(0);
+            auto* r=scratch.getWritePointer(1);
             for(int s=0;s<renderSamples;++s)
             {
                 const float mid=.5f*(l[s]+r[s]);
@@ -759,8 +753,8 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
         {
             const float lpRc=1.f/(juce::MathConstants<float>::twoPi*125.f);
             const float lpA=dt/(lpRc+dt);
-            auto* l=scratchView.getWritePointer(0);
-            auto* r=scratchView.getNumChannels()>1?scratchView.getWritePointer(1):l;
+            auto* l=scratch.getWritePointer(0);
+            auto* r=scratch.getNumChannels()>1?scratch.getWritePointer(1):l;
             float state=laneLpState[(size_t)i][0];
             for(int s=0;s<renderSamples;++s)
             {
@@ -773,10 +767,10 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
             laneLpState[(size_t)i][1]=state;
         }
 
-        if(scratchView.getNumChannels()>=2)
+        if(scratch.getNumChannels()>=2)
         {
-            auto* l=scratchView.getWritePointer(0);
-            auto* r=scratchView.getWritePointer(1);
+            auto* l=scratch.getWritePointer(0);
+            auto* r=scratch.getWritePointer(1);
             const float requestedWidth=juce::jlimit(0.f,1.5f,mix.width);
             const float width=i==1?0.f:(i==0?juce::jmin(.25f,requestedWidth):requestedWidth);
             const float pan=juce::jlimit(-1.f,1.f,mix.pan);
@@ -795,9 +789,9 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
         const float sendGain=fxSend[i]*mix.fxSend;
         for(int ch=0;ch<out.getNumChannels();++ch)
         {
-            out.addFrom(ch,0,scratchView,ch,0,renderSamples,mixedGain);
+            out.addFrom(ch,0,scratch,ch,0,renderSamples,mixedGain);
             if(sendGain>0.f)
-                songFxBus.addFrom(ch,0,scratchView,ch,0,renderSamples,mixedGain*sendGain);
+                songFxBus.addFrom(ch,0,scratch,ch,0,renderSamples,mixedGain*sendGain);
         }
     }
 
@@ -826,7 +820,7 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
             const float x=std::isfinite(d[s])?d[s]:0.f;
             const float hp=masterAlpha*(y1+x-x1);
             x1=x;y1=hp;
-            float y=juce::jlimit(-.92f,.92f,std::tanh(hp*.67f));
+            float y=juce::jlimit(-.95f,.95f,std::tanh(hp*.82f));
             if(fadeStart>s)
             {
                 const int remaining=fadeStart-s;
