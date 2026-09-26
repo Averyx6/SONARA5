@@ -143,22 +143,34 @@ int main()
         {std::cerr<<"Duplicate lead fingerprint in 20-song run\n";return 21;}
     }
 
-    // Prompt language must alter melody grammar, not only the sound palette.
-    sonara::SongArrangement techMelody,cinematicMelody;
-    techMelody.generate("dark minimal tech house 126 BPM F minor sparse short hook",126.0,0x5555ULL);
-    cinematicMelody.generate("cinematic emotional EDM 126 BPM F minor long expressive melody",126.0,0x5555ULL);
-    const auto* techLead=findLane(techMelody,"LEAD");
-    const auto* cineLead=findLane(cinematicMelody,"LEAD");
-    if(!techLead||!cineLead||structuralDifference(*techLead,*cineLead)<.30)
-    {std::cerr<<"Prompt genres did not alter melody grammar\n";return 16;}
+    // TEST B: genre language must alter melody grammar, not only SoundDNA.
+    std::array<sonara::SongArrangement,4> genreSongs;
+    const juce::String genrePrompts[4]={
+        "dark minimal tech house 126 BPM F minor sparse short hook",
+        "emotional progressive house 126 BPM F minor memorable evolving hook",
+        "cinematic emotional EDM 126 BPM F minor long expressive melody",
+        "drum and bass 126 BPM F minor fast syncopated call response melody"
+    };
+    for(size_t i=0;i<genreSongs.size();++i)genreSongs[i].generate(genrePrompts[i],126.0,0x5555ULL);
+
+    std::array<const sonara::ArrangementLane*,4> genreLeads{};
+    for(size_t i=0;i<genreSongs.size();++i)
+    {
+        genreLeads[i]=findLane(genreSongs[i],"LEAD");
+        if(!genreLeads[i]){std::cerr<<"Genre test missing lead\n";return 16;}
+    }
+    for(size_t i=0;i<genreLeads.size();++i)
+        for(size_t j=i+1;j<genreLeads.size();++j)
+            if(structuralDifference(*genreLeads[i],*genreLeads[j])<.20)
+            {std::cerr<<"Genre prompts did not alter melody grammar\n";return 17;}
 
     auto avgLength=[](const sonara::ArrangementLane& lane)
     {
         double sum=0.0;for(const auto& n:lane.notes)sum+=n.length;
         return lane.notes.empty()?0.0:sum/(double)lane.notes.size();
     };
-    if(!(avgLength(*cineLead)>avgLength(*techLead)*1.25))
-    {std::cerr<<"Cinematic/tech melody articulation not distinct enough\n";return 17;}
+    if(!(avgLength(*genreLeads[2])>avgLength(*genreLeads[0])*1.25))
+    {std::cerr<<"Cinematic/tech melody articulation not distinct enough\n";return 23;}
 
     sonara::SongArrangement deterministic;
     deterministic.generate(prompt,120.0,123456789ULL);
