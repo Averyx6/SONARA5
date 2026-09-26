@@ -313,7 +313,7 @@ void SongArrangement::addHarmony(uint64_t seed)
             const int inversion=(bar+r+progressionIndex+chordMode)%3;
             if(inversion>=1) notes[0]+=12;
             if(inversion>=2) notes[1]+=12;
-            std::sort(std::begin(notes),std::end(notes));
+            std::sort(notes,notes+3);
             const int baseVel=68+(int)(energy*24.f)+(int)(random01(seed,3100+bs+r)*8.f);
             addNote(chords,notes[0],cb,chordLen,juce::jlimit(50,118,baseVel));
             addNote(chords,notes[1],cb,chordLen,juce::jlimit(50,118,baseVel-3));
