@@ -66,7 +66,7 @@ bool AudioExporter::renderSelectedLane(const SongArrangement& a,int laneIndex,co
     if(cb)cb(1.f,lane.name+" ready");return true;
 }
 
-bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& destination,double sampleRate,Progress cb) const
+bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& destination,double sampleRate,Progress cb,const MixArray* mix) const
 {
     std::unique_ptr<juce::AudioFormatWriter> writer;
     if(!createWavWriter(destination,sampleRate,writer))return false;
@@ -167,10 +167,34 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
                 lpState[(size_t)i][0]=state;lpState[(size_t)i][1]=state;
             }
 
+            MixState mixState;
+            const int globalLane=firstMusical+i;
+            if(mix!=nullptr&&juce::isPositiveAndBelow(globalLane,(int)mix->size()))
+                mixState=(*mix)[(size_t)globalLane];
+
+            if(view.getNumChannels()>=2)
+            {
+                auto* l=view.getWritePointer(0);auto* r=view.getWritePointer(1);
+                const float requestedWidth=juce::jlimit(0.f,1.5f,mixState.width);
+                const float width=i==1?0.f:(i==0?juce::jmin(.25f,requestedWidth):requestedWidth);
+                const float pan=juce::jlimit(-1.f,1.f,mixState.pan);
+                const float panL=pan>0.f?1.f-pan:1.f;
+                const float panR=pan<0.f?1.f+pan:1.f;
+                for(int smp=0;smp<n;++smp)
+                {
+                    const float mid=.5f*(l[smp]+r[smp]);
+                    const float side=.5f*(l[smp]-r[smp])*width;
+                    l[smp]=(mid+side)*panL;
+                    r[smp]=(mid-side)*panR;
+                }
+            }
+
+            const float gain=laneGain[i]*juce::jlimit(0.f,1.5f,mixState.level);
+            const float send=fxSend[i]*juce::jlimit(0.f,1.5f,mixState.fxSend);
             for(int ch=0;ch<2;++ch)
             {
-                block.addFrom(ch,0,view,ch,0,n,laneGain[i]);
-                if(fxSend[i]>0.f)fxBus.addFrom(ch,0,view,ch,0,n,laneGain[i]*fxSend[i]);
+                block.addFrom(ch,0,view,ch,0,n,gain);
+                if(send>0.f)fxBus.addFrom(ch,0,view,ch,0,n,gain*send);
             }
         }
 
