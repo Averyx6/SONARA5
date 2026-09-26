@@ -52,7 +52,7 @@ private:
     static uint64_t mix64(uint64_t x) noexcept;
     static float random01(uint64_t seed, uint64_t salt) noexcept;
     static int parseRootMidi(const juce::String& prompt, bool& minorOut);
-    void buildSections();
+    void buildSections(uint64_t seed);
     void addDrums(uint64_t seed, bool energetic);
     void addHarmony(uint64_t seed);
     void addMelody(uint64_t seed, bool energetic);
