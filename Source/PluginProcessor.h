@@ -30,6 +30,8 @@ public:
     bool writePreviewMidiFile(const juce::File&) const;
 
     void generateTrack(const juce::String& prompt);
+    void randomizeEverything(const juce::String& prompt);
+    juce::String makeSurprisePrompt();
     void regenerateDrums(const juce::String& prompt);
     void startSongPreview();
     void startSongPreviewAtBar(int bar);
