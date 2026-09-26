@@ -206,48 +206,122 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
 void SongArrangement::addHarmony(uint64_t seed)
 {
     ArrangementLane bass{"BASS",2,false}, chords{"CHORDS",3,false}, pluck{"PLUCK",4,false}, pad{"PAD",5,false};
-    const int minorProg[4] = {0, 8, 3, 10}; // i - VI - III - VII
-    const int majorProg[4] = {0, 7, 9, 5};  // I - V - vi - IV
-    const int* progression = minor ? minorProg : majorProg;
-    const int third = minor ? 3 : 4;
 
-    for (int bar = 0; bar < bars; ++bar)
+    static constexpr int minorProgressions[5][4] = {
+        {0,8,3,10}, {0,10,8,10}, {0,3,10,8}, {0,5,8,7}, {0,8,5,10}
+    };
+    static constexpr int majorProgressions[5][4] = {
+        {0,7,9,5}, {0,9,5,7}, {0,5,9,7}, {9,5,0,7}, {0,4,5,7}
+    };
+    const int progressionIndex=static_cast<int>(random01(seed,201)*5.f)%5;
+    const int* progression=minor?minorProgressions[progressionIndex]:majorProgressions[progressionIndex];
+    const int third=minor?3:4;
+    const int bassMode=static_cast<int>(random01(seed,202)*4.f)%4;
+    const int chordMode=static_cast<int>(random01(seed,203)*4.f)%4;
+    const int arpMode=static_cast<int>(random01(seed,204)*4.f)%4;
+    static constexpr int arpPatterns[4][8] = {
+        {0,1,2,1,0,1,2,1},
+        {0,2,1,2,0,2,1,2},
+        {0,1,2,0,2,1,0,2},
+        {2,1,0,1,2,1,0,1}
+    };
+
+    for(int bar=0;bar<bars;++bar)
     {
-        float energy = .4f;
-        for (const auto& s : sections) if (sectionContains(s, bar)) { energy=s.energy; break; }
-        const double b = bar * beatsPerBar;
-        const int root = rootMidi + progression[bar % 4];
-        const bool drop = energy > .8f;
-        const bool breakdown = bar >= 40 && bar < 48;
+        float energy=.4f;
+        for(const auto& s:sections) if(sectionContains(s,bar)){energy=s.energy;break;}
+        const double b=bar*beatsPerBar;
+        const int root=rootMidi+progression[bar%4];
+        const bool drop=energy>.8f;
+        const bool breakdown=bar>=40&&bar<48;
+        const bool finalDrop=bar>=56;
+        const uint64_t bs=(uint64_t)bar*131ULL;
 
-        if (energy > .3f)
+        if(energy>.3f)
         {
-            for (int q = 0; q < 4; ++q)
+            if(bassMode==0 || (!drop && bassMode==1))
             {
-                if (drop || q % 2 == 0)
-                    addNote(bass, root - 12 + (drop && q == 3 && random01(seed, bar) > .55f ? 12 : 0), b + q, drop ? .76 : 1.55, drop ? 110 : 94);
+                for(int q=0;q<4;++q)
+                    if(drop || q%2==0)
+                    {
+                        int n=root-12;
+                        if(drop && q==3 && random01(seed,3000+bs+q)>.45f) n+=(finalDrop?12:7);
+                        addNote(bass,n,b+q,drop?.68:1.42,juce::jlimit(70,122,90+(drop?18:0)+(int)(random01(seed,3010+bs+q)*10.f)));
+                    }
+            }
+            else if(bassMode==1)
+            {
+                static constexpr double pos[6]={0.0,.75,1.5,2.0,2.75,3.5};
+                for(int i=0;i<(drop?6:4);++i)
+                {
+                    int n=root-12;
+                    if(i==2||i==5) n+=7;
+                    addNote(bass,n,b+pos[i],.42,82+(drop?20:0)+(i%2)*5);
+                }
+            }
+            else if(bassMode==2)
+            {
+                static constexpr double pos[5]={0.0,1.0,1.75,2.5,3.25};
+                for(int i=0;i<(drop?5:3);++i)
+                    addNote(bass,root-12+(i==4?12:0),b+pos[i],.48,88+(drop?18:0)+(int)(random01(seed,3020+bs+i)*8.f));
+            }
+            else
+            {
+                addNote(bass,root-12,b,.82,104);
+                addNote(bass,root-12,b+1.5,.42,90);
+                addNote(bass,root-5,b+2.0,.72,drop?110:94);
+                if(drop) addNote(bass,root,b+3.25,.38,102);
             }
         }
-        const double chordLen = breakdown ? 3.75 : (drop ? .82 : 3.7);
-        const int repeats = drop ? 4 : 1;
-        for (int r = 0; r < repeats; ++r)
+
+        const double chordLen=breakdown?3.72:(drop?(chordMode==0?.78:.46):3.55);
+        const int repeats=drop?(chordMode==2?2:4):1;
+        for(int r=0;r<repeats;++r)
         {
-            const double cb = b + r * (4.0 / repeats);
-            addNote(chords, root + 12, cb, chordLen, 76 + static_cast<int>(energy * 20));
-            addNote(chords, root + 12 + third, cb, chordLen, 72 + static_cast<int>(energy * 18));
-            addNote(chords, root + 19, cb, chordLen, 70 + static_cast<int>(energy * 18));
+            const double cb=b+r*(4.0/repeats)+(drop&&chordMode==3&&r%2?0.12:0.0);
+            int notes[3]={root+12,root+12+third,root+19};
+            const int inversion=(bar+r+progressionIndex+chordMode)%3;
+            if(inversion>=1) notes[0]+=12;
+            if(inversion>=2) notes[1]+=12;
+            std::sort(std::begin(notes),std::end(notes));
+            const int baseVel=68+(int)(energy*24.f)+(int)(random01(seed,3100+bs+r)*8.f);
+            addNote(chords,notes[0],cb,chordLen,juce::jlimit(50,118,baseVel));
+            addNote(chords,notes[1],cb,chordLen,juce::jlimit(50,118,baseVel-3));
+            addNote(chords,notes[2],cb,chordLen,juce::jlimit(50,118,baseVel-5));
+            if(finalDrop && (r%2==0 || chordMode==1))
+                addNote(chords,notes[2]+12,cb,chordLen*.82,juce::jlimit(45,108,baseVel-12));
         }
-        if (bar < 24 || breakdown)
+
+        if(bar<24 || breakdown)
         {
-            addNote(pad, root + 12, b, 3.8, 58);
-            addNote(pad, root + 12 + third, b, 3.8, 54);
-            addNote(pad, root + 19, b, 3.8, 54);
+            const int padOct=(static_cast<int>(random01(seed,3200+bar/4)*2.f))*12;
+            const double start=b+(random01(seed,3210+bar)>.72f?.25:0.0);
+            const double len=3.45+random01(seed,3220+bar)*.38;
+            addNote(pad,root+12+padOct,start,len,54+(int)(random01(seed,3230+bar)*10.f));
+            addNote(pad,root+12+third+padOct,start,len,50+(int)(random01(seed,3240+bar)*9.f));
+            addNote(pad,root+19+padOct,start,len,48+(int)(random01(seed,3250+bar)*9.f));
         }
-        if (energy > .5f && !breakdown)
-            for (int e = 0; e < 8; ++e)
-                addNote(pluck, root + 24 + ((e % 3 == 1) ? third : (e % 3 == 2 ? 7 : 0)), b + e * .5, .22, 70 + (e % 4) * 5);
+
+        if(energy>.5f&&!breakdown)
+        {
+            const int chordTones[3]={0,third,7};
+            for(int e=0;e<8;++e)
+            {
+                if(e>0 && random01(seed,3300+bs+e)<(drop?.08f:.18f)) continue;
+                const int toneIndex=arpPatterns[arpMode][(e+bar+progressionIndex)%8];
+                int note=root+24+chordTones[toneIndex];
+                if(finalDrop && e%4==3 && random01(seed,3310+bs+e)>.45f) note+=12;
+                const double pos=b+e*.5+((e%2)?(random01(seed,3320+bs+e)-.5)*.035:0.0);
+                addNote(pluck,note,pos,.15+random01(seed,3330+bs+e)*.18,
+                        62+(int)(energy*20.f)+(int)(random01(seed,3340+bs+e)*12.f));
+            }
+        }
     }
-    lanes.push_back(std::move(bass)); lanes.push_back(std::move(chords)); lanes.push_back(std::move(pluck)); lanes.push_back(std::move(pad));
+
+    lanes.push_back(std::move(bass));
+    lanes.push_back(std::move(chords));
+    lanes.push_back(std::move(pluck));
+    lanes.push_back(std::move(pad));
 }
 
 void SongArrangement::addMelody(uint64_t seed, bool energetic)
