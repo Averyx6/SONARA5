@@ -990,17 +990,6 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
     static constexpr int minorScale[7]={0,2,3,5,7,8,10};
     static constexpr int majorScale[7]={0,2,4,5,7,9,11};
     const int* scale=minor?minorScale:majorScale;
-    const int third=minor?3:4;
-
-    static constexpr int minorProgressions[8][4]={
-        {0,8,3,10},{0,10,8,10},{0,3,10,8},{0,5,8,7},
-        {0,8,5,10},{0,7,8,5},{0,10,5,8},{0,3,5,10}
-    };
-    static constexpr int majorProgressions[8][4]={
-        {0,7,9,5},{0,9,5,7},{0,5,9,7},{9,5,0,7},
-        {0,4,5,7},{0,9,7,5},{0,5,7,9},{0,7,5,4}
-    };
-
     static constexpr double rhythmPos[10][8]={
         {0.0,1.0,2.0,3.0,0,0,0,0},
         {0.5,1.5,2.5,3.5,0,0,0,0},
@@ -1048,26 +1037,17 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         return {nullptr,0};
     };
 
-    auto chordInfo=[&](const ArrangementSection* section,int sectionIndex,int bar)
+    struct ChordInfo { int degreeIndex=0; int extension=0; bool borrowed=false; };
+    auto chordInfoAtBeat=[&](double beat)
     {
-        struct ChordInfo { int rootOffset=0; int degreeIndex=0; };
-        if(section==nullptr)return ChordInfo{};
-        const int localBar=bar-section->startBar;
-        const bool chorus=section->name.contains("CHORUS");
-        const bool finalHook=section->name.contains("FINAL");
-        const bool useAlt=chorus||finalHook||(sectionIndex%3==2&&random01(seed,210+sectionIndex)>.55f);
-        const int progressionIndex=useAlt?plan.alternateProgressionIndex:plan.progressionIndex;
-        const int* progression=minor?minorProgressions[progressionIndex]:majorProgressions[progressionIndex];
-        const int offset=progression[(localBar+(sectionIndex%2))%4];
-
-        int nearest=0;
-        int best=999;
-        for(int d=0;d<7;++d)
+        ChordInfo info;
+        if(const auto* h=harmonyAtBeat(beat))
         {
-            const int diff=std::abs(scale[d]-offset);
-            if(diff<best){best=diff;nearest=d;}
+            info.degreeIndex=h->scaleDegree;
+            info.extension=h->extension;
+            info.borrowed=h->borrowed;
         }
-        return ChordInfo{offset,nearest};
+        return info;
     };
 
     for(int bar=0;bar<bars;++bar)
@@ -1105,7 +1085,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             ^ ((uint64_t)devPhrase+1ULL)*0xbf58476d1ce4e5b9ULL
             ^ ((uint64_t)architecture+1ULL)*0x94d049bb133111ebULL);
 
-        const auto chord=chordInfo(section,sectionIndex,bar);
+        const auto chord=chordInfoAtBeat(bar*beatsPerBar);
         const int registerBase=tech?12:((drop||chorus||finalHook)?24:12);
         const int startDegree=(plan.startingDegree
             +(int)(random01(phraseSeed,0x2001)*7.f)
@@ -1194,7 +1174,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                 case 1: // ARPEGGIATED HOOK
                 {
                     static constexpr int chordDegrees[6]={0,2,4,2,4,1};
-                    degree=chord.degreeIndex+chordDegrees[(i+barInPhrase)%6];
+                    degree=chordInfoAtBeat(bar*beatsPerBar+positions[i]).degreeIndex+chordDegrees[(i+barInPhrase)%6];
                     if(i%3==2&&random01(phraseSeed,0x2200+salt)>.52f)octaveExtra=12;
                     break;
                 }
@@ -1267,21 +1247,29 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                 }
             }
 
-            // Strong beats gravitate toward the current harmony so radical variation
-            // remains musical rather than random.
-            if(strong&&random01(phraseSeed,0x2300+salt)<.58f)
+            // Harmony constrains the melody but does not dictate it. Only structural
+            // anchors strongly prefer chord tones; ordinary beats are usually free
+            // scale tones, allowing 2nd/4th/6th/7th tension before resolution.
+            const auto localHarmony=chordInfoAtBeat(bar*beatsPerBar+positions[i]);
+            const bool phraseEnding=(barInPhrase==phraseBars-1&&i==count-1);
+            const bool barAnchor=positions[i]<.08;
+            const float chordToneChance=phraseEnding?.90f:(barAnchor?.70f:(strong?.34f:.22f));
+            if(random01(phraseSeed,0x2300+salt)<chordToneChance)
             {
                 const int toneChoice=(int)(random01(phraseSeed,0x2310+salt)*3.f)%3;
-                if(toneChoice==0)degree=chord.degreeIndex;
-                else if(toneChoice==1)degree=chord.degreeIndex+2;
-                else degree=chord.degreeIndex+4;
+                if(toneChoice==0)degree=localHarmony.degreeIndex;
+                else if(toneChoice==1)degree=localHarmony.degreeIndex+2;
+                else degree=localHarmony.degreeIndex+4;
+            }
+            else if(!strong&&random01(phraseSeed,0x2320+salt)<.24f)
+            {
+                const int dir=random01(phraseSeed,0x2330+salt)>.5f?1:-1;
+                degree+=dir; // scale passing/approach tone
             }
 
-            // Phrase cadence is intentionally explicit.
-            const bool phraseEnding=(barInPhrase==phraseBars-1&&i==count-1);
             if(phraseEnding)
             {
-                if(plan.cadenceStyle==0)degree=chord.degreeIndex;
+                if(plan.cadenceStyle==0)degree=localHarmony.degreeIndex;
                 else if(plan.cadenceStyle==1)degree=0;
                 else if(plan.cadenceStyle==2)degree=2;
                 else degree=4;
@@ -1337,7 +1325,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         // deliberately occupies the second half of the bar so it answers the lead.
         if((drop||chorus||finalHook)&&!tech)
         {
-            const uint64_t cs=mix64(phraseSeed^0x434f554e544552ULL);
+            const uint64_t cs=mix64(domains.counter ^ ((uint64_t)sectionIndex+1ULL)*0x9e3779b97f4a7c15ULL ^ ((uint64_t)bar+1ULL)*0xbf58476d1ce4e5b9ULL);
             const int counterCount=finalHook?4:3;
             int cd=(startDegree+3+(int)(random01(cs,1)*4.f))%7;
             for(int i=0;i<counterCount;++i)
