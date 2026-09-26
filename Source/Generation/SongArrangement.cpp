@@ -925,10 +925,17 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             pos=juce::jlimit(0.0,3.90,pos);
 
             double length=.34;
-            if(architecture==4)length=.68+random01(phraseSeed,0x2600+salt)*.68;
-            else if(architecture==3)length=.30+random01(phraseSeed,0x2610+salt)*.42;
-            else if(architecture==2)length=.24+random01(phraseSeed,0x2620+salt)*.30;
-            else if(tech||dnb||architecture==5||architecture==10)length=.12+random01(phraseSeed,0x2630+salt)*.16;
+
+            // Genre articulation outranks architecture. An architecture changes
+            // phrase construction, but must not turn a tech-house riff into a
+            // cinematic legato line or a cinematic theme into a staccato riff.
+            if(tech)length=.10+random01(phraseSeed,0x2630+salt)*.13;
+            else if(dnb)length=.08+random01(phraseSeed,0x2631+salt)*.14;
+            else if(cinematic)length=.62+random01(phraseSeed,0x2632+salt)*.78;
+            else if(architecture==4)length=.58+random01(phraseSeed,0x2600+salt)*.62;
+            else if(architecture==3)length=.28+random01(phraseSeed,0x2610+salt)*.38;
+            else if(architecture==2)length=.22+random01(phraseSeed,0x2620+salt)*.28;
+            else if(architecture==5||architecture==10)length=.12+random01(phraseSeed,0x2633+salt)*.18;
             else length=.20+random01(phraseSeed,0x2640+salt)*.42;
 
             const int velocity=juce::jlimit(52,124,
