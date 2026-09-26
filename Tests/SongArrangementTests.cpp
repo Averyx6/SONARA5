@@ -84,16 +84,50 @@ int main()
     const auto* leadFresh=findLane(fresh,"LEAD");
     if(structuralDifference(*leadA,*leadFresh)<.55){std::cerr<<"Lead phrase family still too similar\n";return 13;}
 
+    // Repeated generation from the same prompt must keep producing distinct lead identities.
+    const uint64_t freshnessSeeds[]={10101ULL,20202ULL,30303ULL,40404ULL,50505ULL};
+    std::array<sonara::SongArrangement,5> variants;
+    for(size_t i=0;i<variants.size();++i)variants[i].generate(prompt,120.0,freshnessSeeds[i]);
+    for(size_t i=0;i<variants.size();++i)
+        for(size_t j=i+1;j<variants.size();++j)
+        {
+            const auto* li=findLane(variants[i],"LEAD");
+            const auto* lj=findLane(variants[j],"LEAD");
+            if(!li||!lj){std::cerr<<"Freshness variant missing lead\n";return 14;}
+            if(structuralDifference(*li,*lj)<.42)
+            {
+                std::cerr<<"Same-prompt melody variants collapsed toward one phrase\n";
+                return 15;
+            }
+        }
+
+    // Prompt language must alter melody grammar, not only the sound palette.
+    sonara::SongArrangement techMelody,cinematicMelody;
+    techMelody.generate("dark minimal tech house 126 BPM F minor sparse short hook",126.0,0x5555ULL);
+    cinematicMelody.generate("cinematic emotional EDM 126 BPM F minor long expressive melody",126.0,0x5555ULL);
+    const auto* techLead=findLane(techMelody,"LEAD");
+    const auto* cineLead=findLane(cinematicMelody,"LEAD");
+    if(!techLead||!cineLead||structuralDifference(*techLead,*cineLead)<.30)
+    {std::cerr<<"Prompt genres did not alter melody grammar\n";return 16;}
+
+    auto avgLength=[](const sonara::ArrangementLane& lane)
+    {
+        double sum=0.0;for(const auto& n:lane.notes)sum+=n.length;
+        return lane.notes.empty()?0.0:sum/(double)lane.notes.size();
+    };
+    if(!(avgLength(*cineLead)>avgLength(*techLead)*1.25))
+    {std::cerr<<"Cinematic/tech melody articulation not distinct enough\n";return 17;}
+
     sonara::SongArrangement deterministic;
     deterministic.generate(prompt,120.0,123456789ULL);
-    if(deterministic.getLanes().size()!=a.getLanes().size()){std::cerr<<"Determinism lane count failed\n";return 14;}
+    if(deterministic.getLanes().size()!=a.getLanes().size()){std::cerr<<"Determinism lane count failed\n";return 18;}
     for(size_t i=0;i<a.getLanes().size();++i)
         if(deterministic.getLanes()[i].notes.size()!=a.getLanes()[i].notes.size())
-        {std::cerr<<"Determinism note count failed\n";return 15;}
+        {std::cerr<<"Determinism note count failed\n";return 19;}
 
     sonara::SongArrangement dnb;
     dnb.generate("energetic drum and bass 174 BPM D minor fast aggressive",128.0,4567ULL);
-    if(std::abs(dnb.getBpm()-174.0)>.01){std::cerr<<"174 BPM prompt parse failed\n";return 16;}
+    if(std::abs(dnb.getBpm()-174.0)>.01){std::cerr<<"174 BPM prompt parse failed\n";return 20;}
 
     std::cout<<"SONARA structure + full-lane freshness + phrase-family + BPM tests passed\n";
     return 0;
