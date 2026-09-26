@@ -102,22 +102,33 @@ float fingerprintSimilarity(const std::vector<int>& a,const std::vector<int>& b)
     const int n=juce::jmin(aNotes,bNotes);
     if(n<8)return 0.f;
 
-    float score=0.f,maxScore=0.f;
+    float pitch=0.f,interval=0.f,contour=0.f,onset=0.f,gap=0.f,length=0.f;
     for(int i=0;i<n;++i)
     {
         const int ai=i*stride,bi=i*stride;
-        maxScore+=1.f;
-        if(a[(size_t)ai]==b[(size_t)bi])score+=.22f;
-        if(a[(size_t)ai+1]==b[(size_t)bi+1])score+=.22f;
-        if(a[(size_t)ai+2]==b[(size_t)bi+2])score+=.10f;
-        if(a[(size_t)ai+3]==b[(size_t)bi+3])score+=.08f;
-        if(std::abs(a[(size_t)ai+4]-b[(size_t)bi+4])<=1)score+=.16f;
-        if(std::abs(a[(size_t)ai+5]-b[(size_t)bi+5])<=1)score+=.12f;
-        if(std::abs(a[(size_t)ai+6]-b[(size_t)bi+6])<=1)score+=.10f;
+        if(a[(size_t)ai]==b[(size_t)bi])pitch+=1.f;
+        if(std::abs(a[(size_t)ai+1]-b[(size_t)bi+1])<=1)interval+=1.f;
+        if(a[(size_t)ai+2]==b[(size_t)bi+2])contour+=1.f;
+        if(std::abs(a[(size_t)ai+4]-b[(size_t)bi+4])<=1)onset+=1.f;
+        if(std::abs(a[(size_t)ai+5]-b[(size_t)bi+5])<=1)gap+=1.f;
+        if(std::abs(a[(size_t)ai+6]-b[(size_t)bi+6])<=1)length+=1.f;
     }
 
+    const float inv=1.f/(float)n;
+    pitch*=inv;interval*=inv;contour*=inv;onset*=inv;gap*=inv;length*=inv;
     const float countRatio=(float)juce::jmin(aNotes,bNotes)/(float)juce::jmax(1,juce::jmax(aNotes,bNotes));
-    return juce::jlimit(0.f,1.f,(maxScore>0.f?score/maxScore:0.f)*.88f+countRatio*.12f);
+
+    // Human listeners notice a reused rhythm skeleton or interval contour even if
+    // notes are transposed. Treat either one as "too similar" instead of averaging
+    // it away with unrelated differences.
+    const float rhythmSkeleton=(onset*.44f+gap*.36f+length*.20f)*(.82f+.18f*countRatio);
+    const float contourSkeleton=(contour*.58f+interval*.42f)*(.84f+.16f*countRatio);
+    const float pitchIdentity=(pitch*.75f+interval*.25f)*(.82f+.18f*countRatio);
+    const float combined=(pitch*.16f+interval*.20f+contour*.18f+onset*.18f+gap*.16f+length*.12f)
+                         *(.84f+.16f*countRatio);
+
+    return juce::jlimit(0.f,1.f,juce::jmax(juce::jmax(rhythmSkeleton,contourSkeleton),
+                                           juce::jmax(pitchIdentity,combined)));
 }
 
 juce::ValueTree makeLaneMixTree(const SonaraAudioProcessor& p)
@@ -353,45 +364,71 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
 {
     stopPreview();stopSongPreview();
     generationProgress.store(.03f);
-    generationStatus="Creating a completely new song from scratch";
+    generationStatus="Composing a genuinely new melody architecture";
 
     const auto previous=arrangementSnapshot();
     const auto previousFingerprint=previous?melodyFingerprint(*previous):std::vector<int>{};
+
     std::shared_ptr<sonara::SongArrangement> made;
     std::vector<int> acceptedFingerprint;
-    uint64_t seed=0;
-    float maxSimilarity=0.f;
+    std::shared_ptr<sonara::SongArrangement> bestCandidate;
+    std::vector<int> bestFingerprint;
+    uint64_t seed=0,bestSeed=0;
+    float maxSimilarity=1.f,bestSimilarity=1.f;
 
-    for(int attempt=0;attempt<12;++attempt)
+    constexpr int maxAttempts=24;
+    for(int attempt=0;attempt<maxAttempts;++attempt)
     {
         const uint64_t entropy=static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64())
                              ^ static_cast<uint64_t>(juce::Time::getHighResolutionTicks())
                              ^ ((uint64_t)(attempt+1)*0xd1342543de82ef95ULL);
-        seed=scrambleSongSeed((uint64_t)prompt.hashCode64()
+        const uint64_t candidateSeed=scrambleSongSeed((uint64_t)prompt.hashCode64()
                            ^ sessionSalt
                            ^ (++generationCounter*0x9e3779b97f4a7c15ULL)
                            ^ entropy
+                           ^ ((uint64_t)attempt*0xa24baed4963ee407ULL)
                            ^ 0x534f4e475f465245ULL);
 
         auto candidate=std::make_shared<sonara::SongArrangement>();
-        candidate->generate(prompt,previewBpm,seed);
+        candidate->generate(prompt,previewBpm,candidateSeed);
         auto fingerprint=melodyFingerprint(*candidate);
 
-        maxSimilarity=previousFingerprint.empty()?0.f:fingerprintSimilarity(previousFingerprint,fingerprint);
+        float similarity=previousFingerprint.empty()?0.f:fingerprintSimilarity(previousFingerprint,fingerprint);
         for(const auto& historic:melodyHistory)
-            maxSimilarity=juce::jmax(maxSimilarity,fingerprintSimilarity(historic,fingerprint));
+            similarity=juce::jmax(similarity,fingerprintSimilarity(historic,fingerprint));
 
-        generationProgress.store(.10f+.04f*attempt);
+        if(!fingerprint.empty()&&similarity<bestSimilarity)
+        {
+            bestSimilarity=similarity;
+            bestSeed=candidateSeed;
+            bestCandidate=candidate;
+            bestFingerprint=fingerprint;
+        }
 
-        // Reject anything that still looks like a recent lead at the structural level.
-        if(!fingerprint.empty()&&(maxSimilarity<.31f||attempt==11))
+        generationProgress.store(.08f+.018f*attempt);
+
+        // Very strict: a reused interval contour OR rhythm skeleton rejects the song.
+        if(!fingerprint.empty()&&similarity<.18f)
         {
             made=std::move(candidate);
             acceptedFingerprint=std::move(fingerprint);
+            seed=candidateSeed;
+            maxSimilarity=similarity;
             break;
         }
 
-        generationStatus="Melody fingerprint too similar • rerolling composition "+juce::String(attempt+2);
+        generationStatus="Rejecting familiar melody • trying a different composition engine "
+                       +juce::String(attempt+2)+"/"+juce::String(maxAttempts);
+    }
+
+    // If all 24 candidates miss the strict threshold, take the objectively most
+    // different candidate rather than blindly accepting the final reroll.
+    if(!made&&bestCandidate)
+    {
+        made=std::move(bestCandidate);
+        acceptedFingerprint=std::move(bestFingerprint);
+        seed=bestSeed;
+        maxSimilarity=bestSimilarity;
     }
 
     if(!made)
@@ -404,13 +441,13 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     if(!acceptedFingerprint.empty())
     {
         melodyHistory.push_back(acceptedFingerprint);
-        while(melodyHistory.size()>6)melodyHistory.pop_front();
+        while(melodyHistory.size()>10)melodyHistory.pop_front();
     }
 
     lastSongSeed.store(seed,std::memory_order_relaxed);
     lastMelodyNovelty.store(juce::jlimit(0.f,1.f,1.f-maxSimilarity),std::memory_order_relaxed);
     generationProgress.store(.66f);
-    generationStatus="Loading new SoundDNA palette into fresh arrangement";
+    generationStatus="Loading fresh SoundDNA palette into the new composition";
 
     const auto& lanes=made->getLanes();
     if(lanes.size()>=4)drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
@@ -429,9 +466,8 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     selectedLane.store(lanes.size()>9?9:0);
     generationProgress.store(1.f);
     generationStatus="NEW SONG READY • melody novelty "+juce::String((1.f-maxSimilarity)*100.f,0)
-                   +"% • drums + bass + sub + harmony + melody + FX regenerated";
+                   +"% • new architecture + rhythm + contour + harmony + sounds";
 }
-
 
 void SonaraAudioProcessor::randomizeEverything(const juce::String& prompt)
 {
