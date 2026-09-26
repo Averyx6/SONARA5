@@ -539,6 +539,36 @@ void SonaraAudioProcessor::startSongPreviewAtBar(int bar)
     generationStatus="Playing "+section+" • bar "+juce::String(safeBar+1);
 }
 
+void SonaraAudioProcessor::pauseSongPreview()
+{
+    if(!songPlaying.exchange(false))return;
+    drumSynth.reset();songReverb.reset();
+    for(auto& e:songEngines)e.allNotesOff();
+    songFadeRemaining.store(0,std::memory_order_release);
+    generationStatus="Song preview paused • bar "+juce::String(currentSongBar()+1);
+}
+
+void SonaraAudioProcessor::resumeSongPreview()
+{
+    auto a=arrangementSnapshot();
+    if(!a||a->isEmpty()){generationStatus="Generate a full track first";return;}
+
+    const double spb=previewSampleRate*60.0/a->getBpm();
+    const int64_t total=(int64_t)std::llround(a->getTotalBeats()*spb);
+    auto pos=songSample.load();
+    if(pos<=0||pos>=total){startSongPreviewAtBar(0);return;}
+
+    const auto& lanes=a->getLanes();
+    if(lanes.size()>=4)drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
+    drumSynth.reset();songReverb.reset();
+    for(auto& e:songEngines)e.allNotesOff();
+    for(auto& x:laneHpX)x.fill(0.f);for(auto& y:laneHpY)y.fill(0.f);for(auto& x:laneLpState)x.fill(0.f);
+    masterHpX.fill(0.f);masterHpY.fill(0.f);
+    songFadeRemaining.store(128,std::memory_order_release);
+    songPlaying.store(true,std::memory_order_release);
+    generationStatus="Song preview resumed • "+currentSectionName()+" • bar "+juce::String(currentSongBar()+1);
+}
+
 void SonaraAudioProcessor::stopSongPreview()
 {
     songPlaying.store(false);songSample.store(0);drumSynth.reset();songReverb.reset();
