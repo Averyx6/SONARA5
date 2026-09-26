@@ -17,6 +17,31 @@ bool sectionContains(const ArrangementSection& s, int bar) noexcept
 {
     return bar >= s.startBar && bar < s.startBar + s.bars;
 }
+
+double bpmFromPrompt(const juce::String& raw, double fallback)
+{
+    juce::StringArray tokens;
+    tokens.addTokens(raw, " ,;:/\t\r\n", "");
+    tokens.trim();
+    tokens.removeEmptyStrings();
+
+    for (int i = 0; i < tokens.size(); ++i)
+    {
+        auto token = tokens[i].trim();
+        if (token.endsWithIgnoreCase("bpm"))
+        {
+            const double value = token.dropLastCharacters(3).getDoubleValue();
+            if (value >= 60.0 && value <= 200.0) return value;
+        }
+
+        if (i + 1 < tokens.size() && tokens[i + 1].equalsIgnoreCase("bpm"))
+        {
+            const double value = token.getDoubleValue();
+            if (value >= 60.0 && value <= 200.0) return value;
+        }
+    }
+    return fallback;
+}
 }
 
 uint64_t SongArrangement::mix64(uint64_t x) noexcept
@@ -74,7 +99,7 @@ void SongArrangement::generate(const juce::String& prompt, double bpm, uint64_t 
 {
     clear();
     sourcePrompt = prompt;
-    tempo = juce::jlimit(60.0, 200.0, bpm);
+    tempo = juce::jlimit(60.0, 200.0, bpmFromPrompt(prompt, bpm));
     rootMidi = parseRootMidi(prompt, minor);
     bars = defaultBars;
     buildSections();
