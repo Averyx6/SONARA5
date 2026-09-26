@@ -490,15 +490,30 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
 
         if(activeTab==1)
         {
-            card("STYLE",style,ry);ry+=52;
-            card("KEY / TEMPO",key+" • "+juce::String(a->getBpm(),0)+" BPM",ry);ry+=52;
-            card("ENERGY",energy,ry);ry+=52;
-            card("GENERATED CONTENT",juce::String((int)a->getLanes().size())+" lanes • "+juce::String(noteCount)+" notes",ry);ry+=52;
-            card("FRESH GENERATION ID",seedHex.isEmpty()?"—":seedHex,ry);ry+=58;
-            g.setColour(cyan.withAlpha(.15f));g.fillRoundedRectangle((float)rx,(float)ry,186.f,48.f,8.f);
-            g.setColour(cyan);g.setFont(9.f);
-            g.drawFittedText("FULL SONG SEED CHANGES\nDRUMS • HARMONY • BASS • SYNTHS • MELODY • FX",
-                             rx+9,ry+7,168,34,juce::Justification::centred,2);
+            card("STYLE",style,ry);ry+=48;
+            card("KEY / TEMPO",key+" • "+juce::String(a->getBpm(),0)+" BPM",ry);ry+=48;
+            card("ENERGY",energy,ry);ry+=48;
+            card("SONG ID",seedHex.isEmpty()?"—":seedHex,ry);ry+=48;
+            card("CURRENT SECTION",p.currentSectionName().isEmpty()?"READY":p.currentSectionName()
+                 +" • BAR "+juce::String(p.currentSongBar()+1)+"/"+juce::String(a->getBars()),ry);ry+=48;
+            card("MELODY NOVELTY",juce::String(p.getMelodyNovelty()*100.f,0)+"%",ry);ry+=48;
+            card("PREVIEW MODE",p.isSongPlaying()?"LOW CPU • PLAYING":"LOW CPU • READY",ry);ry+=48;
+            card("GENERATED CONTENT",juce::String((int)a->getLanes().size())+" lanes • "+juce::String(noteCount)+" notes",ry);ry+=48;
+
+            const int selected=p.getSelectedLane();
+            if(juce::isPositiveAndBelow(selected,(int)a->getLanes().size()))
+            {
+                const auto& lane=a->getLanes()[(size_t)selected];
+                const auto dna=lane.sound;
+                card("SELECTED SOUND DNA",lane.name+" • U"+juce::String(dna.unison)
+                     +" • W"+juce::String(dna.width,2)+" • C"+juce::String((int)dna.cutoff)+"Hz",ry);
+                ry+=52;
+            }
+
+            g.setColour(cyan.withAlpha(.15f));g.fillRoundedRectangle((float)rx,(float)ry,186.f,42.f,8.f);
+            g.setColour(cyan);g.setFont(8.5f);
+            g.drawFittedText("FRESH SONG DNA\nDRUMS • BASS • SUB • HARMONY • MELODY • FX",
+                             rx+7,ry+5,172,31,juce::Justification::centred,2);
         }
         else if(activeTab==2)
         {
