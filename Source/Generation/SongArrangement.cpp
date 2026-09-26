@@ -389,6 +389,94 @@ juce::String SongArrangement::getHarmonicRhythmSummary() const
     return parts.joinIntoString(" / ")+" bars";
 }
 
+std::vector<int> SongArrangement::getProgressionFingerprint() const
+{
+    std::vector<int> fp;
+    const int n=juce::jlimit(1,8,harmonyPlan.progressionLength);
+    fp.reserve((size_t)(2+n*3));
+    fp.push_back(n);
+    fp.push_back(harmonyPlan.cadenceStyle);
+    for(int i=0;i<n;++i)
+    {
+        // Scale degrees make this invariant to key/transposition. Harmonic rhythm
+        // is quantized to eighth-bars so an identical loop at another key cannot
+        // masquerade as a new progression.
+        fp.push_back(harmonyPlan.mainDegrees[(size_t)i]);
+        fp.push_back(harmonyPlan.alternateDegrees[(size_t)i]);
+        fp.push_back((int)std::llround(harmonyPlan.rhythmBars[(size_t)i]*8.0));
+    }
+    return fp;
+}
+
+std::vector<int> SongArrangement::getHarmonyFingerprint() const
+{
+    auto fp=getProgressionFingerprint();
+    fp.reserve(fp.size()+harmonyEvents.size()*7+8);
+    fp.push_back(harmonyPlan.rhythmMode);
+    fp.push_back(harmonyPlan.pedalIntro?1:0);
+    fp.push_back(harmonyPlan.pedalVerse?1:0);
+    for(const auto& event:harmonyEvents)
+    {
+        const auto& section=sections[(size_t)juce::jlimit(0,(int)sections.size()-1,event.sectionIndex)];
+        const double localBeat=event.beat-(double)section.startBar*beatsPerBar;
+        fp.push_back(event.sectionIndex);
+        fp.push_back((int)std::llround(localBeat*4.0));
+        fp.push_back((int)std::llround(event.length*4.0));
+        fp.push_back(event.scaleDegree);
+        fp.push_back(event.inversion);
+        fp.push_back(event.voicingStyle);
+        fp.push_back(event.extension+(event.borrowed?8:0));
+    }
+    return fp;
+}
+
+std::vector<int> SongArrangement::getMelodyFingerprint() const
+{
+    std::vector<int> fp;
+    const ArrangementLane* lead=nullptr;
+    for(const auto& lane:lanes)if(lane.name=="LEAD"){lead=&lane;break;}
+    if(lead==nullptr||lead->notes.empty())return fp;
+
+    constexpr int stride=7;
+    const int limit=juce::jmin(128,(int)lead->notes.size());
+    fp.reserve((size_t)(limit*stride+1));
+    const int tonic=((rootMidi%12)+12)%12;
+    int previous=lead->notes.front().note;
+    double previousBeat=lead->notes.front().beat;
+    for(int i=0;i<limit;++i)
+    {
+        const auto& note=lead->notes[(size_t)i];
+        const int interval=i==0?0:juce::jlimit(-18,18,note.note-previous);
+        const int scaleRelative=(((note.note-tonic)%12)+12)%12;
+        const int registerRelative=(note.note-rootMidi)/12;
+        fp.push_back(scaleRelative);
+        fp.push_back(interval+18);
+        fp.push_back(interval>0?2:(interval<0?0:1));
+        fp.push_back(registerRelative);
+        fp.push_back((int)std::llround(std::fmod(juce::jmax(0.0,note.beat),16.0)*4.0));
+        fp.push_back(i==0?0:juce::jlimit(0,64,(int)std::llround((note.beat-previousBeat)*8.0)));
+        fp.push_back(juce::jlimit(1,32,(int)std::llround(note.length*8.0)));
+        previous=note.note;
+        previousBeat=note.beat;
+    }
+    fp.push_back((int)lead->notes.size());
+    return fp;
+}
+
+std::vector<int> SongArrangement::getStructureFingerprint() const
+{
+    std::vector<int> fp;
+    fp.reserve(sections.size()*3+1);
+    fp.push_back((int)sections.size());
+    for(const auto& section:sections)
+    {
+        fp.push_back(section.startBar);
+        fp.push_back(section.bars);
+        fp.push_back((int)std::llround(section.energy*100.f));
+    }
+    return fp;
+}
+
 void SongArrangement::clear()
 {
     lanes.clear();
@@ -494,6 +582,12 @@ void SongArrangement::buildSections(uint64_t seed)
 
 void SongArrangement::generate(const juce::String& prompt, double bpm, uint64_t seed)
 {
+    generateComposition(prompt,bpm,seed);
+    finalizeSoundPalette();
+}
+
+void SongArrangement::generateComposition(const juce::String& prompt, double bpm, uint64_t seed)
+{
     clear();
     sourcePrompt = prompt;
     tempo = juce::jlimit(60.0, 200.0, bpmFromPrompt(prompt, bpm));
@@ -514,7 +608,11 @@ void SongArrangement::generate(const juce::String& prompt, double bpm, uint64_t 
 
     harmonyId=computeHarmonyId();
     melodyId=computeMelodyId();
+}
 
+void SongArrangement::finalizeSoundPalette()
+{
+    if(lanes.empty())return;
     PromptGenerator designer;
     for (size_t i = 0; i < lanes.size(); ++i)
     {
@@ -1450,7 +1548,40 @@ bool SongArrangement::writeMidiFile(const juce::File& destination) const
 juce::ValueTree SongArrangement::toValueTree() const
 {
     juce::ValueTree root("SONARA_ARRANGEMENT");
-    root.setProperty("schema",1,nullptr);root.setProperty("prompt",sourcePrompt,nullptr);root.setProperty("bpm",tempo,nullptr);root.setProperty("bars",bars,nullptr);root.setProperty("rootMidi",rootMidi,nullptr);root.setProperty("minor",minor,nullptr);
+    root.setProperty("schema",2,nullptr);root.setProperty("prompt",sourcePrompt,nullptr);root.setProperty("bpm",tempo,nullptr);root.setProperty("bars",bars,nullptr);root.setProperty("rootMidi",rootMidi,nullptr);root.setProperty("minor",minor,nullptr);
+    root.setProperty("songId",juce::String::toHexString((juce::int64)masterSeed),nullptr);
+    root.setProperty("harmonyId",juce::String::toHexString((juce::int64)harmonyId),nullptr);
+    root.setProperty("melodyId",juce::String::toHexString((juce::int64)melodyId),nullptr);
+
+    juce::ValueTree songPlan("COMPOSITION_DNA");
+    songPlan.setProperty("structureStyle",plan.structureStyle,nullptr);songPlan.setProperty("drumGroove",plan.drumGroove,nullptr);songPlan.setProperty("hatMode",plan.hatMode,nullptr);
+    songPlan.setProperty("bassMode",plan.bassMode,nullptr);songPlan.setProperty("chordMode",plan.chordMode,nullptr);songPlan.setProperty("arpMode",plan.arpMode,nullptr);
+    songPlan.setProperty("melodyArchetype",plan.melodyArchetype,nullptr);songPlan.setProperty("rhythmFamily",plan.rhythmFamily,nullptr);songPlan.setProperty("startingDegree",plan.startingDegree,nullptr);
+    songPlan.setProperty("cadenceStyle",plan.cadenceStyle,nullptr);songPlan.setProperty("motifLength",plan.motifLength,nullptr);songPlan.setProperty("phraseBars",plan.phraseBars,nullptr);songPlan.setProperty("octaveRange",plan.octaveRange,nullptr);
+    songPlan.setProperty("density",plan.density,nullptr);songPlan.setProperty("syncopation",plan.syncopation,nullptr);songPlan.setProperty("restAmount",plan.restAmount,nullptr);songPlan.setProperty("development",plan.development,nullptr);
+    root.addChild(songPlan,-1,nullptr);
+
+    juce::ValueTree harmony("HARMONY_DNA");
+    harmony.setProperty("progressionLength",harmonyPlan.progressionLength,nullptr);harmony.setProperty("cadenceStyle",harmonyPlan.cadenceStyle,nullptr);harmony.setProperty("rhythmMode",harmonyPlan.rhythmMode,nullptr);harmony.setProperty("registerBase",harmonyPlan.registerBase,nullptr);
+    harmony.setProperty("tension",harmonyPlan.tension,nullptr);harmony.setProperty("borrowedProbability",harmonyPlan.borrowedProbability,nullptr);harmony.setProperty("passingProbability",harmonyPlan.passingProbability,nullptr);harmony.setProperty("suspensionProbability",harmonyPlan.suspensionProbability,nullptr);harmony.setProperty("extensionProbability",harmonyPlan.extensionProbability,nullptr);
+    harmony.setProperty("pedalIntro",harmonyPlan.pedalIntro,nullptr);harmony.setProperty("pedalVerse",harmonyPlan.pedalVerse,nullptr);
+    for(int i=0;i<8;++i)
+    {
+        harmony.setProperty("main"+juce::String(i),harmonyPlan.mainDegrees[(size_t)i],nullptr);
+        harmony.setProperty("alternate"+juce::String(i),harmonyPlan.alternateDegrees[(size_t)i],nullptr);
+        harmony.setProperty("rhythm"+juce::String(i),harmonyPlan.rhythmBars[(size_t)i],nullptr);
+        harmony.setProperty("inversion"+juce::String(i),harmonyPlan.inversions[(size_t)i],nullptr);
+        harmony.setProperty("voicing"+juce::String(i),harmonyPlan.voicingStyles[(size_t)i],nullptr);
+    }
+    for(const auto& event:harmonyEvents)
+    {
+        juce::ValueTree value("HARMONY_EVENT");
+        value.setProperty("beat",event.beat,nullptr);value.setProperty("length",event.length,nullptr);value.setProperty("degree",event.scaleDegree,nullptr);
+        value.setProperty("inversion",event.inversion,nullptr);value.setProperty("voicing",event.voicingStyle,nullptr);value.setProperty("extension",event.extension,nullptr);
+        value.setProperty("section",event.sectionIndex,nullptr);value.setProperty("borrowed",event.borrowed,nullptr);
+        harmony.addChild(value,-1,nullptr);
+    }
+    root.addChild(harmony,-1,nullptr);
     juce::ValueTree sectionTree("SECTIONS");
     for(const auto& s:sections){juce::ValueTree v("SECTION");v.setProperty("name",s.name,nullptr);v.setProperty("startBar",s.startBar,nullptr);v.setProperty("bars",s.bars,nullptr);v.setProperty("energy",s.energy,nullptr);sectionTree.addChild(v,-1,nullptr);}root.addChild(sectionTree,-1,nullptr);
     juce::ValueTree laneTree("LANES");
@@ -1463,6 +1594,38 @@ SongArrangement SongArrangement::fromValueTree(const juce::ValueTree& root)
     SongArrangement a;
     if(!root.isValid()||root.getType().toString()!="SONARA_ARRANGEMENT")return a;
     a.sourcePrompt=root.getProperty("prompt","").toString();a.tempo=juce::jlimit(60.0,200.0,(double)root.getProperty("bpm",128.0));a.bars=juce::jlimit(1,512,(int)root.getProperty("bars",defaultBars));a.rootMidi=juce::jlimit(0,127,(int)root.getProperty("rootMidi",53));a.minor=(bool)root.getProperty("minor",true);a.sections.clear();a.lanes.clear();
+    a.masterSeed=(uint64_t)root.getProperty("songId","0").toString().getHexValue64();
+    a.harmonyId=(uint64_t)root.getProperty("harmonyId","0").toString().getHexValue64();
+    a.melodyId=(uint64_t)root.getProperty("melodyId","0").toString().getHexValue64();
+    auto composition=root.getChildWithName("COMPOSITION_DNA");
+    if(composition.isValid())
+    {
+        a.plan.structureStyle=(int)composition.getProperty("structureStyle",0);a.plan.drumGroove=(int)composition.getProperty("drumGroove",0);a.plan.hatMode=(int)composition.getProperty("hatMode",0);
+        a.plan.bassMode=(int)composition.getProperty("bassMode",0);a.plan.chordMode=(int)composition.getProperty("chordMode",0);a.plan.arpMode=(int)composition.getProperty("arpMode",0);
+        a.plan.melodyArchetype=(int)composition.getProperty("melodyArchetype",0);a.plan.rhythmFamily=(int)composition.getProperty("rhythmFamily",0);a.plan.startingDegree=(int)composition.getProperty("startingDegree",0);
+        a.plan.cadenceStyle=(int)composition.getProperty("cadenceStyle",0);a.plan.motifLength=(int)composition.getProperty("motifLength",8);a.plan.phraseBars=(int)composition.getProperty("phraseBars",4);a.plan.octaveRange=(int)composition.getProperty("octaveRange",2);
+        a.plan.density=(float)composition.getProperty("density",.65f);a.plan.syncopation=(float)composition.getProperty("syncopation",.35f);a.plan.restAmount=(float)composition.getProperty("restAmount",.18f);a.plan.development=(float)composition.getProperty("development",.55f);
+    }
+    auto harmony=root.getChildWithName("HARMONY_DNA");
+    if(harmony.isValid())
+    {
+        a.harmonyPlan.progressionLength=juce::jlimit(1,8,(int)harmony.getProperty("progressionLength",4));a.harmonyPlan.cadenceStyle=(int)harmony.getProperty("cadenceStyle",0);a.harmonyPlan.rhythmMode=(int)harmony.getProperty("rhythmMode",0);a.harmonyPlan.registerBase=(int)harmony.getProperty("registerBase",60);
+        a.harmonyPlan.tension=(float)harmony.getProperty("tension",.35f);a.harmonyPlan.borrowedProbability=(float)harmony.getProperty("borrowedProbability",.06f);a.harmonyPlan.passingProbability=(float)harmony.getProperty("passingProbability",.10f);a.harmonyPlan.suspensionProbability=(float)harmony.getProperty("suspensionProbability",.12f);a.harmonyPlan.extensionProbability=(float)harmony.getProperty("extensionProbability",.18f);
+        a.harmonyPlan.pedalIntro=(bool)harmony.getProperty("pedalIntro",false);a.harmonyPlan.pedalVerse=(bool)harmony.getProperty("pedalVerse",false);
+        for(int i=0;i<8;++i)
+        {
+            a.harmonyPlan.mainDegrees[(size_t)i]=(int)harmony.getProperty("main"+juce::String(i),a.harmonyPlan.mainDegrees[(size_t)i]);
+            a.harmonyPlan.alternateDegrees[(size_t)i]=(int)harmony.getProperty("alternate"+juce::String(i),a.harmonyPlan.alternateDegrees[(size_t)i]);
+            a.harmonyPlan.rhythmBars[(size_t)i]=(double)harmony.getProperty("rhythm"+juce::String(i),a.harmonyPlan.rhythmBars[(size_t)i]);
+            a.harmonyPlan.inversions[(size_t)i]=(int)harmony.getProperty("inversion"+juce::String(i),a.harmonyPlan.inversions[(size_t)i]);
+            a.harmonyPlan.voicingStyles[(size_t)i]=(int)harmony.getProperty("voicing"+juce::String(i),a.harmonyPlan.voicingStyles[(size_t)i]);
+        }
+        for(int i=0;i<harmony.getNumChildren();++i)
+        {
+            const auto value=harmony.getChild(i);if(value.getType().toString()!="HARMONY_EVENT")continue;
+            HarmonyEvent event;event.beat=(double)value.getProperty("beat",0.0);event.length=(double)value.getProperty("length",4.0);event.scaleDegree=(int)value.getProperty("degree",0);event.inversion=(int)value.getProperty("inversion",0);event.voicingStyle=(int)value.getProperty("voicing",0);event.extension=(int)value.getProperty("extension",0);event.sectionIndex=(int)value.getProperty("section",0);event.borrowed=(bool)value.getProperty("borrowed",false);a.harmonyEvents.push_back(event);
+        }
+    }
     auto st=root.getChildWithName("SECTIONS");for(int i=0;i<st.getNumChildren();++i){auto v=st.getChild(i);a.sections.push_back({v.getProperty("name","").toString(),(int)v.getProperty("startBar",0),(int)v.getProperty("bars",8),(float)v.getProperty("energy",.5)});}if(a.sections.empty())a.buildSections(0x7a1f2d4bULL);
     auto lt=root.getChildWithName("LANES");for(int i=0;i<lt.getNumChildren();++i){auto l=lt.getChild(i);ArrangementLane lane;lane.name=l.getProperty("name","Lane").toString();lane.midiChannel=juce::jlimit(1,16,(int)l.getProperty("channel",1));lane.drums=(bool)l.getProperty("drums",false);auto dna=l.getChildWithName("SoundDNA");if(dna.isValid())lane.sound=SoundDNA::fromValueTree(dna);auto notes=l.getChildWithName("NOTES");for(int j=0;j<notes.getNumChildren();++j){auto n=notes.getChild(j);lane.notes.push_back({juce::jlimit(0,127,(int)n.getProperty("note",60)),juce::jlimit(1,127,(int)n.getProperty("velocity",100)),juce::jmax(0.0,(double)n.getProperty("beat",0.0)),juce::jmax(.03,(double)n.getProperty("length",.5))});}std::sort(lane.notes.begin(),lane.notes.end(),[](const ArrangementNote&x,const ArrangementNote&y){return x.beat<y.beat;});a.lanes.push_back(std::move(lane));}
     return a;
