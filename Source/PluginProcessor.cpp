@@ -131,6 +131,50 @@ float fingerprintSimilarity(const std::vector<int>& a,const std::vector<int>& b)
                                            juce::jmax(pitchIdentity,combined)));
 }
 
+float melodyQualityScore(const sonara::SongArrangement& song)
+{
+    const auto* lead=laneNamed(song,"LEAD");
+    if(lead==nullptr||lead->notes.size()<20)return 0.f;
+
+    int hugeLeaps=0,repeatedRun=1,maxRepeated=1;
+    int minNote=127,maxNote=0;
+    double totalLength=0.0;
+    std::array<bool,33> gapKinds{};
+    int gapVariety=0;
+
+    for(size_t i=0;i<lead->notes.size();++i)
+    {
+        const auto& n=lead->notes[i];
+        minNote=juce::jmin(minNote,n.note);
+        maxNote=juce::jmax(maxNote,n.note);
+        totalLength+=n.length;
+
+        if(i>0)
+        {
+            const auto& p=lead->notes[i-1];
+            if(std::abs(n.note-p.note)>12)++hugeLeaps;
+            repeatedRun=(n.note==p.note)?repeatedRun+1:1;
+            maxRepeated=juce::jmax(maxRepeated,repeatedRun);
+            const int q=juce::jlimit(0,32,(int)std::llround((n.beat-p.beat)*8.0));
+            if(!gapKinds[(size_t)q]){gapKinds[(size_t)q]=true;++gapVariety;}
+        }
+    }
+
+    const float leapRatio=(float)hugeLeaps/(float)juce::jmax<size_t>(1,lead->notes.size()-1);
+    const float rangeScore=juce::jlimit(0.f,1.f,1.f-std::abs((float)(maxNote-minNote)-24.f)/36.f);
+    const float leapScore=juce::jlimit(0.f,1.f,1.f-leapRatio*3.8f);
+    const float repeatScore=maxRepeated<=2?1.f:(maxRepeated==3?.78f:(maxRepeated==4?.50f:.12f));
+    const float rhythmScore=juce::jlimit(0.f,1.f,(float)gapVariety/6.f);
+    const float avgLength=(float)(totalLength/(double)lead->notes.size());
+    const float lengthScore=juce::jlimit(0.f,1.f,1.f-std::abs(avgLength-.38f)/.75f);
+    const float density=(float)lead->notes.size()/(float)juce::jmax(1,song.getBars());
+    const float densityScore=juce::jlimit(0.f,1.f,1.f-std::abs(density-3.7f)/4.5f);
+
+    return juce::jlimit(0.f,1.f,
+        rangeScore*.17f+leapScore*.23f+repeatScore*.18f+
+        rhythmScore*.18f+lengthScore*.10f+densityScore*.14f);
+}
+
 juce::ValueTree makeLaneMixTree(const SonaraAudioProcessor& p)
 {
     juce::ValueTree root("LANE_MIX");
@@ -374,7 +418,7 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     std::shared_ptr<sonara::SongArrangement> bestCandidate;
     std::vector<int> bestFingerprint;
     uint64_t seed=0,bestSeed=0;
-    float maxSimilarity=1.f,bestSimilarity=1.f;
+    float maxSimilarity=1.f,bestSimilarity=1.f,bestQuality=0.f,bestCombined=-1.f;
 
     constexpr int maxAttempts=24;
     for(int attempt=0;attempt<maxAttempts;++attempt)
@@ -397,8 +441,13 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
         for(const auto& historic:melodyHistory)
             similarity=juce::jmax(similarity,fingerprintSimilarity(historic,fingerprint));
 
-        if(!fingerprint.empty()&&similarity<bestSimilarity)
+        const float quality=melodyQualityScore(*candidate);
+        const float combined=quality*.68f+(1.f-similarity)*.32f;
+
+        if(!fingerprint.empty()&&quality>=.58f&&combined>bestCombined)
         {
+            bestCombined=combined;
+            bestQuality=quality;
             bestSimilarity=similarity;
             bestSeed=candidateSeed;
             bestCandidate=candidate;
@@ -407,17 +456,19 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
 
         generationProgress.store(.08f+.018f*attempt);
 
-        // Very strict: a reused interval contour OR rhythm skeleton rejects the song.
-        if(!fingerprint.empty()&&similarity<.18f)
+        // A song must be both truly novel and musically well-behaved.
+        if(!fingerprint.empty()&&similarity<.18f&&quality>=.72f)
         {
             made=std::move(candidate);
             acceptedFingerprint=std::move(fingerprint);
             seed=candidateSeed;
             maxSimilarity=similarity;
+            bestQuality=quality;
             break;
         }
 
-        generationStatus="Rejecting familiar melody • trying a different composition engine "
+        generationStatus=(quality<.72f?"Rejecting weak melody":"Rejecting familiar melody")
+                       +juce::String(" • trying composition ")
                        +juce::String(attempt+2)+"/"+juce::String(maxAttempts);
     }
 
@@ -465,7 +516,8 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(made),std::memory_order_release);
     selectedLane.store(lanes.size()>9?9:0);
     generationProgress.store(1.f);
-    generationStatus="NEW SONG READY • melody novelty "+juce::String((1.f-maxSimilarity)*100.f,0)
+    generationStatus="NEW SONG READY • novelty "+juce::String((1.f-maxSimilarity)*100.f,0)
+                   +"% • quality "+juce::String(bestQuality*100.f,0)
                    +"% • new architecture + rhythm + contour + harmony + sounds";
 }
 
