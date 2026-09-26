@@ -125,6 +125,9 @@ SonaraAudioProcessor::SonaraAudioProcessor()
     sessionSalt = static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64())
                 ^ static_cast<uint64_t>(juce::Time::getHighResolutionTicks());
     for(auto& e:songEngines)e.setLowCpuMode(true);
+    // Lane order after drums: BASS, SUB, CHORDS, PLUCK, PAD, LEAD, COUNTER, FX.
+    static constexpr int voiceBudget[musicalLaneCount]={2,1,4,2,4,4,2,1};
+    for(int i=0;i<musicalLaneCount;++i)songEngines[(size_t)i].setVoiceLimit(voiceBudget[i]);
     patchHistory.push_back(engine.patch());
     historyIndex = 0;
 }
@@ -140,7 +143,7 @@ void SonaraAudioProcessor::prepareToPlay(double sr, int bs)
     drumSynth.prepare(sr);
     songReverb.reset();
     juce::Reverb::Parameters rp;
-    rp.roomSize=.34f;rp.damping=.48f;rp.wetLevel=.075f;rp.dryLevel=.985f;rp.width=.82f;
+    rp.roomSize=.31f;rp.damping=.52f;rp.wetLevel=.22f;rp.dryLevel=0.f;rp.width=.82f;
     songReverb.setParameters(rp);
 
     const int channels = juce::jmax(1, getTotalNumOutputChannels());
@@ -149,9 +152,12 @@ void SonaraAudioProcessor::prepareToPlay(double sr, int bs)
         b.setSize(channels, maximumBlockSize, false, false, true);
         b.clear();
     }
-    for (auto& m : songMidi) m.ensureSize(8192);
+    songFxBus.setSize(channels,maximumBlockSize,false,false,true);
+    songFxBus.clear();
+    for (auto& m : songMidi) m.ensureSize(16384);
     for (auto& x : laneHpX) x.fill(0.f);
     for (auto& y : laneHpY) y.fill(0.f);
+    for (auto& x : laneLpState) x.fill(0.f);
     masterHpX.fill(0.f); masterHpY.fill(0.f);
 }
 
