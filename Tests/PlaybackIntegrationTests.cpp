@@ -5,6 +5,7 @@
 #include <cmath>
 #include <iostream>
 #include <vector>
+#include <set>
 
 namespace {
 int fail(const juce::String& m){std::cerr<<"SONARA playback test failure: "<<m<<"\n";return 1;}
@@ -29,6 +30,40 @@ uint64_t laneHash(const sonara::ArrangementLane& lane)
     h^=lane.sound.seed;h*=1099511628211ULL;
     return h;
 }
+uint64_t leadSkeletonHash(const sonara::SongArrangement& a)
+{
+    const auto* lead=laneNamed(a,"LEAD");
+    if(!lead||lead->notes.size()<8)return 0;
+    uint64_t h=1469598103934665603ULL;
+    const int n=juce::jmin(96,(int)lead->notes.size());
+    for(int i=1;i<n;++i)
+    {
+        const auto& x=lead->notes[(size_t)i];
+        const auto& p=lead->notes[(size_t)i-1];
+        const int interval=juce::jlimit(-18,18,x.note-p.note);
+        const int gap=juce::jlimit(0,64,(int)std::llround((x.beat-p.beat)*8.0));
+        const int length=juce::jlimit(1,32,(int)std::llround(x.length*8.0));
+        const int contour=interval>0?2:(interval<0?0:1);
+        const int values[]={interval+18,gap,length,contour};
+        for(const int v:values){h^=(uint64_t)(v+257);h*=1099511628211ULL;}
+    }
+    h^=(uint64_t)lead->notes.size();h*=1099511628211ULL;
+    return h;
+}
+
+double renderSingleDrumNote(const sonara::SongArrangement& a,int midiNote)
+{
+    if(a.getLanes().size()<4)return 0.0;
+    sonara::DrumSynth drums;drums.prepare(48000.0);
+    drums.configureKit(a.getLanes()[0].sound,a.getLanes()[1].sound,a.getLanes()[2].sound,a.getLanes()[3].sound);
+    juce::AudioBuffer<float> b(2,4096);b.clear();
+    const sonara::DrumTrigger hit{0,midiNote,.85f};
+    drums.render(b,&hit,1);
+    double energy=0.0;
+    for(int ch=0;ch<2;++ch)for(int i=0;i<b.getNumSamples();++i){const float x=b.getSample(ch,i);energy+=(double)x*x;}
+    return energy;
+}
+
 
 bool finiteAndSafe(const juce::AudioBuffer<float>& b,float& peak,double& energy)
 {
@@ -113,6 +148,14 @@ int main()
         if(renderLaneEnergy(*bass,sr,2)<=1.0e-7)return fail("BASS rendered zero/unsafe audio");
         if(renderLaneEnergy(*sub,sr,1)<=1.0e-7)return fail("SUB rendered zero/unsafe audio");
         if(renderDrumEnergy(*a,sr)<=1.0e-7)return fail("drums rendered zero/unsafe audio");
+        if(sr==48000.0)
+        {
+            const double percEnergy=renderSingleDrumNote(*a,37);
+            const double crashEnergy=renderSingleDrumNote(*a,49);
+            if(percEnergy<=1.0e-8||crashEnergy<=1.0e-8)return fail("percussion/crash voice rendered silent");
+            const double ratio=percEnergy/crashEnergy;
+            if(ratio<.03||ratio>.82)return fail("note 37 percussion still behaves like crash/invalid hit");
+        }
 
         int dropBar=0,breakBar=0,hookBar=0;
         for(const auto& s:a->getSections())
@@ -156,6 +199,25 @@ int main()
         p.generateTrack(prompt);
         if(p.isSongPlaying())return fail("generation did not stop active preview safely");
         if(p.getSongGenerationSeed()==oldSeed)return fail("generate while active reused song seed");
+    }
+
+    // Direct production-path melody test: same exact prompt must never recycle
+    // the previous rhythm/interval skeleton.
+    {
+        SonaraAudioProcessor composer;
+        composer.prepareToPlay(48000.0,512);
+        std::set<uint64_t> skeletons;
+        for(int i=0;i<8;++i)
+        {
+            composer.generateTrack(prompt);
+            auto song=composer.arrangementSnapshot();
+            if(!song)return fail("same-prompt generation returned no arrangement");
+            const auto hash=leadSkeletonHash(*song);
+            if(hash==0||!skeletons.insert(hash).second)
+                return fail("GENERATE TRACK recycled a previous melody skeleton");
+            if(i>0&&composer.getMelodyNovelty()<.45f)
+                return fail("GENERATE TRACK accepted a melody with low novelty");
+        }
     }
 
     // TEST I: RANDOMIZE EVERYTHING materially changes multiple musical systems.
