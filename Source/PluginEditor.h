@@ -77,7 +77,7 @@ private:
 
     SonaraAudioProcessor& p;
     juce::TextEditor prompt;
-    juce::TextButton generateSound{"GENERATE SOUND"}, generateTrack{"GENERATE TRACK"}, similar{"SIMILAR"}, mutate{"MUTATE"}, randomize{"RANDOMIZE"};
+    juce::TextButton generateSound{"GENERATE SOUND"}, generateTrack{"GENERATE TRACK"}, generateDrums{"GENERATE DRUMS"}, similar{"SIMILAR"}, mutate{"MUTATE"}, randomize{"RANDOMIZE"};
     juce::TextButton undo{"UNDO"}, redo{"REDO"}, variation1{"V1"}, variation2{"V2"}, variation3{"V3"}, variation4{"V4"};
     juce::TextButton captureA{"CAPTURE A"}, captureB{"CAPTURE B"}, recallA{"A"}, recallB{"B"};
     juce::TextButton connect{"CYANORYX • BRIDGE READY"}, previewSound{"PREVIEW SOUND"}, playSong{"PLAY SONG"}, stop{"STOP"};
