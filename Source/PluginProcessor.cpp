@@ -28,7 +28,10 @@ void SonaraAudioProcessor::prepareToPlay(double sr, int bs)
         b.setSize(channels, maximumBlockSize, false, false, true);
         b.clear();
     }
-    for (auto& m : songMidi) m.ensureSize(16384);
+    for (auto& m : songMidi) m.ensureSize(8192);
+    for (auto& x : laneHpX) x.fill(0.f);
+    for (auto& y : laneHpY) y.fill(0.f);
+    masterHpX.fill(0.f); masterHpY.fill(0.f);
 }
 
 bool SonaraAudioProcessor::isBusesLayoutSupported(const BusesLayout& l) const
@@ -205,9 +208,6 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
         const int laneIndex = firstMusicalLane + i;
         if (juce::isPositiveAndBelow(laneIndex, (int)lanes.size())) songEngines[(size_t)i].setPatch(lanes[(size_t)laneIndex].sound);
     }
-    // Make the generated lead immediately playable from the instrument page too.
-    if (lanes.size() > 8) setPatchWithHistory(lanes[8].sound);
-
     previewBpm = made->getBpm();
     std::atomic_store_explicit(&arrangement, std::shared_ptr<const sonara::SongArrangement>(made), std::memory_order_release);
     selectedLane.store(lanes.size() > 8 ? 8 : 0);
@@ -252,28 +252,68 @@ void SonaraAudioProcessor::regenerateDrums(const juce::String& prompt)
 
 void SonaraAudioProcessor::startSongPreview()
 {
-    auto a = arrangementSnapshot();
-    if (!a || a->isEmpty()){ generationStatus = "Generate a full track first"; return; }
+    startSongPreviewAtBar(0);
+}
+
+void SonaraAudioProcessor::startSongPreviewAtBar(int bar)
+{
+    auto a=arrangementSnapshot();
+    if(!a||a->isEmpty()){generationStatus="Generate a full track first";return;}
+
     stopPreview();
     const auto& lanes=a->getLanes();
-    if(lanes.size()>=4) drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
-    songSample.store(0); drumSynth.reset();
-    for (auto& e : songEngines) e.allNotesOff();
-    songPlaying.store(true); generationStatus = "Playing generated arrangement";
+    if(lanes.size()>=4)drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
+
+    const int safeBar=juce::jlimit(0,juce::jmax(0,a->getBars()-1),bar);
+    const double spb=previewSampleRate*60.0/a->getBpm();
+    const int64_t start=(int64_t)std::llround((double)safeBar*sonara::SongArrangement::beatsPerBar*spb);
+
+    drumSynth.reset();
+    for(auto& e:songEngines)e.allNotesOff();
+    for(auto& x:laneHpX)x.fill(0.f);
+    for(auto& y:laneHpY)y.fill(0.f);
+    masterHpX.fill(0.f);masterHpY.fill(0.f);
+
+    songSample.store(start);
+    songPlaying.store(true);
+
+    juce::String section="SONG";
+    for(const auto& s:a->getSections())
+        if(safeBar>=s.startBar&&safeBar<s.startBar+s.bars){section=s.name;break;}
+    generationStatus="Playing "+section+" • bar "+juce::String(safeBar+1);
 }
 
 void SonaraAudioProcessor::stopSongPreview()
 {
-    songPlaying.store(false); songSample.store(0); drumSynth.reset();
-    for (auto& e : songEngines) e.allNotesOff();
+    songPlaying.store(false);songSample.store(0);drumSynth.reset();
+    for(auto& e:songEngines)e.allNotesOff();
+    for(auto& x:laneHpX)x.fill(0.f);
+    for(auto& y:laneHpY)y.fill(0.f);
+    masterHpX.fill(0.f);masterHpY.fill(0.f);
 }
 
 double SonaraAudioProcessor::songPosition01() const noexcept
 {
-    auto a = arrangementSnapshot(); if (!a) return 0.0;
-    const double samplesPerBeat = previewSampleRate * 60.0 / a->getBpm();
-    const double total = juce::jmax(1.0, a->getTotalBeats() * samplesPerBeat);
-    return juce::jlimit(0.0, 1.0, (double)songSample.load() / total);
+    auto a=arrangementSnapshot();if(!a)return 0.0;
+    const double samplesPerBeat=previewSampleRate*60.0/a->getBpm();
+    const double total=juce::jmax(1.0,a->getTotalBeats()*samplesPerBeat);
+    return juce::jlimit(0.0,1.0,(double)songSample.load()/total);
+}
+
+int SonaraAudioProcessor::currentSongBar() const noexcept
+{
+    auto a=arrangementSnapshot();if(!a)return 0;
+    return juce::jlimit(0,juce::jmax(0,a->getBars()-1),
+        (int)std::floor(songPosition01()*a->getBars()));
+}
+
+juce::String SonaraAudioProcessor::currentSectionName() const
+{
+    auto a=arrangementSnapshot();if(!a)return {};
+    const int bar=currentSongBar();
+    for(const auto& s:a->getSections())
+        if(bar>=s.startBar&&bar<s.startBar+s.bars)return s.name;
+    return {};
 }
 
 void SonaraAudioProcessor::injectSongLaneMidi(const sonara::ArrangementLane& lane, juce::MidiBuffer& dest, int64_t startSample, int numSamples, double bpm) noexcept
@@ -319,41 +359,81 @@ int SonaraAudioProcessor::collectDrumTriggers(const sonara::SongArrangement& a, 
     return count;
 }
 
-void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out, int numSamples)
+void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int numSamples)
 {
-    auto a = arrangementSnapshot();
-    if (!a || numSamples <= 0){ songPlaying.store(false); return; }
+    auto a=arrangementSnapshot();
+    if(!a||numSamples<=0){songPlaying.store(false);return;}
 
-    const auto& lanes = a->getLanes();
-    const int64_t start = songSample.load();
-    const double spb = previewSampleRate * 60.0 / a->getBpm();
-    const int64_t total = (int64_t) std::llround(a->getTotalBeats() * spb);
+    const auto& lanes=a->getLanes();
+    const int64_t start=songSample.load();
+    const double spb=previewSampleRate*60.0/a->getBpm();
+    const int64_t total=(int64_t)std::llround(a->getTotalBeats()*spb);
 
     out.clear();
-    for (int i = 0; i < musicalLaneCount; ++i)
+    static constexpr float laneGain[musicalLaneCount]={.68f,.38f,.34f,.28f,.58f,.25f,.20f};
+    static constexpr float hpHz[musicalLaneCount]={28.f,105.f,125.f,135.f,115.f,145.f,95.f};
+
+    for(int i=0;i<musicalLaneCount;++i)
     {
-        const int laneIndex = firstMusicalLane + i;
-        if (!juce::isPositiveAndBelow(laneIndex, (int)lanes.size())) continue;
-        auto& midi = songMidi[(size_t)i]; auto& scratch = songScratch[(size_t)i];
-        injectSongLaneMidi(lanes[(size_t)laneIndex], midi, start, numSamples, a->getBpm());
-        scratch.clear(); songEngines[(size_t)i].render(scratch, midi);
-        const float gain = laneIndex == 4 ? .86f : laneIndex == 8 ? .78f : laneIndex == 10 ? .45f : .60f;
-        for (int c = 0; c < out.getNumChannels(); ++c) out.addFrom(c, 0, scratch, c, 0, numSamples, gain);
+        const int laneIndex=firstMusicalLane+i;
+        if(!juce::isPositiveAndBelow(laneIndex,(int)lanes.size()))continue;
+
+        auto& midi=songMidi[(size_t)i];
+        auto& scratch=songScratch[(size_t)i];
+        injectSongLaneMidi(lanes[(size_t)laneIndex],midi,start,numSamples,a->getBpm());
+        scratch.clear();
+        songEngines[(size_t)i].render(scratch,midi);
+
+        const float rc=1.f/(juce::MathConstants<float>::twoPi*hpHz[i]);
+        const float dt=1.f/(float)previewSampleRate;
+        const float alpha=rc/(rc+dt);
+
+        for(int ch=0;ch<scratch.getNumChannels()&&ch<2;++ch)
+        {
+            auto* d=scratch.getWritePointer(ch);
+            float x1=laneHpX[(size_t)i][(size_t)ch];
+            float y1=laneHpY[(size_t)i][(size_t)ch];
+            for(int s=0;s<numSamples;++s)
+            {
+                const float x=d[s];
+                const float y=alpha*(y1+x-x1);
+                x1=x;y1=y;d[s]=y;
+            }
+            laneHpX[(size_t)i][(size_t)ch]=x1;
+            laneHpY[(size_t)i][(size_t)ch]=y1;
+        }
+
+        for(int ch=0;ch<out.getNumChannels();++ch)
+            out.addFrom(ch,0,scratch,ch,0,numSamples,laneGain[i]);
     }
 
-    const int drumCount = collectDrumTriggers(*a, start, numSamples);
-    drumSynth.render(out, drumTriggers.data(), drumCount);
+    const int drumCount=collectDrumTriggers(*a,start,numSamples);
+    drumSynth.render(out,drumTriggers.data(),drumCount);
 
-    for (int c = 0; c < out.getNumChannels(); ++c)
-        for (int i = 0; i < numSamples; ++i)
-            out.setSample(c, i, std::tanh(out.getSample(c, i) * .76f));
+    const float masterRc=1.f/(juce::MathConstants<float>::twoPi*24.f);
+    const float masterDt=1.f/(float)previewSampleRate;
+    const float masterAlpha=masterRc/(masterRc+masterDt);
 
-    const int64_t next = start + numSamples;
-    songSample.store(next);
-    if (next >= total)
+    for(int ch=0;ch<out.getNumChannels()&&ch<2;++ch)
     {
-        songPlaying.store(false); songSample.store(total);
-        for (auto& e : songEngines) e.allNotesOff();
+        auto* d=out.getWritePointer(ch);
+        float x1=masterHpX[(size_t)ch],y1=masterHpY[(size_t)ch];
+        for(int s=0;s<numSamples;++s)
+        {
+            const float x=std::isfinite(d[s])?d[s]:0.f;
+            const float hp=masterAlpha*(y1+x-x1);
+            x1=x;y1=hp;
+            d[s]=juce::jlimit(-.96f,.96f,std::tanh(hp*.68f));
+        }
+        masterHpX[(size_t)ch]=x1;masterHpY[(size_t)ch]=y1;
+    }
+
+    const int64_t next=start+numSamples;
+    songSample.store(next);
+    if(next>=total)
+    {
+        songPlaying.store(false);songSample.store(total);
+        for(auto& e:songEngines)e.allNotesOff();
     }
 }
 
