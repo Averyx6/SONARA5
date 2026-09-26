@@ -6,6 +6,8 @@
 SonaraAudioProcessor::SonaraAudioProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
+    sessionSalt = static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64())
+                ^ static_cast<uint64_t>(juce::Time::getHighResolutionTicks());
     patchHistory.push_back(engine.patch());
     historyIndex = 0;
 }
@@ -134,7 +136,10 @@ void SonaraAudioProcessor::setPatchWithHistory(const sonara::SoundDNA& d)
 void SonaraAudioProcessor::generatePatch(const juce::String& p)
 {
     stopPreview(); referenceMelodyPreview=false;
-    const auto seed = (uint64_t) p.hashCode64() ^ (++generationCounter * 0x9e3779b97f4a7c15ULL);
+    const auto seed = (uint64_t) p.hashCode64()
+                    ^ sessionSalt
+                    ^ (++generationCounter * 0xd6e8feb86659fd93ULL)
+                    ^ 0x534f554e445f444eULL;
     auto d = generator.generate(p, seed, [this](float x, const juce::String& s){ generationProgress.store(x); generationStatus = s; });
     d.name = "AI • " + p.substring(0, 26);
     setPatchWithHistory(d);
@@ -184,7 +189,10 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     stopPreview(); stopSongPreview();
     generationProgress.store(.05f); generationStatus = "Understanding full-track prompt";
 
-    const uint64_t seed = (uint64_t) prompt.hashCode64() ^ (++generationCounter * 0x9e3779b97f4a7c15ULL);
+    const uint64_t seed = (uint64_t) prompt.hashCode64()
+                        ^ sessionSalt
+                        ^ (++generationCounter * 0x9e3779b97f4a7c15ULL)
+                        ^ 0x534f4e475f4d454cULL;
     auto made = std::make_shared<sonara::SongArrangement>();
     made->generate(prompt, previewBpm, seed);
     generationProgress.store(.62f); generationStatus = "Loading generated SoundDNA into arrangement lanes";
