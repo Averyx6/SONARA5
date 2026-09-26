@@ -279,6 +279,7 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
         const bool breakdown=sectionName.contains("BREAKDOWN");
         const bool drop=sectionName.contains("DROP") || sectionName.contains("HOOK");
         const bool chorus=sectionName.contains("CHORUS");
+        const bool sectionStart=section && bar==section->startBar;
         const bool sectionEnd=section && bar==section->startBar+section->bars-1;
         const double b=bar*beatsPerBar;
         const uint64_t bs=(uint64_t)bar*97ULL;
@@ -344,6 +345,13 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             const bool open=(drop||chorus) && ((h+groove)%8==3 || (hatMode>=2 && h%8==7));
             const int vel=juce::jlimit(32,112,48+(strong?17:0)+(int)(random01(seed,1400+bs+h)*38.f));
             addNote(hats,open?46:42,beat,.05+(open?.11:0.0),vel);
+        }
+
+        if(sectionStart&&(drop||chorus))
+        {
+            addNote(perc,49,b,.18,drop?112:98); // crash
+            if(sectionName.contains("FINAL")||sectionName.contains("HOOK"))
+                addNote(perc,57,b,.22,118); // impact
         }
 
         if(drop||chorus)
