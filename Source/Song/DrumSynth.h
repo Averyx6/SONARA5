@@ -18,8 +18,8 @@ public:
     void configureKit(const SoundDNA& kick, const SoundDNA& snare, const SoundDNA& hats, const SoundDNA& perc) noexcept;
     void reset() noexcept {
         kickEnv=snareEnv=hatEnv=clapEnv=percEnv=crashEnv=0.f;
-        kickPhase=snarePhase=crashPhase=0.0;
-        hatHpIn=hatHpOut=crashHpIn=crashHpOut=0.f;
+        kickPhase=snarePhase=percPhase=crashPhase=0.0;
+        snareHpIn=hatHpIn=hatHpOut=crashHpIn=crashHpOut=0.f;
         noiseState=kitSeed;
     }
     void trigger(int midiNote,float velocity) noexcept;
@@ -28,9 +28,9 @@ public:
 private:
     float noise() noexcept;
 
-    double sr=44100.0,kickPhase=0.0,snarePhase=0.0,crashPhase=0.0;
+    double sr=44100.0,kickPhase=0.0,snarePhase=0.0,percPhase=0.0,crashPhase=0.0;
     float kickEnv=0.f,snareEnv=0.f,hatEnv=0.f,clapEnv=0.f,percEnv=0.f,crashEnv=0.f;
-    float hatHpIn=0.f,hatHpOut=0.f,crashHpIn=0.f,crashHpOut=0.f;
+    float snareHpIn=0.f,hatHpIn=0.f,hatHpOut=0.f,crashHpIn=0.f,crashHpOut=0.f;
     float kickVelocity=1.f,snareVelocity=1.f,hatVelocity=1.f,clapVelocity=1.f,percVelocity=1.f,crashVelocity=1.f;
 
     uint64_t kitSeed=0x12345678abcdefULL,noiseState=1;
