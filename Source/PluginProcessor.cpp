@@ -729,7 +729,7 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
     const float masterDt=1.f/(float)previewSampleRate;
     const float masterAlpha=masterRc/(masterRc+masterDt);
 
-    int fade=songFadeRemaining.load(std::memory_order_acquire);
+    const int fadeStart=songFadeRemaining.load(std::memory_order_acquire);
     for(int ch=0;ch<out.getNumChannels()&&ch<2;++ch)
     {
         auto* d=out.getWritePointer(ch);
@@ -740,13 +740,16 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
             const float hp=masterAlpha*(y1+x-x1);
             x1=x;y1=hp;
             float y=juce::jlimit(-.92f,.92f,std::tanh(hp*.67f));
-            if(fade>0)y*=juce::jlimit(0.f,1.f,(128.f-(float)fade)/128.f);
+            if(fadeStart>s)
+            {
+                const int remaining=fadeStart-s;
+                y*=juce::jlimit(0.f,1.f,(128.f-(float)remaining)/128.f);
+            }
             d[s]=y;
-            if(ch==0&&fade>0)--fade;
         }
         masterHpX[(size_t)ch]=x1;masterHpY[(size_t)ch]=y1;
     }
-    songFadeRemaining.store(juce::jmax(0,fade),std::memory_order_release);
+    songFadeRemaining.store(juce::jmax(0,fadeStart-renderSamples),std::memory_order_release);
 
     const int64_t next=start+renderSamples;
     songSample.store(next);
