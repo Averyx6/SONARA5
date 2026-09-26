@@ -174,6 +174,28 @@ int main()
     auto surprised=randomizer.arrangementSnapshot();
     if(!surprised||surprised->getLanes().size()!=12||surprised->getSections().size()!=8)return fail("SURPRISE ME arrangement incomplete");
 
+    // Reference/MIDI path: import -> analysis state -> RESOUND -> re-export.
+    auto referenceMidi=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("sonara-reference-source",".mid");
+    {
+        juce::MidiFile mf;mf.setTicksPerQuarterNote(960);juce::MidiMessageSequence seq;
+        auto tempo=juce::MidiMessage::tempoMetaEvent(500000);tempo.setTimeStamp(0);seq.addEvent(tempo);
+        for(int i=0;i<8;++i)
+        {
+            auto on=juce::MidiMessage::noteOn(1,60+(i%5)*2,(juce::uint8)100);on.setTimeStamp(i*480);seq.addEvent(on);
+            auto off=juce::MidiMessage::noteOff(1,60+(i%5)*2);off.setTimeStamp(i*480+360);seq.addEvent(off);
+        }
+        seq.updateMatchedPairs();mf.addTrack(seq);
+        juce::FileOutputStream out(referenceMidi);
+        if(!out.openedOk()||!mf.writeTo(out))return fail("could not create reference MIDI test file");
+    }
+    if(!randomizer.importMidiFile(referenceMidi)||!randomizer.hasReference())return fail("reference MIDI import failed");
+    randomizer.resoundReference("glassy emotional lead, wide but controlled");
+    auto extracted=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("sonara-reference-extracted",".mid");
+    if(!randomizer.writeReferenceMidiFile(extracted)||extracted.getSize()<64)return fail("reference MIDI re-export failed");
+    referenceMidi.deleteFile();extracted.deleteFile();
+
     // MIDI export paths.
     auto fullMidi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-playback-full",".mid");
     if(!randomizer.writeArrangementMidiFile(fullMidi)||fullMidi.getSize()<512)return fail("full MIDI export failed");
