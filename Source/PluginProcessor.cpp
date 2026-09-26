@@ -193,6 +193,7 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
                         ^ sessionSalt
                         ^ (++generationCounter * 0x9e3779b97f4a7c15ULL)
                         ^ 0x534f4e475f4d454cULL;
+    lastSongSeed.store(seed, std::memory_order_relaxed);
     auto made = std::make_shared<sonara::SongArrangement>();
     made->generate(prompt, previewBpm, seed);
     generationProgress.store(.62f); generationStatus = "Loading generated SoundDNA into arrangement lanes";
@@ -209,7 +210,7 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     previewBpm = made->getBpm();
     std::atomic_store_explicit(&arrangement, std::shared_ptr<const sonara::SongArrangement>(made), std::memory_order_release);
     selectedLane.store(lanes.size() > 8 ? 8 : 0);
-    generationProgress.store(1.f); generationStatus = "Full track ready • 72 bars • 11 generated lanes";
+    generationProgress.store(1.f); generationStatus = "Full track ready • fresh drums + harmony + bass + synths + melody + FX";
 }
 
 void SonaraAudioProcessor::regenerateDrums(const juce::String& prompt)
