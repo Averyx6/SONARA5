@@ -68,17 +68,148 @@ bool AudioExporter::renderSelectedLane(const SongArrangement& a,int laneIndex,co
 
 bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& destination,double sampleRate,Progress cb) const
 {
-    std::unique_ptr<juce::AudioFormatWriter> writer;if(!createWavWriter(destination,sampleRate,writer))return false;
-    constexpr int blockSize=512;const auto& lanes=a.getLanes();const int firstMusical=4;const int musicalCount=juce::jmax(0,(int)lanes.size()-firstMusical);
-    std::vector<std::unique_ptr<SonaraEngine>> engines;engines.reserve((size_t)musicalCount);std::vector<juce::MidiBuffer> midis((size_t)musicalCount);std::vector<juce::AudioBuffer<float>> scratch((size_t)musicalCount);
-    for(int i=0;i<musicalCount;++i){auto e=std::make_unique<SonaraEngine>();e->prepare(sampleRate,blockSize,2);e->setPatch(lanes[(size_t)(firstMusical+i)].sound);midis[(size_t)i].ensureSize(8192);scratch[(size_t)i].setSize(2,blockSize);engines.push_back(std::move(e));}
-    DrumSynth drums;drums.prepare(sampleRate);if(lanes.size()>=4)drums.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);std::array<DrumTrigger,256> triggers{};juce::AudioBuffer<float> block(2,blockSize);
-    const double spb=sampleRate*60.0/a.getBpm();const int64_t total=(int64_t)std::llround(a.getTotalBeats()*spb+sampleRate*4.0);
-    for(int64_t start=0;start<total;start+=blockSize){const int n=(int)juce::jmin<int64_t>(blockSize,total-start);block.clear();
-        for(int i=0;i<musicalCount;++i){auto& lane=lanes[(size_t)(firstMusical+i)];auto& m=midis[(size_t)i];auto& s=scratch[(size_t)i];injectLaneMidi(lane,m,start,n,a.getBpm(),sampleRate);s.clear();engines[(size_t)i]->render(s,m);const float gain=i==0?.72f:(i==4?.78f:.54f);for(int ch=0;ch<2;++ch)block.addFrom(ch,0,s,ch,0,n,gain);}
-        int count=0;for(int i=0;i<juce::jmin(4,(int)lanes.size())&&count<(int)triggers.size();++i)count+=collectDrumTriggers(lanes[(size_t)i],start,n,a.getBpm(),sampleRate,triggers.data()+count,(int)triggers.size()-count);std::sort(triggers.begin(),triggers.begin()+count,[](const DrumTrigger&x,const DrumTrigger&y){return x.sampleOffset<y.sampleOffset;});drums.render(block,triggers.data(),count);
-        for(int ch=0;ch<2;++ch)for(int i=0;i<n;++i)block.setSample(ch,i,std::tanh(block.getSample(ch,i)*.72f));if(!writer->writeFromAudioSampleBuffer(block,0,n))return false;if(cb&&start%(blockSize*64)==0)cb((float)start/(float)total,"Rendering full mix");}
-    if(cb)cb(1.f,"Full mix ready");return true;
+    std::unique_ptr<juce::AudioFormatWriter> writer;
+    if(!createWavWriter(destination,sampleRate,writer))return false;
+
+    constexpr int blockSize=512;
+    constexpr int firstMusical=4;
+    constexpr int expectedMusical=8;
+    const auto& lanes=a.getLanes();
+    const int musicalCount=juce::jmin(expectedMusical,juce::jmax(0,(int)lanes.size()-firstMusical));
+    if(musicalCount<=0)return false;
+
+    std::vector<std::unique_ptr<SonaraEngine>> engines;
+    std::vector<juce::MidiBuffer> midis((size_t)musicalCount);
+    std::vector<juce::AudioBuffer<float>> scratch((size_t)musicalCount);
+    std::vector<std::array<float,2>> hpX((size_t)musicalCount),hpY((size_t)musicalCount),lpState((size_t)musicalCount);
+    engines.reserve((size_t)musicalCount);
+
+    static constexpr int voiceBudget[expectedMusical]={2,1,4,2,4,4,2,1};
+    static constexpr float laneGain[expectedMusical]={.52f,.34f,.30f,.27f,.22f,.50f,.23f,.16f};
+    static constexpr float hpHz[expectedMusical]={28.f,18.f,120.f,125.f,160.f,120.f,150.f,110.f};
+    static constexpr float fxSend[expectedMusical]={0.f,0.f,.14f,.10f,.18f,.12f,.08f,.15f};
+
+    for(int i=0;i<musicalCount;++i)
+    {
+        auto e=std::make_unique<SonaraEngine>();
+        e->setLowCpuMode(true);
+        e->setVoiceLimit(voiceBudget[i]);
+        e->prepare(sampleRate,blockSize,2);
+        e->setPatch(lanes[(size_t)(firstMusical+i)].sound);
+        midis[(size_t)i].ensureSize(16384);
+        scratch[(size_t)i].setSize(2,blockSize);
+        hpX[(size_t)i].fill(0.f);hpY[(size_t)i].fill(0.f);lpState[(size_t)i].fill(0.f);
+        engines.push_back(std::move(e));
+    }
+
+    DrumSynth drums;
+    drums.prepare(sampleRate);
+    if(lanes.size()>=4)drums.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
+
+    juce::Reverb reverb;
+    juce::Reverb::Parameters rp;
+    rp.roomSize=.31f;rp.damping=.52f;rp.wetLevel=.22f;rp.dryLevel=0.f;rp.width=.82f;
+    reverb.setParameters(rp);
+
+    std::array<DrumTrigger,256> triggers{};
+    juce::AudioBuffer<float> block(2,blockSize),fxBus(2,blockSize);
+    std::array<float,2> masterX{},masterY{};
+
+    const double spb=sampleRate*60.0/a.getBpm();
+    const int64_t total=(int64_t)std::llround(a.getTotalBeats()*spb+sampleRate*4.0);
+
+    for(int64_t startSample=0;startSample<total;startSample+=blockSize)
+    {
+        const int n=(int)juce::jmin<int64_t>(blockSize,total-startSample);
+        block.clear();fxBus.clear();
+
+        for(int i=0;i<musicalCount;++i)
+        {
+            const auto& lane=lanes[(size_t)(firstMusical+i)];
+            auto& midi=midis[(size_t)i];
+            auto& s=scratch[(size_t)i];
+            injectLaneMidi(lane,midi,startSample,n,a.getBpm(),sampleRate);
+            const bool active=engines[(size_t)i]->hasActiveVoices();
+            if(midi.isEmpty()&&!active)continue;
+
+            s.clear();
+            juce::AudioBuffer<float> view(s.getArrayOfWritePointers(),2,0,n);
+            engines[(size_t)i]->render(view,midi);
+
+            const float rc=1.f/(juce::MathConstants<float>::twoPi*hpHz[i]);
+            const float dt=1.f/(float)sampleRate;
+            const float hpA=rc/(rc+dt);
+            for(int ch=0;ch<2;++ch)
+            {
+                auto* d=view.getWritePointer(ch);
+                float x1=hpX[(size_t)i][(size_t)ch],y1=hpY[(size_t)i][(size_t)ch];
+                for(int smp=0;smp<n;++smp)
+                {
+                    const float x=std::isfinite(d[smp])?d[smp]:0.f;
+                    const float y=hpA*(y1+x-x1);
+                    x1=x;y1=y;d[smp]=y;
+                }
+                hpX[(size_t)i][(size_t)ch]=x1;hpY[(size_t)i][(size_t)ch]=y1;
+            }
+
+            if(i==0)
+            {
+                auto* l=view.getWritePointer(0);auto* r=view.getWritePointer(1);
+                for(int smp=0;smp<n;++smp){const float mid=.5f*(l[smp]+r[smp]);l[smp]=mid*.88f+l[smp]*.12f;r[smp]=mid*.88f+r[smp]*.12f;}
+            }
+            else if(i==1)
+            {
+                const float lpRc=1.f/(juce::MathConstants<float>::twoPi*125.f);
+                const float lpA=dt/(lpRc+dt);
+                auto* l=view.getWritePointer(0);auto* r=view.getWritePointer(1);
+                float state=lpState[(size_t)i][0];
+                for(int smp=0;smp<n;++smp){const float mono=.5f*(l[smp]+r[smp]);state+=lpA*(mono-state);l[smp]=state;r[smp]=state;}
+                lpState[(size_t)i][0]=state;lpState[(size_t)i][1]=state;
+            }
+
+            for(int ch=0;ch<2;++ch)
+            {
+                block.addFrom(ch,0,view,ch,0,n,laneGain[i]);
+                if(fxSend[i]>0.f)fxBus.addFrom(ch,0,view,ch,0,n,laneGain[i]*fxSend[i]);
+            }
+        }
+
+        int count=0;
+        for(int i=0;i<juce::jmin(4,(int)lanes.size())&&count<(int)triggers.size();++i)
+            count+=collectDrumTriggers(lanes[(size_t)i],startSample,n,a.getBpm(),sampleRate,
+                                      triggers.data()+count,(int)triggers.size()-count);
+        std::sort(triggers.begin(),triggers.begin()+count,
+                  [](const DrumTrigger&x,const DrumTrigger&y){return x.sampleOffset<y.sampleOffset;});
+        juce::AudioBuffer<float> blockView(block.getArrayOfWritePointers(),2,0,n);
+        drums.render(blockView,triggers.data(),count);
+
+        reverb.processStereo(fxBus.getWritePointer(0),fxBus.getWritePointer(1),n);
+        for(int ch=0;ch<2;++ch)block.addFrom(ch,0,fxBus,ch,0,n,.72f);
+
+        const float masterRc=1.f/(juce::MathConstants<float>::twoPi*24.f);
+        const float masterDt=1.f/(float)sampleRate;
+        const float masterA=masterRc/(masterRc+masterDt);
+        for(int ch=0;ch<2;++ch)
+        {
+            auto* d=block.getWritePointer(ch);
+            float x1=masterX[(size_t)ch],y1=masterY[(size_t)ch];
+            for(int smp=0;smp<n;++smp)
+            {
+                const float x=std::isfinite(d[smp])?d[smp]:0.f;
+                const float hp=masterA*(y1+x-x1);
+                x1=x;y1=hp;
+                d[smp]=juce::jlimit(-.92f,.92f,std::tanh(hp*.67f));
+            }
+            masterX[(size_t)ch]=x1;masterY[(size_t)ch]=y1;
+        }
+
+        if(!writer->writeFromAudioSampleBuffer(block,0,n))return false;
+        if(cb&&startSample%(blockSize*64)==0)
+            cb((float)startSample/(float)total,"Rendering full mix");
+    }
+
+    if(cb)cb(1.f,"Full mix ready");
+    return true;
 }
 
 bool AudioExporter::renderAllStems(const SongArrangement& a,const juce::File& directory,double sampleRate,Progress cb) const
