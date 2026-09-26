@@ -84,7 +84,7 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
     std::vector<std::array<float,2>> hpX((size_t)musicalCount),hpY((size_t)musicalCount),lpState((size_t)musicalCount);
     engines.reserve((size_t)musicalCount);
 
-    static constexpr int voiceBudget[expectedMusical]={2,1,4,2,4,4,2,1};
+    static constexpr int voiceBudget[expectedMusical]={1,1,3,2,3,3,2,1};
     static constexpr float laneGain[expectedMusical]={.52f,.34f,.30f,.27f,.22f,.50f,.23f,.16f};
     static constexpr float hpHz[expectedMusical]={28.f,18.f,120.f,125.f,160.f,120.f,150.f,110.f};
     static constexpr float fxSend[expectedMusical]={0.f,0.f,.14f,.10f,.18f,.12f,.08f,.15f};
