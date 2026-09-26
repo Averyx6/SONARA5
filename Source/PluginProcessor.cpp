@@ -53,6 +53,70 @@ float melodySimilarity(const sonara::SongArrangement& a,const sonara::SongArrang
     const float normalized=weight>0.f?score/weight:0.f;
     return juce::jlimit(0.f,1.f,normalized*.82f+countRatio*.18f);
 }
+
+std::vector<int> melodyFingerprint(const sonara::SongArrangement& a)
+{
+    std::vector<int> fp;
+    const auto* lead=laneNamed(a,"LEAD");
+    if(lead==nullptr||lead->notes.empty())return fp;
+    fp.reserve(96*7);
+
+    const int limit=juce::jmin(96,(int)lead->notes.size());
+    int prev=lead->notes.front().note;
+    double prevBeat=lead->notes.front().beat;
+
+    for(int i=0;i<limit;++i)
+    {
+        const auto& n=lead->notes[(size_t)i];
+        const int interval=i==0?0:juce::jlimit(-12,12,n.note-prev);
+        const int contour=interval>0?1:(interval<0?-1:0);
+        const int pitchClass=((n.note%12)+12)%12;
+        const int octave=n.note/12;
+        const int onset16=(int)std::llround(std::fmod(juce::jmax(0.0,n.beat),16.0)*4.0);
+        const int gap8=i==0?0:juce::jlimit(0,64,(int)std::llround((n.beat-prevBeat)*8.0));
+        const int length8=juce::jlimit(1,32,(int)std::llround(n.length*8.0));
+
+        fp.push_back(pitchClass);
+        fp.push_back(interval+12);
+        fp.push_back(contour+1);
+        fp.push_back(octave);
+        fp.push_back(onset16);
+        fp.push_back(gap8);
+        fp.push_back(length8);
+
+        prev=n.note;
+        prevBeat=n.beat;
+    }
+    fp.push_back((int)lead->notes.size());
+    return fp;
+}
+
+float fingerprintSimilarity(const std::vector<int>& a,const std::vector<int>& b)
+{
+    if(a.empty()||b.empty())return 0.f;
+    constexpr int stride=7;
+    const int aNotes=((int)a.size()-1)/stride;
+    const int bNotes=((int)b.size()-1)/stride;
+    const int n=juce::jmin(aNotes,bNotes);
+    if(n<8)return 0.f;
+
+    float score=0.f,maxScore=0.f;
+    for(int i=0;i<n;++i)
+    {
+        const int ai=i*stride,bi=i*stride;
+        maxScore+=1.f;
+        if(a[(size_t)ai]==b[(size_t)bi])score+=.22f;
+        if(a[(size_t)ai+1]==b[(size_t)bi+1])score+=.22f;
+        if(a[(size_t)ai+2]==b[(size_t)bi+2])score+=.10f;
+        if(a[(size_t)ai+3]==b[(size_t)bi+3])score+=.08f;
+        if(std::abs(a[(size_t)ai+4]-b[(size_t)bi+4])<=1)score+=.16f;
+        if(std::abs(a[(size_t)ai+5]-b[(size_t)bi+5])<=1)score+=.12f;
+        if(std::abs(a[(size_t)ai+6]-b[(size_t)bi+6])<=1)score+=.10f;
+    }
+
+    const float countRatio=(float)juce::jmin(aNotes,bNotes)/(float)juce::jmax(1,juce::jmax(aNotes,bNotes));
+    return juce::jlimit(0.f,1.f,(maxScore>0.f?score/maxScore:0.f)*.88f+countRatio*.12f);
+}
 }
 
 SonaraAudioProcessor::SonaraAudioProcessor()
