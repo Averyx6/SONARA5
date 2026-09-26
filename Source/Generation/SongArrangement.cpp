@@ -346,7 +346,7 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             }
         }
 
-        const int hatSteps = dnb ? 16 : (drop ? (hatMode>=2?16:8) : ((build||chorus||energetic)?8:4));
+        const int hatSteps = dnb ? 16 : (house ? ((drop||build||chorus)?8:4) : (drop ? (hatMode>=2?16:8) : ((build||chorus||energetic)?8:4)));
         for(int h=0;h<hatSteps;++h)
         {
             const int quarter=juce::jmax(1,hatSteps/4);
@@ -355,9 +355,10 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             if(!strong && random01(seed,1300+bs+h)<skip) continue;
             double beat=b+h*(4.0/hatSteps);
             if(h%2==1) beat+=swing*(hatMode==1?1.0:.55);
-            const bool open=(drop||chorus) && ((h+groove)%8==3 || (hatMode>=2 && h%8==7));
-            const int vel=juce::jlimit(32,112,48+(strong?17:0)+(int)(random01(seed,1400+bs+h)*38.f));
-            addNote(hats,open?46:42,beat,.05+(open?.11:0.0),vel);
+            bool open=(drop||chorus) && ((h+groove)%8==3 || (hatMode>=2 && h%8==7));
+            if(house&&hatSteps==8)open=(h%2==1)&&((h+bar+groove)%4==1);
+            const int vel=juce::jlimit(32,108,46+(strong?15:0)+(int)(random01(seed,1400+bs+h)*32.f));
+            addNote(hats,open?46:42,beat,.045+(open?.10:0.0),vel);
         }
 
         if(sectionStart&&(drop||chorus))
@@ -369,12 +370,22 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
 
         if(drop||chorus)
         {
-            const int percCount=1+((bar+groove)%4);
-            for(int k=0;k<percCount;++k)
+            if(house)
             {
-                const double pos=.25*((k*5+groove+bar)%16);
-                if(pos<.1) continue;
-                addNote(perc,(k%2)?37:39,b+pos,.06,58+(int)(random01(seed,1500+bs+k)*30.f));
+                if((bar+groove)%2==0)
+                    addNote(perc,37,b+3.5,.055,58+(int)(random01(seed,1500+bs)*18.f));
+                if((bar+groove)%4==3)
+                    addNote(perc,39,b+2.75,.06,62+(int)(random01(seed,1501+bs)*16.f));
+            }
+            else
+            {
+                const int percCount=1+((bar+groove)%3);
+                for(int k=0;k<percCount;++k)
+                {
+                    const double pos=.25*((k*5+groove+bar)%16);
+                    if(pos<.1) continue;
+                    addNote(perc,(k%2)?37:39,b+pos,.06,58+(int)(random01(seed,1500+bs+k)*26.f));
+                }
             }
         }
         else if(breakdown && random01(seed,1510+bar)>.62f)
@@ -384,7 +395,7 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
 
         if(build && sectionEnd)
         {
-            const int divisions = hatMode>=2 ? 24 : 16;
+            const int divisions = house ? (hatMode>=2?16:8) : (hatMode>=2?24:16);
             for(int s=0;s<divisions;++s)
             {
                 if(s<4 && groove==3 && s%2==1) continue;
