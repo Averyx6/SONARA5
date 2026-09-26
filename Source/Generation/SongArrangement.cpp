@@ -499,15 +499,21 @@ void SongArrangement::generate(const juce::String& prompt, double bpm, uint64_t 
     tempo = juce::jlimit(60.0, 200.0, bpmFromPrompt(prompt, bpm));
     rootMidi = parseRootMidi(prompt, minor);
     bars = defaultBars;
-    buildSongPlan(seed ^ 0x6f4d2b19ULL);
-    buildSections(seed ^ 0x7a1f2d4bULL);
+    buildSeedDomains(seed);
+    buildSongPlan(domains.structure);
+    buildSections(domains.structure);
+    buildHarmonyPlan(domains.harmony);
+    buildHarmonyTimeline(domains.harmony);
 
     const auto lower = prompt.toLowerCase();
     const bool energetic = lower.contains("energetic") || lower.contains("powerful") || lower.contains("festival") || lower.contains("hard") || lower.contains("edm");
-    addDrums(seed ^ 0x11223344ULL, energetic);
-    addHarmony(seed ^ 0x22334455ULL);
-    addMelody(seed ^ 0x33445566ULL, energetic);
-    addFx(seed ^ 0x44556677ULL);
+    addDrums(domains.drums, energetic);
+    addHarmony(domains.harmony);
+    addMelody(domains.melody, energetic);
+    addFx(domains.fx);
+
+    harmonyId=computeHarmonyId();
+    melodyId=computeMelodyId();
 
     PromptGenerator designer;
     for (size_t i = 0; i < lanes.size(); ++i)
@@ -521,12 +527,12 @@ void SongArrangement::generate(const juce::String& prompt, double bpm, uint64_t 
         else if (lane.name == "LEAD") soundPrompt += "memorable emotional lead ";
         else if (lane.name == "PLUCK") soundPrompt += "pluck rhythmic ";
         else soundPrompt += "clean atmospheric texture ";
-        const float flavour = random01(seed, 0x9000ULL + static_cast<uint64_t>(i) * 17ULL);
+        const float flavour = random01(domains.soundPalette, 0x9000ULL + static_cast<uint64_t>(i) * 0x9e37ULL);
         soundPrompt += flavour < .25f ? "warm soft spacious long release" :
                        flavour < .50f ? "bright crisp wide fast attack" :
                        flavour < .75f ? "dark thick body subtle modulation" :
                                         "airy animated wide heavy modulation";
-        lane.sound = designer.generate(soundPrompt, mix64(seed + static_cast<uint64_t>(i) * 0x517cc1b727220a95ULL));
+        lane.sound = designer.generate(soundPrompt, mix64(domains.soundPalette ^ mix64((static_cast<uint64_t>(i)+1ULL) * 0x517cc1b727220a95ULL)));
 
         // Keep song playback lighter and cleaner than single-instrument design.
         // Each role gets a bounded unison/FX/sub budget so low notes do not stack into mud.
