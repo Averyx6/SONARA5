@@ -60,6 +60,7 @@ public:
 
     void setPreviewBpm(double bpm) noexcept { previewBpm=juce::jlimit(60.0,200.0,bpm); }
     double getPreviewBpm() const noexcept { return previewBpm; }
+    uint64_t getSongGenerationSeed() const noexcept { return lastSongSeed.load(std::memory_order_relaxed); }
     void setMacro(Macro,float normalized);
     const sonara::SoundDNA& currentPatch()const{return engine.patch();}
     sonara::MutationLocks& mutationLocks() noexcept { return locks; }
@@ -90,6 +91,7 @@ private:
     sonara::AudioExporter audioExporter;
     uint64_t generationCounter=1;
     uint64_t sessionSalt=0;
+    std::atomic<uint64_t> lastSongSeed{0};
     std::atomic<bool> previewPlaying{false}; std::atomic<int64_t> previewSample{0}; std::atomic<bool> songPlaying{false}; std::atomic<int64_t> songSample{0}; std::atomic<int> selectedLane{8};
     double previewSampleRate=44100.0,previewBpm=128.0; int64_t previewLengthSamples=1; int maximumBlockSize=512;
     std::shared_ptr<const sonara::SongArrangement> arrangement;
