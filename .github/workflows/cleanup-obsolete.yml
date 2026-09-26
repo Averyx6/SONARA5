@@ -1,0 +1,31 @@
+name: SONARA CI Cleanup
+on:
+  push:
+    branches: [ main ]
+permissions:
+  actions: write
+  contents: read
+jobs:
+  cancel-obsolete:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel obsolete SONARA Windows runs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          KEEP_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for status in queued in_progress; do
+            gh api "repos/$REPO/actions/runs?status=$status&per_page=100"               --jq '.workflow_runs[] | select(.name == "SONARA Windows x64 VST3") | [.id,.head_sha] | @tsv' |
+            while IFS=$'\t' read -r run_id head_sha; do
+              [ -z "${run_id:-}" ] && continue
+              if [ "$head_sha" = "$KEEP_SHA" ]; then
+                echo "Keeping current run $run_id ($head_sha)"
+              else
+                echo "Cancelling obsolete run $run_id ($head_sha)"
+                gh api --method POST "repos/$REPO/actions/runs/$run_id/cancel" || true
+              fi
+            done
+          done
