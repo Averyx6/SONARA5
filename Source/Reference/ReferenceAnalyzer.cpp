@@ -182,10 +182,11 @@ ReferenceAnalysis ReferenceAnalyzer::importMidi(const juce::File& file) const
     const int tpq=mf.getTimeFormat()>0?mf.getTimeFormat():960;
     for(int t=0;t<mf.getNumTracks();++t)
     {
-        auto* seq=mf.getTrack(t); if(seq==nullptr)continue; seq->updateMatchedPairs();
-        for(int i=0;i<seq->getNumEvents();++i)
+        const auto* sourceSeq=mf.getTrack(t); if(sourceSeq==nullptr)continue;
+        auto seq=*sourceSeq; seq.updateMatchedPairs();
+        for(int i=0;i<seq.getNumEvents();++i)
         {
-            auto* ev=seq->getEventPointer(i); if(ev==nullptr)continue; const auto& m=ev->message;
+            auto* ev=seq.getEventPointer(i); if(ev==nullptr)continue; const auto& m=ev->message;
             if(m.isTempoMetaEvent()){const double sec=m.getTempoSecondsPerQuarterNote();if(sec>0.0)out.estimatedBpm=60.0/sec;}
             if(!m.isNoteOn())continue;
             double off=m.getTimeStamp()+tpq*.5; if(ev->noteOffObject!=nullptr)off=ev->noteOffObject->message.getTimeStamp();
