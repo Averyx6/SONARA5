@@ -420,27 +420,25 @@ int SongArrangement::parseRootMidi(const juce::String& raw, bool& minorOut)
 void SongArrangement::buildSongPlan(uint64_t seed)
 {
     const auto p=sourcePrompt.toLowerCase();
-    plan.structureStyle=(int)((seed ^ (seed>>16)) & 3ULL);
-    plan.drumGroove=(int)(random01(seed,0x1002)*6.f)%6;
-    plan.hatMode=(int)(random01(seed,0x1003)*4.f)%4;
-    plan.progressionIndex=(int)(random01(seed,0x1004)*8.f)%8;
-    plan.alternateProgressionIndex=(int)(random01(seed,0x1005)*8.f)%8;
-    if(plan.alternateProgressionIndex==plan.progressionIndex)
-        plan.alternateProgressionIndex=(plan.alternateProgressionIndex+3)%8;
-    plan.bassMode=(int)(random01(seed,0x1006)*5.f)%5;
-    plan.chordMode=(int)(random01(seed,0x1007)*5.f)%5;
-    plan.arpMode=(int)(random01(seed,0x1008)*6.f)%6;
-    plan.melodyArchetype=(int)(random01(seed,0x1009)*12.f)%12;
-    plan.rhythmFamily=(int)(random01(seed,0x100b)*10.f)%10;
-    plan.startingDegree=(int)(random01(seed,0x100c)*7.f)%7;
-    plan.cadenceStyle=(int)(random01(seed,0x100d)*4.f)%4;
-    plan.motifLength=3+(int)(random01(seed,0x100a)*6.f);
-    plan.phraseBars=random01(seed,0x1010)>.62f?8:4;
-    plan.octaveRange=1+(int)(random01(seed,0x1011)*3.f);
-    plan.density=.46f+.42f*random01(seed,0x1012);
-    plan.syncopation=.12f+.58f*random01(seed,0x1013);
-    plan.restAmount=.08f+.30f*random01(seed,0x1014);
-    plan.development=.30f+.62f*random01(seed,0x1015);
+    plan.structureStyle=(int)(random01(domains.structure,0x1001)*4.f)%4;
+    plan.drumGroove=(int)(random01(domains.drums,0x1002)*6.f)%6;
+    plan.hatMode=(int)(random01(domains.drums,0x1003)*4.f)%4;
+    plan.progressionIndex=0;
+    plan.alternateProgressionIndex=1;
+    plan.bassMode=(int)(random01(domains.bass,0x1006)*5.f)%5;
+    plan.chordMode=(int)(random01(domains.voicing,0x1007)*5.f)%5;
+    plan.arpMode=(int)(random01(domains.pluck,0x1008)*6.f)%6;
+    plan.melodyArchetype=(int)(random01(domains.melody,0x1009)*12.f)%12;
+    plan.rhythmFamily=(int)(random01(domains.melody,0x100b)*10.f)%10;
+    plan.startingDegree=(int)(random01(domains.melody,0x100c)*7.f)%7;
+    plan.cadenceStyle=(int)(random01(domains.melody,0x100d)*4.f)%4;
+    plan.motifLength=3+(int)(random01(domains.melody,0x100a)*6.f);
+    plan.phraseBars=random01(domains.melody,0x1010)>.62f?8:4;
+    plan.octaveRange=1+(int)(random01(domains.melody,0x1011)*3.f);
+    plan.density=.46f+.42f*random01(domains.melody,0x1012);
+    plan.syncopation=.12f+.58f*random01(domains.melody,0x1013);
+    plan.restAmount=.08f+.30f*random01(domains.melody,0x1014);
+    plan.development=.30f+.62f*random01(domains.melody,0x1015);
 
     if(p.contains("minimal")){plan.density*=.62f;plan.restAmount=juce::jmax(plan.restAmount,.30f);}
     if(p.contains("complex")){plan.density=juce::jmin(1.f,plan.density+.18f);plan.development=juce::jmax(plan.development,.72f);}
