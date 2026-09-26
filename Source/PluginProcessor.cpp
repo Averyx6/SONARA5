@@ -212,6 +212,41 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     generationProgress.store(1.f); generationStatus = "Full track ready • 72 bars • 11 generated lanes";
 }
 
+void SonaraAudioProcessor::regenerateDrums(const juce::String& prompt)
+{
+    stopSongPreview();
+    generationProgress.store(.08f);
+    generationStatus = "Understanding drum prompt only";
+
+    const uint64_t seed = (uint64_t) prompt.hashCode64()
+                        ^ sessionSalt
+                        ^ (++generationCounter * 0xa24baed4963ee407ULL)
+                        ^ 0x4452554d535f4f4eULL;
+
+    auto fresh = std::make_shared<sonara::SongArrangement>();
+    fresh->generate(prompt + " drums only tight punchy fills transitions", previewBpm, seed);
+
+    auto current = arrangementSnapshot();
+    auto updated = current
+        ? std::make_shared<sonara::SongArrangement>(*current)
+        : std::make_shared<sonara::SongArrangement>(*fresh);
+
+    auto& dst = updated->editLanes();
+    const auto& src = fresh->getLanes();
+    const int drumLanes = juce::jmin(4, juce::jmin((int)dst.size(), (int)src.size()));
+    for (int i = 0; i < drumLanes; ++i)
+        dst[(size_t)i] = src[(size_t)i];
+
+    std::atomic_store_explicit(&arrangement,
+        std::shared_ptr<const sonara::SongArrangement>(updated),
+        std::memory_order_release);
+    selectedLane.store(0);
+    generationProgress.store(1.f);
+    generationStatus = current
+        ? "Drums regenerated only • melody, chords and bass preserved"
+        : "Drums ready • base arrangement created because no song existed";
+}
+
 void SonaraAudioProcessor::startSongPreview()
 {
     auto a = arrangementSnapshot();
