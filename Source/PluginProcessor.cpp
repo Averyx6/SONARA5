@@ -160,7 +160,7 @@ SonaraAudioProcessor::SonaraAudioProcessor()
                 ^ static_cast<uint64_t>(juce::Time::getHighResolutionTicks());
     for(auto& e:songEngines)e.setLowCpuMode(true);
     // Lane order after drums: BASS, SUB, CHORDS, PLUCK, PAD, LEAD, COUNTER, FX.
-    static constexpr int voiceBudget[musicalLaneCount]={2,1,4,2,4,4,2,1};
+    static constexpr int voiceBudget[musicalLaneCount]={1,1,3,2,3,3,2,1};
     for(int i=0;i<musicalLaneCount;++i)songEngines[(size_t)i].setVoiceLimit(voiceBudget[i]);
     for(int i=0;i<12;++i){laneMixLevel[(size_t)i].store(1.f);laneMixPan[(size_t)i].store(0.f);laneMixWidth[(size_t)i].store(1.f);laneMixFx[(size_t)i].store(1.f);}
     patchHistory.push_back(engine.patch());
