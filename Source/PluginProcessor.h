@@ -30,6 +30,7 @@ public:
     bool writePreviewMidiFile(const juce::File&) const;
 
     void generateTrack(const juce::String& prompt);
+    void regenerateDrums(const juce::String& prompt);
     void startSongPreview(); void stopSongPreview(); bool isSongPlaying() const noexcept { return songPlaying.load(); }
     double songPosition01() const noexcept;
     std::shared_ptr<const sonara::SongArrangement> arrangementSnapshot() const noexcept { return std::atomic_load_explicit(&arrangement,std::memory_order_acquire); }
