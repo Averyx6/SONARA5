@@ -238,7 +238,7 @@ int main()
     if(subIndex<0)return fail("SUB index missing");
     randomizer.setSelectedLane(subIndex);
     randomizer.setLaneMix(subIndex,SonaraAudioProcessor::LaneMixParameter::level,.73f);
-    randomizer.setLaneMix(subIndex,SonaraAudioProcessor::LaneMixParameter::pan,.12f);
+    randomizer.setLaneMix(subIndex,SonaraAudioProcessor::LaneMixParameter::pan,.12f); // SUB must clamp this back to center
     randomizer.setLaneMix(subIndex,SonaraAudioProcessor::LaneMixParameter::width,0.f);
     randomizer.setLaneMix(subIndex,SonaraAudioProcessor::LaneMixParameter::fxSend,0.f);
 
@@ -248,7 +248,7 @@ int main()
     restored.prepareToPlay(48000.0,512);
     restored.setStateInformation(state.getData(),(int)state.getSize());
     const auto restoredMix=restored.getLaneMix(subIndex);
-    if(std::abs(restoredMix.level-.73f)>.001f||std::abs(restoredMix.pan-.12f)>.001f
+    if(std::abs(restoredMix.level-.73f)>.001f||std::abs(restoredMix.pan)>.001f
        ||std::abs(restoredMix.width)>.001f||std::abs(restoredMix.fxSend)>.001f)
         return fail("lane mixer state did not survive plugin state round-trip");
     if(!restored.arrangementSnapshot()||restored.arrangementSnapshot()->getLanes().size()!=12)
