@@ -236,6 +236,34 @@ int main()
     int subIndex=-1;for(int i=0;i<(int)surprised->getLanes().size();++i)if(surprised->getLanes()[(size_t)i].name=="SUB"){subIndex=i;break;}
     if(subIndex<0)return fail("SUB index missing");
     randomizer.setSelectedLane(subIndex);
+    randomizer.setLaneMix(subIndex,SonaraAudioProcessor::LaneMixParameter::level,.73f);
+    randomizer.setLaneMix(subIndex,SonaraAudioProcessor::LaneMixParameter::pan,.12f);
+    randomizer.setLaneMix(subIndex,SonaraAudioProcessor::LaneMixParameter::width,0.f);
+    randomizer.setLaneMix(subIndex,SonaraAudioProcessor::LaneMixParameter::fxSend,0.f);
+
+    juce::MemoryBlock state;
+    randomizer.getStateInformation(state);
+    SonaraAudioProcessor restored;
+    restored.prepareToPlay(48000.0,512);
+    restored.setStateInformation(state.getData(),(int)state.getSize());
+    const auto restoredMix=restored.getLaneMix(subIndex);
+    if(std::abs(restoredMix.level-.73f)>.001f||std::abs(restoredMix.pan-.12f)>.001f
+       ||std::abs(restoredMix.width)>.001f||std::abs(restoredMix.fxSend)>.001f)
+        return fail("lane mixer state did not survive plugin state round-trip");
+    if(!restored.arrangementSnapshot()||restored.arrangementSnapshot()->getLanes().size()!=12)
+        return fail("song arrangement did not survive plugin state round-trip");
+
+    auto projectFile=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("sonara-project-roundtrip",".sonara");
+    if(!randomizer.saveProject(projectFile))return fail("project save failed");
+    SonaraAudioProcessor projectLoaded;
+    projectLoaded.prepareToPlay(48000.0,512);
+    if(!projectLoaded.loadProject(projectFile))return fail("project load failed");
+    const auto projectMix=projectLoaded.getLaneMix(subIndex);
+    if(std::abs(projectMix.level-.73f)>.001f||!projectLoaded.arrangementSnapshot())
+        return fail("project round-trip lost mixer or arrangement");
+    projectFile.deleteFile();
+
     auto subMidi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-playback-sub",".mid");
     if(!randomizer.writeSelectedLaneMidiFile(subMidi)||subMidi.getSize()<64)return fail("selected SUB MIDI export failed");
     fullMidi.deleteFile();subMidi.deleteFile();
