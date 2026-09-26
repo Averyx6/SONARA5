@@ -1,5 +1,7 @@
 #include "PluginProcessor.h"
+#ifndef SONARA_HEADLESS_TEST
 #include "PluginEditor.h"
+#endif
 #include <algorithm>
 #include <cmath>
 
@@ -911,5 +913,12 @@ void SonaraAudioProcessor::setStateInformation(const void* data,int bytes)
     }
 }
 
-juce::AudioProcessorEditor* SonaraAudioProcessor::createEditor(){return new SonaraAudioProcessorEditor(*this);}
+juce::AudioProcessorEditor* SonaraAudioProcessor::createEditor()
+{
+#ifndef SONARA_HEADLESS_TEST
+    return new SonaraAudioProcessorEditor(*this);
+#else
+    return nullptr;
+#endif
+}
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter(){return new SonaraAudioProcessor();}
