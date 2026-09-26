@@ -23,6 +23,48 @@ SoundDNA PromptGenerator::generate(const juce::String& prompt, uint64_t seed, Pr
     d.subLevel=.02f+hash01(seed,31)*.12f; d.subOctave=-1.f; d.noiseLevel=hash01(seed,32)*.035f;
     d.pitchEnv=0.f; d.pitchEnvDecay=.12f; d.transientLevel=.01f+hash01(seed,80)*.04f; d.transientDecay=.012f+.025f*hash01(seed,81);
     d.fmAmount=hash01(seed,82)*.08f; d.fmRatio=1.f+std::floor(hash01(seed,83)*4.f); d.ringMod=hash01(seed,84)*.04f; d.bitCrush=0.f; d.downsample=0.f;
+
+    // Seeded base character gives repeated prompts a genuinely different sonic identity
+    // before explicit prompt words refine it. The variants stay musical and bounded.
+    const int character=(int)(hash01(seed,96)*6.f)%6;
+    if(character==0){d.oscA=WaveShape::softSaw;d.oscB=WaveShape::triangle;d.oscMix=.28f+.18f*hash01(seed,97);d.drive=.05f+.08f*hash01(seed,98);d.detune=.055f+.07f*hash01(seed,99);}
+    else if(character==1){d.oscA=WaveShape::sine;d.oscB=WaveShape::triangle;d.oscMix=.34f;d.fmAmount=.08f+.16f*hash01(seed,100);d.fmRatio=2.f+std::floor(hash01(seed,101)*3.f);d.transientLevel=.05f+.08f*hash01(seed,102);}
+    else if(character==2){d.oscA=WaveShape::saw;d.oscB=WaveShape::square;d.oscMix=.22f+.24f*hash01(seed,103);d.drive=.11f+.12f*hash01(seed,104);d.filterEnv=.14f+.24f*hash01(seed,105);}
+    else if(character==3){d.oscA=WaveShape::triangle;d.oscB=WaveShape::softSaw;d.oscMix=.44f;d.noiseLevel=.008f+.026f*hash01(seed,106);d.transientLevel=.04f+.10f*hash01(seed,107);d.width=.50f+.34f*hash01(seed,108);}
+    else if(character==4){d.oscA=WaveShape::sine;d.oscB=WaveShape::sine;d.oscMix=.48f;d.fmAmount=.15f+.24f*hash01(seed,109);d.fmRatio=1.5f+std::floor(hash01(seed,110)*5.f);d.ringMod=.025f+.08f*hash01(seed,111);}
+    else {d.oscA=WaveShape::softSaw;d.oscB=WaveShape::softSaw;d.oscMix=.50f;d.oscAMorph=.18f+.32f*hash01(seed,112);d.oscBMorph=.12f+.38f*hash01(seed,113);d.lfoMorphA=.04f+.12f*hash01(seed,114);d.lfoMorphB=-(.03f+.11f*hash01(seed,115));}
+
+    if(has("analog")||has("vintage"))
+    {
+        d.oscA=WaveShape::softSaw;d.oscB=WaveShape::triangle;d.oscMix=.24f+.18f*hash01(seed,116);
+        d.detune=.045f+.07f*hash01(seed,117);d.phaseRandom=.72f;d.drive=.07f+.10f*hash01(seed,118);
+        d.cutoff=juce::jmin(d.cutoff,10500.f);d.noiseLevel=juce::jmax(d.noiseLevel,.008f);
+    }
+    if(has("glassy")||has("crystal")||has("icy"))
+    {
+        d.oscA=WaveShape::sine;d.oscB=WaveShape::triangle;d.oscMix=.42f;
+        d.fmAmount=.22f+.28f*hash01(seed,119);d.fmRatio=2.f+std::floor(hash01(seed,120)*4.f);
+        d.transientLevel=.10f+.12f*hash01(seed,121);d.cutoff=juce::jmax(d.cutoff,13500.f);
+        d.width=juce::jmax(d.width,.72f);d.drive=juce::jmin(d.drive,.07f);
+    }
+    if(has("organic")||has("woody")||has("natural"))
+    {
+        d.oscA=WaveShape::triangle;d.oscB=WaveShape::softSaw;d.oscMix=.30f;
+        d.transientLevel=.16f+.18f*hash01(seed,122);d.transientDecay=.012f+.035f*hash01(seed,123);
+        d.noiseLevel=.018f+.035f*hash01(seed,124);d.cutoff=4200.f+5200.f*hash01(seed,125);
+        d.drive=.035f+.055f*hash01(seed,126);
+    }
+    if(has("hollow")||has("vocal-like")||has("vocal synth"))
+    {
+        d.filterMode=FilterMode::bandpass;d.cutoff=900.f+3200.f*hash01(seed,127);
+        d.resonance=.22f+.22f*hash01(seed,128);d.oscA=WaveShape::square;d.oscB=WaveShape::sine;
+        d.oscMix=.25f+.20f*hash01(seed,129);
+    }
+    if(has("gritty")||has("dirty")||has("raw"))
+    {
+        d.oscA=WaveShape::saw;d.oscB=WaveShape::square;d.drive=.22f+.26f*hash01(seed,130);
+        d.transientLevel=juce::jmax(d.transientLevel,.12f);d.cutoff=juce::jmin(d.cutoff,12500.f);
+    }
     if(has("kick")||has("808")){d.name=has("808")?"Generated 808":"Generated Kick";d.oscA=WaveShape::sine;d.oscB=WaveShape::sine;d.oscMix=.08f;d.unison=1;d.width=.02f;d.phaseRandom=0.f;d.attack=.001f;d.decay=.18f+(has("808")?.38f:.08f);d.sustain=has("808")?.22f:0.f;d.release=has("808")?.42f:.08f;d.cutoff=juce::jmin(d.cutoff,has("808")?4200.f:6500.f);d.pitchEnv=has("808")?18.f:34.f;d.pitchEnvDecay=has("808")?.095f:.055f;d.transientLevel=has("soft")?.18f:.55f;d.transientDecay=.009f;d.subLevel=has("808")?.58f:.34f;d.drive=has("clean")?.08f:.24f;d.reverb=0.f;d.delay=0.f;d.chorus=0.f;}
     if(has("snare")||has("clap")){d.name=has("clap")?"Generated Clap":"Generated Snare";d.oscA=WaveShape::triangle;d.oscB=WaveShape::sine;d.oscMix=.35f;d.unison=1;d.width=has("clap")?.68f:.25f;d.attack=.001f;d.decay=.14f;d.sustain=0.f;d.release=.08f;d.noiseLevel=has("clap")?.58f:.42f;d.transientLevel=.52f;d.transientDecay=.012f;d.pitchEnv=8.f;d.pitchEnvDecay=.035f;d.cutoff=has("clap")?9000.f:7200.f;d.resonance=.08f;d.reverb=.06f;d.delay=0.f;}
     if(has("hat")||has("cymbal")||has("ride")||has("crash")){d.name="Generated Metal Percussion";d.oscA=WaveShape::square;d.oscB=WaveShape::triangle;d.oscMix=.55f;d.unison=3;d.detune=.31f;d.attack=.001f;d.decay=has("crash")||has("ride")?.85f:.07f;d.sustain=0.f;d.release=has("crash")?.9f:.05f;d.noiseLevel=.34f;d.transientLevel=.38f;d.fmAmount=.52f;d.fmRatio=6.f;d.ringMod=.42f;d.filterMode=FilterMode::highpass;d.cutoff=has("crash")?3800.f:6500.f;d.width=.8f;d.reverb=has("crash")?.24f:.04f;}
@@ -32,10 +74,10 @@ SoundDNA PromptGenerator::generate(const juce::String& prompt, uint64_t seed, Pr
     if(has("bitcrush")||has("8-bit")||has("lofi")||has("lo-fi")){d.bitCrush=.28f+.48f*hash01(seed,90);d.downsample=.12f+.38f*hash01(seed,91);}
     if(has("punch")||has("transient")||has("impact")){d.transientLevel=juce::jmax(d.transientLevel,.25f+.35f*hash01(seed,92));d.transientDecay=.006f+.025f*hash01(seed,93);}
     if(has("pitch drop")||has("descending")||has("drop pitch")){d.pitchEnv=20.f+20.f*hash01(seed,94);d.pitchEnvDecay=.04f+.11f*hash01(seed,95);}
-    if(has("pluck")){d.attack=.001f;d.decay=.10f+hash01(seed,33)*.08f;d.sustain=.10f;d.release=.12f+.12f*hash01(seed,34);d.filterEnv=.55f;d.noiseLevel=.02f;d.oscAMorph=.10f+.20f*hash01(seed,48);d.lfoMorphA*=.35f;d.lfoMorphB*=.35f;}
+    if(has("pluck")){d.attack=.001f;d.decay=.075f+hash01(seed,33)*.13f;d.sustain=.06f+.08f*hash01(seed,131);d.release=.09f+.18f*hash01(seed,34);d.filterEnv=.48f+.24f*hash01(seed,132);d.noiseLevel=.008f+.024f*hash01(seed,133);d.transientLevel=juce::jmax(d.transientLevel,.12f+.15f*hash01(seed,134));d.oscAMorph=.06f+.28f*hash01(seed,48);d.lfoMorphA*=.30f;d.lfoMorphB*=.30f;}
     if(has("pad")||has("ambient")){d.attack=.28f+.35f*hash01(seed,35);d.release=1.4f+1.2f*hash01(seed,36);d.sustain=.82f;d.width=.96f;d.lfoCutoff=.16f;d.lfoRate=.16f+.28f*hash01(seed,37);d.lfoShape=LfoShape::triangle;d.oscAMorph=.30f+.38f*hash01(seed,49);d.oscBMorph=.25f+.42f*hash01(seed,50);d.lfoMorphA=.18f+.22f*hash01(seed,57);d.lfoMorphB=-(.14f+.24f*hash01(seed,58));}
     if(has("bass")||has("sub")){d.cutoff=1800.f+2200.f*hash01(seed,38);d.release=.12f+.16f*hash01(seed,39);d.width=.10f;d.unison=has("reese")?5:1;d.subLevel=has("sub")?.48f:.28f;d.oscBTranspose=-12.f;d.reverb=.04f;d.oscAMorph=has("reese")?.48f:.08f;d.lfoMorphA=has("reese")?.16f:0.f;d.lfoMorphB=has("reese")?-.12f:0.f;}
-    if(has("lead")){d.attack=.004f;d.sustain=.78f;d.release=.24f;d.unison=5;d.filterEnv=.18f;d.oscAMorph=.12f+.32f*hash01(seed,51);d.lfoMorphA*=.65f;d.lfoMorphB*=.65f;}
+    if(has("lead")){d.attack=.002f+.006f*hash01(seed,135);d.sustain=.70f+.18f*hash01(seed,136);d.release=.16f+.24f*hash01(seed,137);d.unison=4+(int)(hash01(seed,138)*3.f);d.filterEnv=.12f+.20f*hash01(seed,139);d.oscAMorph=.06f+.38f*hash01(seed,51);d.oscBMorph=.04f+.34f*hash01(seed,140);d.lfoMorphA*=.58f;d.lfoMorphB*=.58f;d.transientLevel=juce::jmax(d.transientLevel,.045f+.08f*hash01(seed,141));}
     if(has("supersaw")){d.oscA=WaveShape::saw;d.oscB=WaveShape::softSaw;d.oscAMorph=d.oscBMorph=d.lfoMorphA=d.lfoMorphB=0.f;d.unison=9;d.detune=.14f+.1f*hash01(seed,40);d.unisonBlend=.78f;d.width=.98f;}
     if(has("soft")||has("mellow")){d.oscA=WaveShape::sine;d.oscB=WaveShape::softSaw;d.oscAMorph=.18f+.22f*hash01(seed,52);d.drive=.03f;d.cutoff*=.62f;}
     if(has("square")||has("8-bit")){d.oscA=d.oscB=WaveShape::square;d.oscAMorph=d.oscBMorph=d.lfoMorphA=d.lfoMorphB=0.f;d.unison=1;d.phaseRandom=0.f;}
