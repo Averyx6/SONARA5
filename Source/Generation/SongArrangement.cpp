@@ -503,6 +503,16 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
     const int* scale = minor ? scaleMinor : scaleMajor;
     static constexpr int moves[] = {-3,-2,-1,-1,0,1,1,2,3};
 
+    const auto stylePrompt=sourcePrompt.toLowerCase();
+    const bool tech=stylePrompt.contains("tech house")||stylePrompt.contains("minimal house");
+    const bool dnb=stylePrompt.contains("drum and bass")||stylePrompt.contains("dnb");
+    const bool cinematic=stylePrompt.contains("cinematic")||stylePrompt.contains("film");
+    const bool pop=stylePrompt.contains("pop")||stylePrompt.contains("radio");
+    const bool progressive=stylePrompt.contains("progressive house")||stylePrompt.contains("melodic house");
+    const bool trance=stylePrompt.contains("trance");
+    const bool tropical=stylePrompt.contains("tropical");
+    const int globalArchetype=(int)(random01(seed,0x4d454c4f4459ULL)*8.f)%8;
+
     for(int bar=0;bar<bars;++bar)
     {
         const ArrangementSection* section=nullptr;
@@ -533,10 +543,17 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
 
         int motif[8]{};
         int degree=static_cast<int>(random01(phraseSeed,100)*7.f);
-        const int contour=static_cast<int>(random01(phraseSeed,101)*5.f)%5;
+        int contour=(static_cast<int>(random01(phraseSeed,101)*5.f)+globalArchetype)%5;
+        if(progressive&&sectionName.contains("BUILD"))contour=1;
+        if(cinematic&&breakdown)contour=2;
         for(int i=0;i<8;++i)
         {
             int move=moves[juce::jlimit(0,8,(int)(random01(phraseSeed,120+i)*9.f))];
+            if(tech&&i>0&&random01(phraseSeed,140+i)<.38f)move=0;
+            if(pop&&i%4==2&&random01(phraseSeed,150+i)<.52f)move=(i%8<4?1:-1);
+            if(progressive&&i==4)move=juce::jmax(move,2);
+            if(trance&&i%3==0)move=juce::jmax(move,1);
+            if(tropical&&i%4==3)move=juce::jmin(move,0);
             if(contour==1&&i<4)move=juce::jmax(move,0);
             if(contour==2&&i>=4)move=juce::jmin(move,0);
             if(contour==3&&i%2==0)move=juce::jmax(move,1);
@@ -549,7 +566,12 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         if(build||chorus)steps=6;
         if(drop||finalHook||energetic)steps=8;
         if(breakdown)steps=3;
-        if(finalHook&&random01(phraseSeed,180)>.55f)steps=12;
+        if(tech){steps=(drop||chorus||finalHook)?6:4;}
+        if(dnb){steps=(drop||chorus||finalHook)?12:8;}
+        if(cinematic){steps=breakdown?3:((drop||finalHook)?6:4);}
+        if(pop){steps=(drop||chorus||finalHook)?8:6;}
+        if(trance&&drop)steps=12;
+        if(finalHook&&!tech&&random01(phraseSeed,180)>.55f)steps=12;
 
         const int rhythmMode=static_cast<int>(random01(phraseSeed,181)*6.f)%6;
         const double baseStep=4.0/steps;
@@ -561,18 +583,28 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             const uint64_t salt=(uint64_t)bar*128ULL+(uint64_t)i;
             const bool anchor=i==0||i==steps/2;
             float restChance=verse?.24f:(breakdown?.42f:(drop||finalHook?.08f:.16f));
+            if(tech)restChance=drop?.22f:.34f;
+            else if(dnb)restChance=drop?.06f:.13f;
+            else if(cinematic)restChance=breakdown?.30f:.22f;
+            else if(pop)restChance=drop?.08f:.15f;
+            else if(progressive&&drop)restChance=.055f;
             if(!anchor&&random01(phraseSeed,220+salt)<restChance)continue;
 
             int motifIndex=(i+barInPhrase*2+rhythmMode)%8;
             int d=motif[motifIndex];
             if(random01(phraseSeed,300+salt)>.70f)
                 d=juce::jlimit(0,7,d+(random01(phraseSeed,310+salt)>.5f?1:-1));
+            if(tech&&i>0&&random01(phraseSeed,315+salt)<.35f)d=motif[(motifIndex+7)%8];
+            if(pop&&i>=steps/2&&random01(phraseSeed,316+salt)<.34f)d=motif[i%juce::jmax(1,steps/2)];
 
             if(build&&barInPhrase>=2&&i>steps/2)d=juce::jlimit(0,7,d+1);
             if(finalHook&&barInPhrase==3&&i>=steps/2)d=juce::jlimit(0,7,d+1);
 
             int octave=(drop||chorus||finalHook)?24:12;
             if(breakdown)octave=12;
+            if(tech)octave=12;
+            if(dnb&&drop)octave=24;
+            if(cinematic&&breakdown)octave=12;
             if(finalHook&&random01(phraseSeed,320+salt)>.74f)octave+=12;
             if(verse&&random01(phraseSeed,325+salt)<.15f)octave-=12;
 
@@ -583,8 +615,12 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             else if(rhythmMode==4&&i%2==0)pos+=baseStep*.10;
             pos=juce::jlimit(0.0,3.92,pos);
 
-            const double length=juce::jlimit(.11,1.15,
+            double length=juce::jlimit(.11,1.15,
                 baseStep*(.38+.82*random01(phraseSeed,400+salt)));
+            if(tech)length=juce::jmin(length,.28);
+            else if(dnb)length=juce::jmin(length,.24);
+            else if(cinematic)length=juce::jlimit(.28,1.55,length*1.65);
+            else if(pop)length=juce::jlimit(.16,.72,length);
             const int velocity=juce::jlimit(50,127,
                 62+(int)(energy*38.f)+(anchor?6:0)+(int)(random01(phraseSeed,420+salt)*18.f)-9);
 
@@ -599,7 +635,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                     finalHook?118:96+(int)(energy*18.f));
         }
 
-        if((drop||chorus||finalHook)&&random01(phraseSeed,600+bar)>.28f)
+        if((drop||chorus||finalHook)&&!tech&&random01(phraseSeed,600+bar)>.28f)
         {
             const uint64_t counterSeed=mix64(phraseSeed^0x434f554e544552ULL);
             int counterDegree=static_cast<int>(random01(counterSeed,10)*7.f);
