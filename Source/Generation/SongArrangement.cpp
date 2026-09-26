@@ -154,28 +154,43 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
     const auto p = sourcePrompt.toLowerCase();
     const bool house = p.contains("house") || p.contains("future rave") || p.contains("edm");
     const bool trap = p.contains("trap") || p.contains("hip hop");
-    const int groove = static_cast<int>(random01(seed, 11) * 4.f) % 4;
-    const int hatMode = static_cast<int>(random01(seed, 12) * 3.f) % 3;
-    const float swing = .015f + random01(seed,13) * .055f;
+    const bool dnb = p.contains("drum and bass") || p.contains("dnb");
+    const int groove = static_cast<int>(random01(seed, 11) * 6.f) % 6;
+    const int hatMode = static_cast<int>(random01(seed, 12) * 4.f) % 4;
+    const float swing = .012f + random01(seed,13) * .062f;
 
     for(int bar=0;bar<bars;++bar)
     {
-        float energy=.4f;
-        for(const auto& s:sections) if(sectionContains(s,bar)){energy=s.energy;break;}
+        const ArrangementSection* section=nullptr;
+        for(const auto& s:sections) if(sectionContains(s,bar)){section=&s;break;}
+        const float energy=section?section->energy:.4f;
+        const juce::String sectionName=section?section->name:juce::String();
+        const bool intro=sectionName.contains("INTRO");
+        const bool build=sectionName.contains("BUILD");
+        const bool breakdown=sectionName.contains("BREAKDOWN");
+        const bool drop=sectionName.contains("DROP") || sectionName.contains("HOOK");
+        const bool chorus=sectionName.contains("CHORUS");
+        const bool sectionEnd=section && bar==section->startBar+section->bars-1;
         const double b=bar*beatsPerBar;
-        const bool drop=energy>.8f, build=energy>.55f&&energy<=.8f, intro=bar<8;
         const uint64_t bs=(uint64_t)bar*97ULL;
 
-        if(!intro || bar>=4)
+        if(!breakdown && (!intro || bar-section->startBar>=juce::jmax(1,section->bars/2)))
         {
-            if(house)
+            if(dnb)
+            {
+                addNote(kick,36,b,.09,drop?118:106);
+                addNote(kick,36,b+2.5,.08,104);
+                if(random01(seed,1000+bs)>.35f) addNote(kick,36,b+1.75,.07,92);
+                if(drop && random01(seed,1010+bs)>.50f) addNote(kick,36,b+3.25,.07,96);
+            }
+            else if(house)
             {
                 for(int q=0;q<4;++q)
-                    if(!intro || q==0 || q==2 || bar>=6)
-                        addNote(kick,36,b+q,.10,drop?118:102+(q==0?4:0));
-                if((drop||build) && ((bar+groove)%4==3))
-                    addNote(kick,36,b+3.5,.08,88+(int)(random01(seed,1000+bs)*20.f));
-                if(drop && groove==2 && bar%2==0)
+                    if(!intro || q==0 || q==2 || bar-section->startBar>=section->bars-2)
+                        addNote(kick,36,b+q,.10,drop?118:101+(q==0?5:0));
+                if((drop||build||chorus) && ((bar+groove)%4==3))
+                    addNote(kick,36,b+3.5,.08,88+(int)(random01(seed,1020+bs)*20.f));
+                if(drop && groove%3==2 && bar%2==0)
                     addNote(kick,36,b+1.75,.07,86);
             }
             else if(trap)
@@ -188,17 +203,17 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             else
             {
                 addNote(kick,36,b,.11,108);
-                addNote(kick,36,b+2.0+(groove%2)*.5,.10,drop?116:100);
-                if(drop && random01(seed,1130+bs)>.38f) addNote(kick,36,b+3.25,.08,94);
+                addNote(kick,36,b+1.5+.5*(groove%3),.10,drop?116:100);
+                if((drop||chorus) && random01(seed,1130+bs)>.38f) addNote(kick,36,b+3.25,.08,94);
             }
         }
 
-        if(!intro)
+        if(!intro && !breakdown)
         {
-            if(trap)
+            if(trap || dnb)
             {
                 addNote(snare,38,b+2.0,.12,drop?114:104);
-                if(drop && random01(seed,1200+bs)>.55f) addNote(snare,39,b+1.75,.07,72);
+                if((drop||chorus) && random01(seed,1200+bs)>.55f) addNote(snare,39,b+1.75,.07,72);
             }
             else
             {
@@ -208,37 +223,43 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             }
         }
 
-        const int hatSteps = drop ? (hatMode==2?16:8) : ((build||energetic)?8:4);
+        const int hatSteps = dnb ? 16 : (drop ? (hatMode>=2?16:8) : ((build||chorus||energetic)?8:4));
         for(int h=0;h<hatSteps;++h)
         {
-            const bool strong=(h%(hatSteps/4)==0);
-            if(!strong && random01(seed,1300+bs+h)<(drop?.08f:.16f)) continue;
+            const int quarter=juce::jmax(1,hatSteps/4);
+            const bool strong=(h%quarter==0);
+            float skip=breakdown?.48f:(drop?.08f:.16f);
+            if(!strong && random01(seed,1300+bs+h)<skip) continue;
             double beat=b+h*(4.0/hatSteps);
             if(h%2==1) beat+=swing*(hatMode==1?1.0:.55);
-            const bool open = drop && ((h+groove)%8==3 || (hatMode==2 && h%8==7));
-            const int vel=juce::jlimit(36,112,52+(strong?15:0)+(int)(random01(seed,1400+bs+h)*34.f));
-            addNote(hats,open?46:42,beat,.055+(open?.10:0.0),vel);
+            const bool open=(drop||chorus) && ((h+groove)%8==3 || (hatMode>=2 && h%8==7));
+            const int vel=juce::jlimit(32,112,48+(strong?17:0)+(int)(random01(seed,1400+bs+h)*38.f));
+            addNote(hats,open?46:42,beat,.05+(open?.11:0.0),vel);
         }
 
-        if(drop)
+        if(drop||chorus)
         {
-            const int percCount=1+((bar+groove)%3);
+            const int percCount=1+((bar+groove)%4);
             for(int k=0;k<percCount;++k)
             {
-                const double pos=.5*((k*3+groove+bar)%8);
+                const double pos=.25*((k*5+groove+bar)%16);
                 if(pos<.1) continue;
-                addNote(perc,(k%2)?37:39,b+pos,.07,62+(int)(random01(seed,1500+bs+k)*26.f));
+                addNote(perc,(k%2)?37:39,b+pos,.06,58+(int)(random01(seed,1500+bs+k)*30.f));
             }
         }
-
-        if(build && (bar==23 || bar==55))
+        else if(breakdown && random01(seed,1510+bar)>.62f)
         {
-            const int divisions = hatMode==2 ? 24 : 16;
+            addNote(perc,39,b+2.5,.10,58+(int)(random01(seed,1520+bar)*18.f));
+        }
+
+        if(build && sectionEnd)
+        {
+            const int divisions = hatMode>=2 ? 24 : 16;
             for(int s=0;s<divisions;++s)
             {
                 if(s<4 && groove==3 && s%2==1) continue;
                 addNote(snare,38,b+s*(4.0/divisions),.05,
-                        juce::jlimit(48,127,54+s*(64/divisions)+(int)(random01(seed,1600+s)*8.f)));
+                        juce::jlimit(48,127,54+s*(64/divisions)+(int)(random01(seed,1600+s+bar)*8.f)));
             }
         }
     }
