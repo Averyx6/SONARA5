@@ -1,0 +1,202 @@
+#include <JuceHeader.h>
+#include "../Source/PluginProcessor.h"
+#include "../Source/Export/AudioExporter.h"
+#include <chrono>
+#include <cmath>
+#include <iostream>
+#include <map>
+
+namespace {
+int fail(const juce::String& m){std::cerr<<"SONARA playback test failure: "<<m<<"\n";return 1;}
+
+const sonara::ArrangementLane* laneNamed(const sonara::SongArrangement& a,const juce::String& name)
+{
+    for(const auto& l:a.getLanes())if(l.name==name)return &l;
+    return nullptr;
+}
+
+uint64_t laneHash(const sonara::ArrangementLane& lane)
+{
+    uint64_t h=1469598103934665603ULL;
+    const int n=juce::jmin(128,(int)lane.notes.size());
+    for(int i=0;i<n;++i)
+    {
+        const auto& x=lane.notes[(size_t)i];
+        const uint64_t vals[]={(uint64_t)x.note,(uint64_t)std::llround(x.beat*16.0),
+                               (uint64_t)std::llround(x.length*32.0),(uint64_t)x.velocity};
+        for(auto v:vals){h^=v+0x9e37ULL;h*=1099511628211ULL;}
+    }
+    h^=lane.sound.seed;h*=1099511628211ULL;
+    return h;
+}
+
+bool finiteAndSafe(const juce::AudioBuffer<float>& b,float& peak,double& energy)
+{
+    for(int ch=0;ch<b.getNumChannels();++ch)
+        for(int i=0;i<b.getNumSamples();++i)
+        {
+            const float x=b.getSample(ch,i);
+            if(!std::isfinite(x))return false;
+            peak=juce::jmax(peak,std::abs(x));
+            energy+=(double)x*x;
+        }
+    return peak<=.921f;
+}
+
+double renderSeconds(SonaraAudioProcessor& p,double sr,double seconds,int blockSize,float& peak,double& energy)
+{
+    juce::AudioBuffer<float> audio(2,blockSize);
+    juce::MidiBuffer midi;
+    const int blocks=(int)std::ceil(seconds*sr/blockSize);
+    const auto t0=std::chrono::steady_clock::now();
+    for(int b=0;b<blocks;++b)
+    {
+        audio.clear();midi.clear();
+        p.processBlock(audio,midi);
+        if(!finiteAndSafe(audio,peak,energy))return -1.0;
+    }
+    return std::chrono::duration<double>(std::chrono::steady_clock::now()-t0).count();
+}
+
+double renderLaneEnergy(const sonara::ArrangementLane& lane,double sr,int voices)
+{
+    sonara::SonaraEngine e;
+    e.setLowCpuMode(true);e.setVoiceLimit(voices);e.prepare(sr,512,2);e.setPatch(lane.sound);
+    juce::AudioBuffer<float> b(2,512);juce::MidiBuffer midi;midi.ensureSize(4096);
+    if(lane.notes.empty())return 0.0;
+    const auto& n=lane.notes.front();
+    double energy=0.0;float peak=0.f;
+    for(int block=0;block<20;++block)
+    {
+        b.clear();midi.clear();
+        if(block==0)midi.addEvent(juce::MidiMessage::noteOn(lane.midiChannel,n.note,(juce::uint8)n.velocity),0);
+        if(block==12)midi.addEvent(juce::MidiMessage::noteOff(lane.midiChannel,n.note),0);
+        e.render(b,midi);
+        if(!finiteAndSafe(b,peak,energy))return -1.0;
+    }
+    return energy;
+}
+
+double renderDrumEnergy(const sonara::SongArrangement& a,double sr)
+{
+    if(a.getLanes().size()<4)return 0.0;
+    sonara::DrumSynth drums;drums.prepare(sr);
+    drums.configureKit(a.getLanes()[0].sound,a.getLanes()[1].sound,a.getLanes()[2].sound,a.getLanes()[3].sound);
+    juce::AudioBuffer<float> b(2,512);b.clear();
+    std::array<sonara::DrumTrigger,5> hits{{
+        {0,36,1.f},{96,38,.9f},{176,42,.7f},{260,39,.75f},{384,46,.65f}
+    }};
+    drums.render(b,hits.data(),(int)hits.size());
+    double energy=0.0;float peak=0.f;
+    if(!finiteAndSafe(b,peak,energy))return -1.0;
+    return energy;
+}
+}
+
+int main()
+{
+    const juce::String prompt="Emotional progressive house, 128 BPM, F minor, emotional memorable hook, huge melodic drop";
+
+    // TEST E + F + G + H + performance: exercise the real processor/processBlock path.
+    for(const double sr:{44100.0,48000.0,96000.0})
+    {
+        SonaraAudioProcessor p;
+        constexpr int blockSize=512;
+        p.prepareToPlay(sr,blockSize);
+        p.generateTrack(prompt);
+        auto a=p.arrangementSnapshot();
+        if(!a||a->getLanes().size()!=12)return fail("processor did not generate 12 lanes");
+
+        const auto* bass=laneNamed(*a,"BASS");
+        const auto* sub=laneNamed(*a,"SUB");
+        if(!bass||!sub||bass->notes.empty()||sub->notes.empty())return fail("BASS/SUB MIDI missing");
+        if(renderLaneEnergy(*bass,sr,2)<=1.0e-7)return fail("BASS rendered zero/unsafe audio");
+        if(renderLaneEnergy(*sub,sr,1)<=1.0e-7)return fail("SUB rendered zero/unsafe audio");
+        if(renderDrumEnergy(*a,sr)<=1.0e-7)return fail("drums rendered zero/unsafe audio");
+
+        int dropBar=0,breakBar=0,hookBar=0;
+        for(const auto& s:a->getSections())
+        {
+            if(s.name=="DROP")dropBar=s.startBar;
+            else if(s.name=="BREAKDOWN")breakBar=s.startBar;
+            else if(s.name=="FINAL HOOK")hookBar=s.startBar;
+        }
+
+        for(const int bar:{0,dropBar,breakBar,hookBar})
+        {
+            p.startSongPreviewAtBar(bar);
+            float peak=0.f;double energy=0.0;
+            const double elapsed=renderSeconds(p,sr,.35,blockSize,peak,energy);
+            if(elapsed<0.0||energy<=1.0e-8)return fail("section seek produced unsafe/silent preview");
+            if(p.currentSongBar()<bar)return fail("section seek playhead moved backwards");
+        }
+
+        p.startSongPreviewAtBar(dropBar);
+        float peak=0.f;double energy=0.0;
+        const double elapsed=renderSeconds(p,sr,30.0,blockSize,peak,energy);
+        if(elapsed<0.0||energy<=1.0e-6)return fail("30-second preview unsafe or silent");
+        const double realtimeFactor=elapsed/30.0;
+        std::cout<<"preview "<<sr<<" Hz realtime factor "<<realtimeFactor<<" peak "<<peak<<"\n";
+        if(realtimeFactor>=.90)return fail("preview not comfortably faster than real-time");
+
+        const auto oldSeed=p.getSongGenerationSeed();
+        p.startSongPreviewAtBar(dropBar);
+        p.generateTrack(prompt);
+        if(p.isSongPlaying())return fail("generation did not stop active preview safely");
+        if(p.getSongGenerationSeed()==oldSeed)return fail("generate while active reused song seed");
+    }
+
+    // TEST I: RANDOMIZE EVERYTHING materially changes multiple musical systems.
+    SonaraAudioProcessor randomizer;
+    randomizer.prepareToPlay(48000.0,512);
+    randomizer.generateTrack(prompt);
+    auto before=randomizer.arrangementSnapshot();
+    if(!before)return fail("missing base arrangement");
+    std::map<juce::String,uint64_t> oldHashes;
+    for(const auto& name:{juce::String("KICK"),juce::String("BASS"),juce::String("SUB"),juce::String("CHORDS"),juce::String("LEAD")})
+    {
+        const auto* lane=laneNamed(*before,name);if(!lane)return fail("base lane missing "+name);
+        oldHashes[name]=laneHash(*lane);
+    }
+    const auto oldSeed=randomizer.getSongGenerationSeed();
+    randomizer.randomizeEverything(prompt);
+    auto after=randomizer.arrangementSnapshot();
+    if(!after||randomizer.getSongGenerationSeed()==oldSeed)return fail("RANDOMIZE EVERYTHING did not create a new song");
+    for(const auto& [name,hash]:oldHashes)
+    {
+        const auto* lane=laneNamed(*after,name);if(!lane||laneHash(*lane)==hash)return fail("RANDOMIZE EVERYTHING kept "+name);
+    }
+
+    // TEST J: SURPRISE ME must create a usable prompt and complete arrangement.
+    const auto surprise=randomizer.makeSurprisePrompt();
+    if(surprise.length()<40||!surprise.containsIgnoreCase("BPM"))return fail("SURPRISE ME prompt invalid");
+    randomizer.generateTrack(surprise);
+    auto surprised=randomizer.arrangementSnapshot();
+    if(!surprised||surprised->getLanes().size()!=12||surprised->getSections().size()!=8)return fail("SURPRISE ME arrangement incomplete");
+
+    // MIDI export paths.
+    auto fullMidi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-playback-full",".mid");
+    if(!randomizer.writeArrangementMidiFile(fullMidi)||fullMidi.getSize()<512)return fail("full MIDI export failed");
+    int subIndex=-1;for(int i=0;i<(int)surprised->getLanes().size();++i)if(surprised->getLanes()[(size_t)i].name=="SUB"){subIndex=i;break;}
+    if(subIndex<0)return fail("SUB index missing");
+    randomizer.setSelectedLane(subIndex);
+    auto subMidi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-playback-sub",".mid");
+    if(!randomizer.writeSelectedLaneMidiFile(subMidi)||subMidi.getSize()<64)return fail("selected SUB MIDI export failed");
+    fullMidi.deleteFile();subMidi.deleteFile();
+
+    // Shortened offline export exercises the real full-mix/stem renderers without a long CI file.
+    auto shortTree=surprised->toValueTree();
+    shortTree.setProperty("bars",4,nullptr);
+    auto shortSong=sonara::SongArrangement::fromValueTree(shortTree);
+    sonara::AudioExporter exporter;
+    auto wav=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-full-mix-test",".wav");
+    if(!exporter.renderFullMix(shortSong,wav,44100.0,{})||wav.getSize()<4096)return fail("full mix WAV export failed");
+    auto stems=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-stems-test","");
+    if(!exporter.renderAllStems(shortSong,stems,44100.0,{}))return fail("stem export failed");
+    int wavCount=0;for(const auto& file:stems.findChildFiles(juce::File::findFiles,false,"*.wav")){++wavCount;file.deleteFile();}
+    stems.deleteRecursively();wav.deleteFile();
+    if(wavCount!=12)return fail("stem export did not produce 12 lane WAVs");
+
+    std::cout<<"SONARA processor playback, CPU, seek, randomize, surprise and export tests passed\n";
+    return 0;
+}
