@@ -27,7 +27,7 @@ int AudioExporter::collectDrumTriggers(const ArrangementLane& lane,int64_t start
 {
     if(out==nullptr||capacity<=0)return 0;const double spb=sampleRate*60.0/bpm;const double startBeat=(double)startSample/spb,endBeat=(double)(startSample+numSamples)/spb;int count=0;
     auto it=std::lower_bound(lane.notes.begin(),lane.notes.end(),startBeat,[](const ArrangementNote& n,double beat){return n.beat<beat;});
-    for(;it!=lane.notes.end()&&it->beat<=endBeat&&count<capacity;++it){const int offset=juce::jlimit(0,numSamples-1,(int)std::llround(it->beat*spb-startSample));out[count++]={offset,it->note,it->velocity/127.f};}
+    for(;it!=lane.notes.end()&&it->beat<endBeat&&count<capacity;++it){const int offset=juce::jlimit(0,numSamples-1,(int)std::llround(it->beat*spb-startSample));out[count++]={offset,it->note,it->velocity/127.f};}
     return count;
 }
 
@@ -43,7 +43,26 @@ bool AudioExporter::renderSelectedLane(const SongArrangement& a,int laneIndex,co
     constexpr int blockSize=512;const double spb=sampleRate*60.0/a.getBpm();const int64_t total=(int64_t)std::llround(a.getTotalBeats()*spb+sampleRate*3.0);
     juce::AudioBuffer<float> block(2,blockSize);juce::MidiBuffer midi;midi.ensureSize(8192);std::array<DrumTrigger,128> triggers{};
     SonaraEngine synth;DrumSynth drums;if(lane.drums){drums.prepare(sampleRate);drums.configureKit(lane.sound,lane.sound,lane.sound,lane.sound);}else{synth.prepare(sampleRate,blockSize,2);synth.setPatch(lane.sound);}
-    for(int64_t start=0;start<total;start+=blockSize){const int n=(int)juce::jmin<int64_t>(blockSize,total-start);block.clear();if(lane.drums){const int count=collectDrumTriggers(lane,start,n,a.getBpm(),sampleRate,triggers.data(),(int)triggers.size());drums.render(block,triggers.data(),count);}else{injectLaneMidi(lane,midi,start,n,a.getBpm(),sampleRate);synth.render(block,midi);}for(int ch=0;ch<2;++ch)for(int i=0;i<n;++i)block.setSample(ch,i,std::tanh(block.getSample(ch,i)*.86f));if(!writer->writeFromAudioSampleBuffer(block,0,n))return false;if(cb&&start%(blockSize*64)==0)cb((float)start/(float)total,"Rendering "+lane.name);}
+    for(int64_t start=0;start<total;start+=blockSize)
+    {
+        const int n=(int)juce::jmin<int64_t>(blockSize,total-start);
+        block.clear();
+        juce::AudioBuffer<float> view(block.getArrayOfWritePointers(),block.getNumChannels(),0,n);
+        if(lane.drums)
+        {
+            const int count=collectDrumTriggers(lane,start,n,a.getBpm(),sampleRate,triggers.data(),(int)triggers.size());
+            drums.render(view,triggers.data(),count);
+        }
+        else
+        {
+            injectLaneMidi(lane,midi,start,n,a.getBpm(),sampleRate);
+            synth.render(view,midi);
+        }
+        for(int ch=0;ch<2;++ch)for(int i=0;i<n;++i)
+            block.setSample(ch,i,juce::jlimit(-.96f,.96f,std::tanh(block.getSample(ch,i)*.86f)));
+        if(!writer->writeFromAudioSampleBuffer(block,0,n))return false;
+        if(cb&&start%(blockSize*64)==0)cb((float)start/(float)total,"Rendering "+lane.name);
+    }
     if(cb)cb(1.f,lane.name+" ready");return true;
 }
 
