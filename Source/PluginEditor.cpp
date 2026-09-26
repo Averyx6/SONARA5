@@ -295,7 +295,7 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     mixFx.onValueChange=[this]{p.setLaneMix(p.getSelectedLane(),SonaraAudioProcessor::LaneMixParameter::fxSend,(float)mixFx.getValue());};
     lockOsc.onClick=[this]{p.mutationLocks().oscillators=lockOsc.getToggleState();};lockUnison.onClick=[this]{p.mutationLocks().unison=lockUnison.getToggleState();};lockEnv.onClick=[this]{p.mutationLocks().ampEnvelope=lockEnv.getToggleState();};lockFilter.onClick=[this]{p.mutationLocks().filter=lockFilter.getToggleState();};lockMod.onClick=[this]{p.mutationLocks().modulation=lockMod.getToggleState();};lockSources.onClick=[this]{p.mutationLocks().sources=lockSources.getToggleState();};lockTone.onClick=[this]{p.mutationLocks().tone=lockTone.getToggleState();};lockFx.onClick=[this]{p.mutationLocks().spatialFx=lockFx.getToggleState();};
 
-    const auto& d=p.currentPatch();macroBrightness.setValue(d.macroBrightness,juce::dontSendNotification);macroMovement.setValue(d.macroMovement,juce::dontSendNotification);macroSpace.setValue(d.macroSpace,juce::dontSendNotification);macroImpact.setValue(d.macroImpact,juce::dontSendNotification);syncLockButtons();setTab(0);startTimerHz(30);
+    const auto& d=p.currentPatch();macroBrightness.setValue(d.macroBrightness,juce::dontSendNotification);macroMovement.setValue(d.macroMovement,juce::dontSendNotification);macroSpace.setValue(d.macroSpace,juce::dontSendNotification);macroImpact.setValue(d.macroImpact,juce::dontSendNotification);syncLockButtons();setTab(0);startTimerHz(15);
 }
 
 SonaraAudioProcessorEditor::~SonaraAudioProcessorEditor(){fileChooser.reset();setLookAndFeel(nullptr);}
@@ -423,7 +423,30 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     if(referenceTab)referenceSummary.setText(p.hasReference()?p.getReferenceSummary():"LOAD AUDIO or IMPORT MIDI\n\nSONARA analyzes tempo, key and a dominant instrumental melody into editable note data. RESOUND plays that melody with new generated SoundDNA. REBUILD creates new drums, bass, chords, synths and arrangement around the extracted melody without copying the reference audio.",juce::dontSendNotification);
 }
 
-void SonaraAudioProcessorEditor::timerCallback(){playbackProgress=p.isSongPlaying()?p.songPosition01():p.previewPosition01();pulse+=.065f;if(pulse>juce::MathConstants<float>::twoPi)pulse=0.f;soundView.animation=pulse;patchName.setText(p.currentPatch().name,juce::dontSendNotification);statusLine.setText(p.generationStatus,juce::dontSendNotification);connect.setButtonText("CYANORYX • BRIDGE READY");playSong.setButtonText(p.isSongPlaying()?"PAUSE":(p.songPosition01()>0.0&&p.songPosition01()<.9999?"RESUME":"PLAY SONG"));previewSound.setButtonText(p.isPreviewPlaying()?"PREVIEWING":"PREVIEW SOUND");auto a=p.arrangementSnapshot();selectedLaneLabel.setText(a&&juce::isPositiveAndBelow(p.getSelectedLane(),(int)a->getLanes().size())?"SELECTED • "+a->getLanes()[(size_t)p.getSelectedLane()].name:"SELECTED • none",juce::dontSendNotification);if(activeTab==3)syncMixControls();if(activeTab==4&&p.hasReference())referenceSummary.setText(p.getReferenceSummary(),juce::dontSendNotification);timeline.repaint();pianoRoll.repaint();soundView.repaint();repaint();}
+void SonaraAudioProcessorEditor::timerCallback()
+{
+    playbackProgress=p.isSongPlaying()?p.songPosition01():p.previewPosition01();
+    pulse+=.045f;if(pulse>juce::MathConstants<float>::twoPi)pulse=0.f;
+    soundView.animation=pulse;
+
+    patchName.setText(p.currentPatch().name,juce::dontSendNotification);
+    statusLine.setText(p.generationStatus,juce::dontSendNotification);
+    connect.setButtonText("CYANORYX • BRIDGE READY");
+    playSong.setButtonText(p.isSongPlaying()?"PAUSE":(p.songPosition01()>0.0&&p.songPosition01()<.9999?"RESUME":"PLAY SONG"));
+    previewSound.setButtonText(p.isPreviewPlaying()?"PREVIEWING":"PREVIEW SOUND");
+
+    auto a=p.arrangementSnapshot();
+    selectedLaneLabel.setText(a&&juce::isPositiveAndBelow(p.getSelectedLane(),(int)a->getLanes().size())
+        ?"SELECTED • "+a->getLanes()[(size_t)p.getSelectedLane()].name:"SELECTED • none",juce::dontSendNotification);
+
+    if(activeTab==3)syncMixControls();
+    if(activeTab==4&&p.hasReference())referenceSummary.setText(p.getReferenceSummary(),juce::dontSendNotification);
+
+    if(activeTab==0)soundView.repaint();
+    else if(activeTab==1||activeTab==2||activeTab==5||activeTab==6)timeline.repaint();
+    if(activeTab==1||activeTab==2||activeTab==5)pianoRoll.repaint();
+    repaint();
+}
 
 void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
 {
