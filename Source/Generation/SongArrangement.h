@@ -49,9 +49,28 @@ public:
     bool isEmpty() const noexcept { return lanes.empty(); }
 
 private:
+    struct SongPlan {
+        int structureStyle=0;
+        int drumGroove=0;
+        int hatMode=0;
+        int progressionIndex=0;
+        int alternateProgressionIndex=1;
+        int bassMode=0;
+        int chordMode=0;
+        int arpMode=0;
+        int melodyArchetype=0;
+        int phraseBars=4;
+        int octaveRange=2;
+        float density=.65f;
+        float syncopation=.35f;
+        float restAmount=.18f;
+        float development=.55f;
+    };
+
     static uint64_t mix64(uint64_t x) noexcept;
     static float random01(uint64_t seed, uint64_t salt) noexcept;
     static int parseRootMidi(const juce::String& prompt, bool& minorOut);
+    void buildSongPlan(uint64_t seed);
     void buildSections(uint64_t seed);
     void addDrums(uint64_t seed, bool energetic);
     void addHarmony(uint64_t seed);
@@ -65,6 +84,7 @@ private:
     bool minor = true;
     std::vector<ArrangementLane> lanes;
     std::vector<ArrangementSection> sections;
+    SongPlan plan;
 };
 
 } // namespace sonara
