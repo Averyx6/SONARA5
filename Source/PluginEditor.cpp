@@ -564,8 +564,11 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
             if(juce::isPositiveAndBelow(laneIndex,(int)a->getLanes().size()))
             {
                 const auto& lane=a->getLanes()[(size_t)laneIndex];
-                card("SELECTED LANE",lane.name,ry);ry+=52;
-                card("MIDI EVENTS",juce::String((int)lane.notes.size()),ry);ry+=52;
+                const auto mix=p.getLaneMix(laneIndex);
+                card("SELECTED LANE",lane.name,ry);ry+=48;
+                card("MIDI EVENTS",juce::String((int)lane.notes.size()),ry);ry+=48;
+                card("LEVEL / PAN",juce::String(mix.level,2)+" / "+juce::String(mix.pan,2),ry);ry+=48;
+                card("WIDTH / FX SEND",juce::String(mix.width,2)+" / "+juce::String(mix.fxSend,2),ry);ry+=48;
                 card("SOUND DNA",lane.sound.name,ry);
             }
         }
