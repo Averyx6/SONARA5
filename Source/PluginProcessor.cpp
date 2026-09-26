@@ -523,7 +523,10 @@ void SonaraAudioProcessor::startSongPreviewAtBar(int bar)
     for(auto& e:songEngines)e.allNotesOff();
     for(auto& x:laneHpX)x.fill(0.f);
     for(auto& y:laneHpY)y.fill(0.f);
+    for(auto& x:laneLpState)x.fill(0.f);
     masterHpX.fill(0.f);masterHpY.fill(0.f);
+    if(songFxBus.getNumSamples()>0)songFxBus.clear();
+    songFadeRemaining.store(128,std::memory_order_release);
 
     songSample.store(start);
     songPlaying.store(true);
@@ -540,7 +543,9 @@ void SonaraAudioProcessor::stopSongPreview()
     for(auto& e:songEngines)e.allNotesOff();
     for(auto& x:laneHpX)x.fill(0.f);
     for(auto& y:laneHpY)y.fill(0.f);
+    for(auto& x:laneLpState)x.fill(0.f);
     masterHpX.fill(0.f);masterHpY.fill(0.f);
+    songFadeRemaining.store(0,std::memory_order_release);
 }
 
 double SonaraAudioProcessor::songPosition01() const noexcept
@@ -598,7 +603,7 @@ int SonaraAudioProcessor::collectDrumTriggers(const sonara::SongArrangement& a, 
         const auto& lane = lanes[(size_t)laneIndex];
         auto it = std::lower_bound(lane.notes.begin(), lane.notes.end(), startBeat,
                                    [](const sonara::ArrangementNote& n, double beat){ return n.beat < beat; });
-        for (; it != lane.notes.end() && it->beat <= endBeat && count < (int)drumTriggers.size(); ++it)
+        for (; it != lane.notes.end() && it->beat < endBeat && count < (int)drumTriggers.size(); ++it)
         {
             const int offset = juce::jlimit(0, numSamples - 1, (int)std::llround(it->beat * spb - startSample));
             drumTriggers[(size_t)count++] = { offset, it->note, it->velocity / 127.f };
