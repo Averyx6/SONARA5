@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "../Engine/SoundDNA.h"
 #include <vector>
+#include <array>
 
 namespace sonara {
 
@@ -47,6 +48,12 @@ public:
     bool isMinor() const noexcept { return minor; }
     double getTotalBeats() const noexcept { return static_cast<double>(bars * beatsPerBar); }
     bool isEmpty() const noexcept { return lanes.empty(); }
+    uint64_t getSongId() const noexcept { return masterSeed; }
+    uint64_t getHarmonyId() const noexcept { return harmonyId; }
+    uint64_t getMelodyId() const noexcept { return melodyId; }
+    juce::String getHarmonySummary() const;
+    juce::String getHarmonicRhythmSummary() const;
+    juce::String getMelodyArchetypeName() const;
 
 private:
     struct SongPlan {
@@ -71,11 +78,54 @@ private:
         float development=.55f;
     };
 
+    struct SeedDomains {
+        uint64_t structure=0,harmony=0,voicing=0,drums=0,bass=0,sub=0,pluck=0,pad=0;
+        uint64_t melody=0,counter=0,fx=0,soundPalette=0;
+    };
+
+    struct HarmonyPlan {
+        int progressionLength=4;
+        std::array<int,8> mainDegrees{0,5,2,6,0,3,4,6};
+        std::array<int,8> alternateDegrees{0,3,5,4,0,6,5,4};
+        std::array<double,8> rhythmBars{1,1,1,1,1,1,1,1};
+        std::array<int,8> inversions{0,1,0,2,1,0,2,0};
+        std::array<int,8> voicingStyles{0,1,2,0,3,1,4,2};
+        int cadenceStyle=0;
+        int rhythmMode=0;
+        int registerBase=60;
+        float tension=.35f;
+        float borrowedProbability=.06f;
+        float passingProbability=.10f;
+        float suspensionProbability=.12f;
+        float extensionProbability=.18f;
+        bool pedalIntro=false;
+        bool pedalVerse=false;
+    };
+
+    struct HarmonyEvent {
+        double beat=0.0;
+        double length=4.0;
+        int scaleDegree=0;
+        int inversion=0;
+        int voicingStyle=0;
+        int extension=0;
+        int sectionIndex=0;
+        bool borrowed=false;
+    };
+
     static uint64_t mix64(uint64_t x) noexcept;
     static float random01(uint64_t seed, uint64_t salt) noexcept;
     static int parseRootMidi(const juce::String& prompt, bool& minorOut);
+    void buildSeedDomains(uint64_t master);
     void buildSongPlan(uint64_t seed);
     void buildSections(uint64_t seed);
+    void buildHarmonyPlan(uint64_t seed);
+    void buildHarmonyTimeline(uint64_t seed);
+    const HarmonyEvent* harmonyAtBeat(double beat) const noexcept;
+    int scaleSemitoneForDegree(int degree) const noexcept;
+    std::array<int,4> chordTonesFor(const HarmonyEvent& event) const noexcept;
+    uint64_t computeHarmonyId() const noexcept;
+    uint64_t computeMelodyId() const noexcept;
     void addDrums(uint64_t seed, bool energetic);
     void addHarmony(uint64_t seed);
     void addMelody(uint64_t seed, bool energetic);
@@ -89,6 +139,12 @@ private:
     std::vector<ArrangementLane> lanes;
     std::vector<ArrangementSection> sections;
     SongPlan plan;
+    SeedDomains domains;
+    HarmonyPlan harmonyPlan;
+    std::vector<HarmonyEvent> harmonyEvents;
+    uint64_t masterSeed=0;
+    uint64_t harmonyId=0;
+    uint64_t melodyId=0;
 };
 
 } // namespace sonara
