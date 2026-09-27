@@ -1021,6 +1021,13 @@ void SongArrangement::addHarmony(uint64_t seed)
 {
     ArrangementLane bass{"BASS",2,false}, sub{"SUB",3,false}, chords{"CHORDS",4,false}, pluck{"PLUCK",5,false}, pad{"PAD",6,false};
 
+    const auto productionPrompt=sourcePrompt.toLowerCase();
+    const bool mainstreamSong=productionPrompt.contains("progressive house")
+        ||productionPrompt.contains("melodic house")||productionPrompt.contains("edm")
+        ||productionPrompt.contains("pop")||productionPrompt.contains("trance")
+        ||productionPrompt.contains("festival")||productionPrompt.contains("mainstage")
+        ||productionPrompt.contains("future rave");
+
     const int bassMode=plan.bassMode;
     const int chordMode=plan.chordMode;
     const int arpMode=plan.arpMode;
@@ -1183,14 +1190,14 @@ void SongArrangement::addHarmony(uint64_t seed)
                 int note=rootMidi+scaleSemitoneForDegree(degree)-12;
 
                 const float move=random01(bassMotifSeed,0x7200+i);
-                if(i>0&&move<harmonyPlan.passingProbability)
+                const float bassPassing=mainstreamSong?juce::jmin(.10f,harmonyPlan.passingProbability):harmonyPlan.passingProbability;
+                if(i>0&&move<bassPassing)
                 {
-                    // diatonic approach/passing note rather than a copied chord root
                     const int dir=random01(bassMotifSeed,0x7210+i)>.5f?1:-1;
                     note=rootMidi+scaleSemitoneForDegree(degree+dir)-12;
                 }
-                else if(move<.34f&&i%3==2)note+=7;
-                else if(move>.84f&&(drop||finalHook))note+=12;
+                else if(move<.26f&&i%3==2)note+=7;
+                else if(!mainstreamSong&&move>.84f&&(drop||finalHook))note+=12;
 
                 note=foldBass(note);
                 const double rawLen=bassMode==3?.28:(drop||chorus?.48:.72);
@@ -1249,12 +1256,13 @@ void SongArrangement::addHarmony(uint64_t seed)
                 const int patternIndex=arpPatterns[arpMode][(i+supportMotifBar+supportTheme)%8];
 
                 int note=tones[(size_t)(patternIndex%4)]+24;
-                if(random01(pluckMotifSeed,0x8130+ps)<harmonyPlan.passingProbability)
+                const float pluckPassing=mainstreamSong?juce::jmin(.08f,harmonyPlan.passingProbability):harmonyPlan.passingProbability;
+                if(random01(pluckMotifSeed,0x8130+ps)<pluckPassing)
                 {
                     const int dir=random01(pluckMotifSeed,0x8140+ps)>.5f?1:-1;
                     note=rootMidi+scaleSemitoneForDegree(h->scaleDegree+dir)+24;
                 }
-                if(finalHook&&i%4==3&&random01(pluckMotifSeed,0x8150+ps)>.50f)note+=12;
+                if(!mainstreamSong&&finalHook&&i%4==3&&random01(pluckMotifSeed,0x8150+ps)>.50f)note+=12;
 
                 addNote(pluck,note,barBeat+juce::jlimit(0.0,3.90,pos),
                         .11+random01(pluckMotifSeed,0x8160+ps)*.22,
@@ -1737,6 +1745,154 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         n.length=juce::jlimit(.08,1.55,n.length);
         n.velocity=juce::jlimit(48,124,n.velocity);
         previousNote=n.note;
+    }
+
+    if(mainstreamEdm)
+    {
+        auto sectionForBeat=[&](double beat)->const ArrangementSection*
+        {
+            const int bar=juce::jlimit(0,bars-1,(int)std::floor(beat/beatsPerBar));
+            for(const auto& s:sections)if(sectionContains(s,bar))return &s;
+            return nullptr;
+        };
+
+        auto nearestScalePitch=[&](int target,int low,int high)
+        {
+            int best=juce::jlimit(low,high,target),bestDistance=999;
+            for(int note=low;note<=high;++note)
+            {
+                const int pc=((note-rootMidi)%12+12)%12;
+                bool legal=false;
+                for(int si=0;si<7;++si)if(scale[si]==pc){legal=true;break;}
+                if(!legal)continue;
+                const int distance=std::abs(note-target);
+                if(distance<bestDistance){bestDistance=distance;best=note;}
+            }
+            return best;
+        };
+
+        // Section-aware register lanes stop isolated notes from randomly jumping
+        // an octave up/down while preserving scale and melodic direction.
+        const ArrangementSection* previousSection=nullptr;
+        previousNote=-1;
+        for(auto& n:lead.notes)
+        {
+            const auto* s=sectionForBeat(n.beat);
+            const auto name=s?s->name:juce::String();
+            const bool hook=name.contains("CHORUS")||name.contains("DROP")||name.contains("FINAL");
+            const bool lowEnergy=name.contains("INTRO")||name.contains("BREAKDOWN");
+            const int low=hook?62:(lowEnergy?55:58);
+            const int high=hook?86:(lowEnergy?76:82);
+            while(n.note<low&&n.note+12<=high)n.note+=12;
+            while(n.note>high&&n.note-12>=low)n.note-=12;
+
+            if(previousNote>=0&&s==previousSection)
+            {
+                while(n.note-previousNote>7&&n.note-12>=low)n.note-=12;
+                while(previousNote-n.note>7&&n.note+12<=high)n.note+=12;
+            }
+            previousNote=n.note;
+            previousSection=s;
+        }
+
+        // Repair one-off pitch spikes that sit far away from both neighbours.
+        for(size_t i=1;i+1<lead.notes.size();++i)
+        {
+            auto& current=lead.notes[i];
+            const auto& prev=lead.notes[i-1];
+            const auto& next=lead.notes[i+1];
+            const auto* section=sectionForBeat(current.beat);
+            if(section!=sectionForBeat(prev.beat)||section!=sectionForBeat(next.beat))continue;
+            if(std::abs(current.note-prev.note)>7&&std::abs(current.note-next.note)>7
+               &&std::abs(prev.note-next.note)<=5&&current.length<=.55)
+            {
+                const bool hook=section&&(section->name.contains("CHORUS")||section->name.contains("DROP")||section->name.contains("FINAL"));
+                const int target=(prev.note+next.note)/2;
+                current.note=nearestScalePitch(target,hook?62:56,hook?86:82);
+            }
+        }
+
+        // Remove tiny grace-note accidents that crowd an otherwise clear phrase.
+        std::vector<ArrangementNote> cleaned;
+        cleaned.reserve(lead.notes.size());
+        for(const auto& n:lead.notes)
+        {
+            if(!cleaned.empty())
+            {
+                const auto& prev=cleaned.back();
+                const auto* s=sectionForBeat(n.beat);
+                if(s==sectionForBeat(prev.beat)&&n.beat-prev.beat<.18
+                   &&n.length<.24&&std::abs(n.note-prev.note)>4)
+                    continue;
+            }
+            cleaned.push_back(n);
+        }
+        lead.notes=std::move(cleaned);
+
+        // Song hook memory: write one clean four-bar chorus phrase, then reuse that
+        // exact musical idea in DROP and FINAL HOOK. Production changes create the
+        // lift; random new lead notes do not.
+        const ArrangementSection *chorusSection=nullptr,*dropSection=nullptr,*finalSection=nullptr;
+        for(const auto& s:sections)
+        {
+            if(s.name=="CHORUS")chorusSection=&s;
+            else if(s.name=="DROP")dropSection=&s;
+            else if(s.name=="FINAL HOOK")finalSection=&s;
+        }
+
+        if(chorusSection&&dropSection&&finalSection&&chorusSection->bars>=4)
+        {
+            const double chorusStart=chorusSection->startBar*beatsPerBar;
+            const double templateEnd=chorusStart+16.0;
+            std::vector<ArrangementNote> hookTemplate;
+            for(const auto& n:lead.notes)
+                if(n.beat>=chorusStart&&n.beat<templateEnd)
+                {
+                    auto copy=n;
+                    copy.beat-=chorusStart;
+                    hookTemplate.push_back(copy);
+                }
+
+            if(hookTemplate.size()>=6&&hookTemplate.size()<=20)
+            {
+                std::vector<ArrangementNote> rebuilt;
+                rebuilt.reserve(lead.notes.size()+32);
+                auto insideHookSection=[&](double beat)
+                {
+                    const auto* s=sectionForBeat(beat);
+                    return s&&(s==chorusSection||s==dropSection||s==finalSection);
+                };
+                for(const auto& n:lead.notes)if(!insideHookSection(n.beat))rebuilt.push_back(n);
+
+                auto writeHook=[&](const ArrangementSection& section,int velocityLift,bool preservePreDropGap)
+                {
+                    const double start=section.startBar*beatsPerBar;
+                    const double end=(section.startBar+section.bars)*beatsPerBar;
+                    for(int block=0;block<section.bars;block+=4)
+                    {
+                        for(const auto& t:hookTemplate)
+                        {
+                            const double beat=start+block*beatsPerBar+t.beat;
+                            if(beat>=end)continue;
+                            const bool finalChorusBlock=preservePreDropGap&&block+4>=section.bars;
+                            if(finalChorusBlock&&t.beat>=15.5)continue;
+                            auto n=t;
+                            n.beat=beat;
+                            n.length=juce::jmin(n.length,juce::jmax(.08,end-beat-.02));
+                            n.velocity=juce::jlimit(48,124,n.velocity+velocityLift);
+                            rebuilt.push_back(n);
+                        }
+                    }
+                };
+
+                writeHook(*chorusSection,0,true);
+                writeHook(*dropSection,7,false);
+                writeHook(*finalSection,10,false);
+                std::sort(rebuilt.begin(),rebuilt.end(),
+                          [](const ArrangementNote& a,const ArrangementNote& b){return a.beat<b.beat;});
+                lead.notes=std::move(rebuilt);
+            }
+        }
     }
 
     lanes.push_back(std::move(lead));
