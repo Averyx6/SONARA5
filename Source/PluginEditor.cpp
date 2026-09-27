@@ -334,11 +334,11 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
         &loadReference,&importMidi,&resound,&rebuildReference,&saveSoundButton,&loadSoundButton,&saveProjectButton,&loadProjectButton,&exportMixButton,&exportStemsButton,
         &applyLaneSound,&autoLaneSound};
     for(auto* b:buttons){addAndMakeVisible(*b);styleButton(*b,b==&generateSound||b==&generateTrack||b==&generateDrums||b==&randomizeEverythingButton||b==&surpriseMe||b==&playSong||b==&resound||b==&rebuildReference||b==&exportMixButton||b==&exportStemsButton);}
-    dragLaneMidi.setTooltip("Editable MIDI notes only. FL Studio's destination instrument supplies the sound.");
-    dragFullMidi.setTooltip("Editable MIDI notes only. MIDI cannot embed SONARA SoundDNA/custom synth patches.");
-    dragPreviewMidi.setTooltip("MIDI notes only. Use LANE WAV to preserve the exact SONARA sound.");
-    dragLaneAudio.setTooltip("Rendered audio with the selected lane's SONARA SoundDNA/custom sound preserved. Drag to FL Playlist.");
-    dragFullAudio.setTooltip("Rendered SONARA full mix with sounds preserved. Drag to FL Playlist.");
+    dragLaneMidi.setTooltip("Selected lane notes for FL Piano Roll. Drop onto a SONARA channel to use that lane's SoundDNA; other instruments will sound different.");
+    dragFullMidi.setTooltip("Multitrack arrangement MIDI. Import as separate lanes/tracks; do not merge this into one Piano Roll or BASS/SUB notes will appear under the lead.");
+    dragPreviewMidi.setTooltip("Sound-preview notes. Drop onto the same SONARA instrument to keep its SoundDNA; use WAV for exact rendered audio.");
+    dragLaneAudio.setTooltip("Rendered selected lane with SONARA SoundDNA preserved. Drag to FL Playlist for the exact lane sound.");
+    dragFullAudio.setTooltip("Rendered full mix using the same SONARA song mixer as preview. Drag to FL Playlist for preview-matched sound.");
 
     juce::TextButton* tabs[]={&tabInstrument,&tabSong,&tabDrums,&tabFx,&tabReference,&tabMidi,&tabExport};
     for(auto* t:tabs){addAndMakeVisible(*t);styleButton(*t);}
@@ -491,12 +491,12 @@ void SonaraAudioProcessorEditor::showStatus(const juce::String& s){p.generationS
 
 void SonaraAudioProcessorEditor::beginExternalDrag(ExternalDragButton::Kind kind){
     const auto temp=juce::File::getSpecialLocation(juce::File::tempDirectory);bool ok=false;juce::String status;juce::StringArray files;
-    if(kind==ExternalDragButton::Kind::previewMidi){dragFile=temp.getNonexistentChildFile("SONARA-Sound",".mid");ok=p.writePreviewMidiFile(dragFile);status="MIDI notes only • FL destination instrument supplies sound";files.add(dragFile.getFullPathName());}
-    else if(kind==ExternalDragButton::Kind::fullMidi){dragFile=temp.getNonexistentChildFile("SONARA-Full-Arrangement",".mid");ok=p.writeArrangementMidiFile(dragFile);status="Full MIDI = notes only • use WAV/stems to preserve SONARA sounds";files.add(dragFile.getFullPathName());}
-    else if(kind==ExternalDragButton::Kind::laneMidi){dragFile=temp.getNonexistentChildFile("SONARA-Selected-Lane",".mid");ok=p.writeSelectedLaneMidiFile(dragFile);status="Lane MIDI = editable notes only • use LANE WAV for SONARA sound";files.add(dragFile.getFullPathName());}
+    if(kind==ExternalDragButton::Kind::previewMidi){dragFile=temp.getNonexistentChildFile("SONARA-Sound",".mid");ok=p.writePreviewMidiFile(dragFile);status="Sound MIDI ready • drop on this SONARA channel for the same SoundDNA";files.add(dragFile.getFullPathName());}
+    else if(kind==ExternalDragButton::Kind::fullMidi){dragFile=temp.getNonexistentChildFile("SONARA-Full-Arrangement",".mid");ok=p.writeArrangementMidiFile(dragFile);status="Multitrack MIDI ready • import as separate lanes, not one Piano Roll";files.add(dragFile.getFullPathName());}
+    else if(kind==ExternalDragButton::Kind::laneMidi){dragFile=temp.getNonexistentChildFile("SONARA-Selected-Lane",".mid");ok=p.writeSelectedLaneMidiFile(dragFile);status="Selected Piano Roll MIDI ready • same SONARA channel keeps lane SoundDNA";files.add(dragFile.getFullPathName());}
     else if(kind==ExternalDragButton::Kind::referenceMidi){dragFile=temp.getNonexistentChildFile("SONARA-Reference-Melody",".mid");ok=p.writeReferenceMidiFile(dragFile);status="Dragging extracted reference melody MIDI";files.add(dragFile.getFullPathName());}
-    else if(kind==ExternalDragButton::Kind::fullMixAudio){dragFile=temp.getNonexistentChildFile("SONARA-Full-Mix",".wav");ok=p.exportFullMix(dragFile);status="Dragging rendered 24-bit full mix";files.add(dragFile.getFullPathName());}
-    else if(kind==ExternalDragButton::Kind::laneAudio){dragFile=temp.getNonexistentChildFile("SONARA-Selected-Lane",".wav");ok=p.exportSelectedLaneAudio(dragFile);status="Dragging selected 24-bit lane";files.add(dragFile.getFullPathName());}
+    else if(kind==ExternalDragButton::Kind::fullMixAudio){dragFile=temp.getNonexistentChildFile("SONARA-Full-Mix",".wav");ok=p.exportFullMix(dragFile);status="Dragging preview-matched 24-bit full mix";files.add(dragFile.getFullPathName());}
+    else if(kind==ExternalDragButton::Kind::laneAudio){dragFile=temp.getNonexistentChildFile("SONARA-Selected-Lane",".wav");ok=p.exportSelectedLaneAudio(dragFile);status="Dragging selected lane with SONARA SoundDNA preserved";files.add(dragFile.getFullPathName());}
     else {dragFile=temp.getNonexistentChildFile("SONARA-Stems","");ok=dragFile.createDirectory()&&p.exportAllStems(dragFile);status="Dragging all rendered 24-bit stems";if(ok){juce::Array<juce::File> wavs;dragFile.findChildFiles(wavs,juce::File::findFiles,false,"*.wav");for(const auto& f:wavs)files.add(f.getFullPathName());ok=!files.isEmpty();}}
     if(!ok||files.isEmpty()){showStatus("Export unavailable • generate or load the required content first");return;}showStatus(status);
     juce::DragAndDropContainer::performExternalDragDropOfFiles(files,false,this,[this]{showStatus("External drag finished");});
