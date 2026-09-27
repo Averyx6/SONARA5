@@ -7,20 +7,40 @@ float SonaraVoice::morphedWave(WaveShape shape,float morph,double phase,double i
 static float evaluateLfo(LfoShape shape,float phase) noexcept {const float twoPi=juce::MathConstants<float>::twoPi;float p=phase/twoPi;p-=std::floor(p);switch(shape){case LfoShape::triangle:return 1.f-4.f*std::abs(p-.5f);case LfoShape::sawUp:return 2.f*p-1.f;case LfoShape::sawDown:return 1.f-2.f*p;case LfoShape::square:return p<.5f?1.f:-1.f;default:return std::sin(phase);}}
 float SonaraVoice::nextNoise() noexcept { noiseState ^= noiseState << 13; noiseState ^= noiseState >> 7; noiseState ^= noiseState << 17; return (float)((noiseState >> 40) & 0xFFFFFF) * (2.0f / 16777215.0f) - 1.0f; }
 void SonaraVoice::prepare(double sampleRate,int maximumBlockSize,int numChannels) noexcept {const juce::dsp::ProcessSpec spec{juce::jmax(8000.0,sampleRate),(juce::uint32)juce::jmax(1,maximumBlockSize),(juce::uint32)juce::jmax(1,numChannels)};filterL.prepare(spec);filterR.prepare(spec);filterL.reset();filterR.reset();adsr.setSampleRate(spec.sampleRate);}
-void SonaraVoice::startNote(int midi,float velocity,juce::SynthesiserSound*,int){noteHz=juce::MidiMessage::getMidiNoteInHertz(midi);auto sr=getSampleRate();voices=juce::jlimit(1,maxUnison,dna.unison);level=velocity;for(int i=0;i<voices;++i){const float pos=voices==1?0.f:(2.f*i/(voices-1.f)-1.f);const double cents=pos*dna.detune*100.0;const double ratio=std::pow(2.0,cents/1200.0);incA[i]=juce::MathConstants<double>::twoPi*noteHz*ratio/sr;incB[i]=juce::MathConstants<double>::twoPi*noteHz*ratio*std::pow(2.0,dna.oscBTranspose/12.0)/sr;const uint64_t h=dna.seed+(uint64_t)i*0x9e3779b97f4a7c15ULL;phaseA[i]=dna.phaseRandom*juce::MathConstants<double>::twoPi*((h>>8)&65535)/65535.0;phaseB[i]=dna.phaseRandom*juce::MathConstants<double>::twoPi*((h>>24)&65535)/65535.0;const float pan=pos*dna.width;panL[i]=std::sqrt(.5f*(1.f-pan));panR[i]=std::sqrt(.5f*(1.f+pan));}subPhase=0.0;subInc=juce::MathConstants<double>::twoPi*noteHz*std::pow(2.0,(double)dna.subOctave)/sr;noiseState=dna.seed^((uint64_t)(midi+1)*0x9e3779b97f4a7c15ULL);if(noiseState==0)noiseState=1;ageSamples=0;holdCounter=0;heldL=heldR=0.f;env={dna.attack,dna.decay,dna.sustain,dna.release};adsr.setSampleRate(sr);adsr.setParameters(env);adsr.noteOn();lfoPhase=0.f;juce::dsp::StateVariableTPTFilterType type=juce::dsp::StateVariableTPTFilterType::lowpass;if(dna.filterMode==FilterMode::highpass)type=juce::dsp::StateVariableTPTFilterType::highpass;else if(dna.filterMode==FilterMode::bandpass)type=juce::dsp::StateVariableTPTFilterType::bandpass;for(auto* f:{&filterL,&filterR}){f->reset();f->setType(type);f->setResonance(juce::jlimit(.01f,.95f,dna.resonance));}}
+void SonaraVoice::startNote(int midi,float velocity,juce::SynthesiserSound*,int){noteHz=juce::MidiMessage::getMidiNoteInHertz(midi);auto sr=getSampleRate();
+const float voiceComplexity=dna.fmAmount*1.5f+dna.ringMod*1.2f+std::abs(dna.lfoMorphA)+std::abs(dna.lfoMorphB)+dna.lfoCutoff*.8f+dna.noiseLevel*.4f;
+int requestedUnison=dna.unison;
+if(voiceComplexity>2.0f)requestedUnison=juce::jmin(requestedUnison,4);
+else if(voiceComplexity>1.25f)requestedUnison=juce::jmin(requestedUnison,5);
+voices=juce::jlimit(1,maxUnison,requestedUnison);level=velocity;for(int i=0;i<voices;++i){const float pos=voices==1?0.f:(2.f*i/(voices-1.f)-1.f);const double cents=pos*dna.detune*100.0;const double ratio=std::pow(2.0,cents/1200.0);incA[i]=juce::MathConstants<double>::twoPi*noteHz*ratio/sr;incB[i]=juce::MathConstants<double>::twoPi*noteHz*ratio*std::pow(2.0,dna.oscBTranspose/12.0)/sr;const uint64_t h=dna.seed+(uint64_t)i*0x9e3779b97f4a7c15ULL;phaseA[i]=dna.phaseRandom*juce::MathConstants<double>::twoPi*((h>>8)&65535)/65535.0;phaseB[i]=dna.phaseRandom*juce::MathConstants<double>::twoPi*((h>>24)&65535)/65535.0;const float pan=pos*dna.width;panL[i]=std::sqrt(.5f*(1.f-pan));panR[i]=std::sqrt(.5f*(1.f+pan));}subPhase=0.0;subInc=juce::MathConstants<double>::twoPi*noteHz*std::pow(2.0,(double)dna.subOctave)/sr;noiseState=dna.seed^((uint64_t)(midi+1)*0x9e3779b97f4a7c15ULL);if(noiseState==0)noiseState=1;
+ageSamples=0;holdCounter=0;heldL=heldR=0.f;env={dna.attack,dna.decay,dna.sustain,dna.release};adsr.setSampleRate(sr);adsr.setParameters(env);adsr.noteOn();lfoPhase=0.f;
+pitchEnvState=dna.pitchEnv;pitchEnvMul=std::exp(-1.f/(float)(sr*juce::jmax(.005f,dna.pitchEnvDecay)));
+transientState=dna.transientLevel;transientMul=std::exp(-1.f/(float)(sr*juce::jmax(.001f,dna.transientDecay)));
+unisonNorm=.28f/std::sqrt((float)juce::jmax(1,voices));
+lfoActive=std::abs(dna.lfoPitch)>.0001f||std::abs(dna.lfoCutoff)>.0001f||std::abs(dna.lfoMorphA)>.0001f||std::abs(dna.lfoMorphB)>.0001f;
+filterDynamic=std::abs(dna.lfoCutoff)>.0001f||std::abs(dna.filterEnv)>.0001f;
+filterUpdateCounter=0;holdPeriodSamples=1+(int)std::round(dna.downsample*dna.downsample*23.f);
+const float bits=16.f-12.f*dna.bitCrush;crushLevels=std::pow(2.f,bits);juce::dsp::StateVariableTPTFilterType type=juce::dsp::StateVariableTPTFilterType::lowpass;if(dna.filterMode==FilterMode::highpass)type=juce::dsp::StateVariableTPTFilterType::highpass;else if(dna.filterMode==FilterMode::bandpass)type=juce::dsp::StateVariableTPTFilterType::bandpass;for(auto* f:{&filterL,&filterR}){f->reset();f->setType(type);f->setResonance(juce::jlimit(.01f,.95f,dna.resonance));f->setCutoffFrequency(juce::jlimit(30.f,(float)sr*.45f,dna.cutoff));}}
 void SonaraVoice::stopNote(float,bool tail){if(tail)adsr.noteOff();else{adsr.reset();clearCurrentNote();}}
 void SonaraVoice::renderNextBlock(juce::AudioBuffer<float>& out,int start,int count){
     const auto sr=(float)getSampleRate();
     while(count-->0){
-        const float e=adsr.getNextSample(),lfo=evaluateLfo(dna.lfoShape,lfoPhase);
-        lfoPhase+=juce::MathConstants<float>::twoPi*dna.lfoRate/sr;
-        if(lfoPhase>=juce::MathConstants<float>::twoPi)lfoPhase-=juce::MathConstants<float>::twoPi;
-        const float pitchEnvSeconds=juce::jmax(.005f,dna.pitchEnvDecay);
-        const float pitchEnvValue=dna.pitchEnv*std::exp(-(float)ageSamples/(sr*pitchEnvSeconds));
-        const double pitchEnvelopeRatio=std::pow(2.0,(double)pitchEnvValue/12.0);
-        const float cutoff=juce::jlimit(30.f,sr*.45f,dna.cutoff*(1.f+dna.lfoCutoff*lfo*.75f+dna.filterEnv*e));
+        const float e=adsr.getNextSample();
+        const float lfo=lfoActive?evaluateLfo(dna.lfoShape,lfoPhase):0.f;
+        if(lfoActive){lfoPhase+=juce::MathConstants<float>::twoPi*dna.lfoRate/sr;if(lfoPhase>=juce::MathConstants<float>::twoPi)lfoPhase-=juce::MathConstants<float>::twoPi;}
+        const float pitchEnvValue=pitchEnvState;pitchEnvState*=pitchEnvMul;
+        const double pitchEnvelopeRatio=std::abs(pitchEnvValue)>.0001f?std::pow(2.0,(double)pitchEnvValue/12.0):1.0;
         const float morphA=juce::jlimit(0.f,1.f,dna.oscAMorph+dna.lfoMorphA*lfo*.5f),morphB=juce::jlimit(0.f,1.f,dna.oscBMorph+dna.lfoMorphB*lfo*.5f);
-        filterL.setCutoffFrequency(cutoff);filterR.setCutoffFrequency(cutoff);
+        if(filterDynamic)
+        {
+            if(filterUpdateCounter<=0)
+            {
+                const float cutoff=juce::jlimit(30.f,sr*.45f,dna.cutoff*(1.f+dna.lfoCutoff*lfo*.75f+dna.filterEnv*e));
+                filterL.setCutoffFrequency(cutoff);filterR.setCutoffFrequency(cutoff);
+                filterUpdateCounter=7;
+            }
+            else --filterUpdateCounter;
+        }
         float l=0.f,r=0.f;
         for(int i=0;i<voices;++i){
             const double pitchMod=juce::jlimit(.35,2.4,(1.0+dna.lfoPitch*lfo*.01)*pitchEnvelopeRatio);
@@ -35,18 +55,17 @@ void SonaraVoice::renderNextBlock(juce::AudioBuffer<float>& out,int start,int co
             if(phaseA[i]>=juce::MathConstants<double>::twoPi)phaseA[i]=std::fmod(phaseA[i],juce::MathConstants<double>::twoPi);
             if(phaseB[i]>=juce::MathConstants<double>::twoPi)phaseB[i]=std::fmod(phaseB[i],juce::MathConstants<double>::twoPi);
         }
-        const float norm=.28f/std::sqrt((float)voices);l*=norm;r*=norm;
+        l*=unisonNorm;r*=unisonNorm;
         const float sub=(float)std::sin(subPhase)*dna.subLevel*.32f;subPhase+=subInc*pitchEnvelopeRatio;if(subPhase>=juce::MathConstants<double>::twoPi)subPhase=std::fmod(subPhase,juce::MathConstants<double>::twoPi);
         const float noise=nextNoise();
-        const float transientEnv=dna.transientLevel*std::exp(-(float)ageSamples/(sr*juce::jmax(.001f,dna.transientDecay)));
+        const float transientEnv=transientState;transientState*=transientMul;
         const float texture=noise*dna.noiseLevel*.14f + noise*transientEnv*.32f;
         l+=sub+texture;r+=sub+texture;
         l=std::tanh(l*(1.f+dna.drive*5.f))*e*level;r=std::tanh(r*(1.f+dna.drive*5.f))*e*level;
         l=filterL.processSample(0,l);r=filterR.processSample(0,r);
-        const int holdPeriod=1+(int)std::round(dna.downsample*dna.downsample*23.f);
-        if(holdCounter<=0){heldL=l;heldR=r;holdCounter=holdPeriod;}
+        if(holdCounter<=0){heldL=l;heldR=r;holdCounter=holdPeriodSamples;}
         --holdCounter;l=heldL;r=heldR;
-        if(dna.bitCrush>.001f){const float bits=16.f-12.f*dna.bitCrush;const float levels=std::pow(2.f,bits);l=std::round(l*levels)/levels;r=std::round(r*levels)/levels;}
+        if(dna.bitCrush>.001f){l=std::round(l*crushLevels)/crushLevels;r=std::round(r*crushLevels)/crushLevels;}
         if(out.getNumChannels()>0)out.addSample(0,start,l);if(out.getNumChannels()>1)out.addSample(1,start,r);
         ++start;++ageSamples;
     }
