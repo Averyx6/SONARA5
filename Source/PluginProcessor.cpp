@@ -1509,7 +1509,7 @@ bool SonaraAudioProcessor::setSelectedLaneSound(const juce::String& prompt,bool 
     std::atomic_store_explicit(&arrangement,
         std::shared_ptr<const sonara::SongArrangement>(updated),std::memory_order_release);
     generationProgress.store(1.f);
-    generationStatus=(automatic?"AUTO FIT • ":"CUSTOM SOUND • ")+lanes[(size_t)laneIndex].name;
+    generationStatus=juce::String(automatic?"AUTO FIT • ":"CUSTOM SOUND • ")+lanes[(size_t)laneIndex].name;
     return true;
 }
 
