@@ -136,6 +136,7 @@ private:
     void addDrums(uint64_t seed, bool energetic);
     void addHarmony(uint64_t seed);
     void addMelody(uint64_t seed, bool energetic);
+    void alignPitchedLanesToLead();
     void addFx(uint64_t seed);
 
     juce::String sourcePrompt;
