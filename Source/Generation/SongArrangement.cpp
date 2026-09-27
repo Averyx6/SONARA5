@@ -2186,7 +2186,15 @@ void SongArrangement::alignPitchedLanesToLead()
             }
 
             for(size_t k=i;k<j;++k)
-                lane->notes[k].note=juce::jlimit(low,high,lane->notes[k].note+bestShift);
+            {
+                int aligned=lane->notes[k].note+bestShift;
+                // Close inversion around the shared lead center. Each tone keeps
+                // its pitch class, but one top/bottom voice cannot drag the whole
+                // chord an octave away from the song.
+                while(aligned-target>7&&aligned-12>=low)aligned-=12;
+                while(target-aligned>7&&aligned+12<=high)aligned+=12;
+                lane->notes[k].note=juce::jlimit(low,high,aligned);
+            }
             i=j;
         }
     };
