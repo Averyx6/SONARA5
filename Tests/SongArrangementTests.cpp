@@ -377,6 +377,65 @@ int main()
     if(!dLead||!melodyQualityOk(directed,*dLead))
     {std::cerr<<"v1.5 directed simple melody failed musical quality validation\n";return 57;}
 
+    // v1.6 role-pure lanes: support instruments must stay in their musical job
+    // and register instead of scattering unrelated notes over the whole piano roll.
+    sonara::SongArrangement rolePure;
+    rolePure.generateComposition(
+        "progressive house 128 BPM F minor, strong hook, simple melody, more space, powerful drop",
+        128.0,0x161616ULL);
+
+    const auto* rpChords=findLane(rolePure,"CHORDS");
+    const auto* rpPluck=findLane(rolePure,"PLUCK");
+    const auto* rpBass=findLane(rolePure,"BASS");
+    const auto* rpSub=findLane(rolePure,"SUB");
+    const auto* rpPad=findLane(rolePure,"PAD");
+    if(!rpChords||!rpPluck||!rpBass||!rpSub||!rpPad)
+    {std::cerr<<"v1.6 role-pure support lane missing\n";return 58;}
+
+    auto laneRange=[&](const sonara::ArrangementLane& lane)
+    {
+        int lo=127,hi=0;
+        for(const auto& n:lane.notes){lo=juce::jmin(lo,n.note);hi=juce::jmax(hi,n.note);}
+        if(lane.notes.empty())return std::pair<int,int>{0,0};
+        return std::pair<int,int>{lo,hi};
+    };
+    const auto chordRange=laneRange(*rpChords);
+    const auto pluckRange=laneRange(*rpPluck);
+    const auto bassRange=laneRange(*rpBass);
+    const auto subRange=laneRange(*rpSub);
+    const auto padRange=laneRange(*rpPad);
+
+    if(chordRange.first<45||chordRange.second>76||chordRange.second-chordRange.first>31)
+    {std::cerr<<"v1.6 CHORDS escaped close chord register\n";return 59;}
+    if(pluckRange.first<60||pluckRange.second>79||pluckRange.second-pluckRange.first>19)
+    {std::cerr<<"v1.6 PLUCK escaped narrow support register\n";return 60;}
+    if(bassRange.first<32||bassRange.second>52)
+    {std::cerr<<"v1.6 BASS escaped root/fifth register\n";return 61;}
+    if(subRange.first<24||subRange.second>47)
+    {std::cerr<<"v1.6 SUB escaped fundamental register\n";return 62;}
+    if(!rpPad->notes.empty()&&(padRange.first<55||padRange.second>81))
+    {std::cerr<<"v1.6 PAD escaped slow upper-harmony register\n";return 63;}
+
+    // CHORDS should appear as grouped chord blocks: every onset carries at least
+    // a triad, rather than isolated single notes pretending to be harmony.
+    std::map<int,int> chordOnsets;
+    for(const auto& n:rpChords->notes)
+        ++chordOnsets[(int)std::llround(n.beat*16.0)];
+    for(const auto& [onset,count]:chordOnsets)
+        if(count<3||count>4)
+        {std::cerr<<"v1.6 CHORDS contains isolated/non-chord note events\n";return 64;}
+
+    // PLUCK is support, not another melody: never more than three note onsets/bar.
+    int maxPluckOnsets=0;
+    for(int bar=0;bar<rolePure.getBars();++bar)
+    {
+        int count=0;const double begin=bar*4.0,end=begin+4.0;
+        for(const auto& n:rpPluck->notes)if(n.beat>=begin&&n.beat<end)++count;
+        maxPluckOnsets=juce::jmax(maxPluckOnsets,count);
+    }
+    if(maxPluckOnsets>3)
+    {std::cerr<<"v1.6 PLUCK is still over-filling bars\n";return 65;}
+
     auto midi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-arrangement-test",".mid");
     if(!a.writeMidiFile(midi)||!midi.existsAsFile()||midi.getSize()<512){std::cerr<<"MIDI export failed\n";return 7;}
     midi.deleteFile();
