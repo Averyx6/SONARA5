@@ -500,6 +500,44 @@ int main()
         {std::cerr<<"v1.7 PAD octave/register is detached from LEAD\n";return 76;}
     }
 
+    // v1.8 melody clarity: mainstream lead stays in a readable register,
+    // hook density stays simple, and the first DROP has an unmistakable boundary.
+    for(const auto& n:rpLead->notes)
+        if(n.note<58)
+        {std::cerr<<"v1.8 LEAD contains an unwanted low-register note\n";return 77;}
+
+    const sonara::ArrangementSection *rpChorusSection=nullptr,*rpDropSection=nullptr,*rpFinalSection=nullptr;
+    for(const auto& section:rolePure.getSections())
+    {
+        if(section.name=="CHORUS")rpChorusSection=&section;
+        else if(section.name=="DROP")rpDropSection=&section;
+        else if(section.name=="FINAL HOOK")rpFinalSection=&section;
+    }
+    if(!rpChorusSection||!rpDropSection||!rpFinalSection)
+    {std::cerr<<"v1.8 melody-clarity sections missing\n";return 78;}
+
+    for(const auto* section:{rpChorusSection,rpDropSection,rpFinalSection})
+        for(int bar=section->startBar;bar<section->startBar+section->bars;++bar)
+        {
+            int noteCount=0;
+            const double begin=bar*4.0,end=begin+4.0;
+            for(const auto& n:rpLead->notes)if(n.beat>=begin&&n.beat<end)++noteCount;
+            if(noteCount>3)
+            {std::cerr<<"v1.8 hook melody is still too dense\n";return 79;}
+        }
+
+    const double chorusEnd=(rpChorusSection->startBar+rpChorusSection->bars)*4.0;
+    for(const auto& n:rpLead->notes)
+        if(n.beat>=chorusEnd-1.0&&n.beat<chorusEnd)
+        {std::cerr<<"v1.8 chorus did not leave a full pre-drop beat\n";return 80;}
+
+    const double dropStart=rpDropSection->startBar*4.0;
+    bool dropAnchor=false;
+    for(const auto& n:rpLead->notes)
+        if(n.beat>=dropStart&&n.beat<=dropStart+.05){dropAnchor=true;break;}
+    if(!dropAnchor)
+    {std::cerr<<"v1.8 DROP is missing a downbeat melody anchor\n";return 81;}
+
     auto midi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-arrangement-test",".mid");
     if(!a.writeMidiFile(midi)||!midi.existsAsFile()||midi.getSize()<512){std::cerr<<"MIDI export failed\n";return 7;}
     midi.deleteFile();
