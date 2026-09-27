@@ -204,7 +204,7 @@ SoundDNA PromptGenerator::generate(const juce::String& prompt, uint64_t seed, Pr
     if(has("wide")||has("stereo"))d.width=.98f; if(has("mono")||has("centered"))d.width=.05f;
     if(has("aggressive")||has("powerful")||has("hard")){d.drive=.24f+hash01(seed,7)*.30f;d.resonance=juce::jmin(.48f,d.resonance+.08f);d.oscBMorph=juce::jmax(d.oscBMorph,.35f);}
     if(has("warm")||has("dark"))d.cutoff*=.58f; if(has("bright")||has("airy")){d.cutoff=juce::jmax(d.cutoff,12500.f);d.noiseLevel=juce::jmax(d.noiseLevel,.018f);}
-    if(has("airy")){d.name="Generated Airy";d.noiseLevel=juce::jmax(d.noiseLevel,.035f+.035f*hash01(seed,177));d.width=juce::jmax(d.width,.82f);d.attack=juce::jmax(d.attack,.018f);d.filterMode=FilterMode::highpass;d.cutoff=juce::jlimit(900.f,7800.f,1500.f+3400.f*hash01(seed,178));d.reverb=juce::jmax(d.reverb,.22f);}
+    if(has("airy")){if(!fluteRole)d.name="Generated Airy";d.noiseLevel=juce::jmax(d.noiseLevel,.035f+.035f*hash01(seed,177));d.width=juce::jmax(d.width,.82f);d.attack=juce::jmax(d.attack,.018f);d.filterMode=FilterMode::highpass;d.cutoff=juce::jlimit(900.f,7800.f,1500.f+3400.f*hash01(seed,178));d.reverb=juce::jmax(d.reverb,.22f);}
     if(has("vibrato")){d.lfoPitch=.32f+.25f*hash01(seed,41);d.lfoRate=4.5f+1.8f*hash01(seed,42);d.lfoShape=LfoShape::sine;}
     if(has("highpass")||has("high-pass")||has("low cut")||has("thin")||has("telephone")){d.filterMode=FilterMode::highpass;d.cutoff=juce::jlimit(120.f,9000.f,450.f+hash01(seed,77)*3600.f);d.resonance=juce::jmax(d.resonance,.12f);}
     if(has("bandpass")||has("band-pass")||has("band pass")||has("nasal")||has("vocal")||has("formant")){d.filterMode=FilterMode::bandpass;d.cutoff=juce::jlimit(180.f,12000.f,700.f+hash01(seed,78)*6200.f);d.resonance=.18f+hash01(seed,79)*.28f;}
