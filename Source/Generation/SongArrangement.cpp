@@ -2153,21 +2153,6 @@ void SongArrangement::alignPitchedLanesToLead()
         barCentre[(size_t)bar]=previous;
     }
 
-    auto leadAtBeat=[&](double beat)
-    {
-        const int bar=juce::jlimit(0,bars-1,(int)std::floor(beat/beatsPerBar));
-        int target=barCentre[(size_t)bar];
-        double bestDistance=999.0;
-        const double begin=bar*beatsPerBar,end=begin+beatsPerBar;
-        for(const auto& n:lead->notes)
-        {
-            if(n.beat<begin||n.beat>=end)continue;
-            const double d=std::abs(n.beat-beat);
-            if(d<bestDistance){bestDistance=d;target=n.note;}
-        }
-        return target;
-    };
-
     auto alignGrouped=[&](ArrangementLane* lane,int offset,int low,int high)
     {
         if(lane==nullptr||lane->notes.empty())return;
@@ -2193,7 +2178,9 @@ void SongArrangement::alignPitchedLanesToLead()
             }
             average/=(float)(j-i);
 
-            const int target=leadAtBeat(lane->notes[i].beat)+offset;
+            const int groupBar=juce::jlimit(0,bars-1,
+                (int)std::floor(lane->notes[i].beat/beatsPerBar));
+            const int target=barCentre[(size_t)groupBar]+offset;
             int bestShift=0;float bestScore=1.0e9f;
             for(int oct=-4;oct<=4;++oct)
             {
