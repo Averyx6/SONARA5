@@ -1549,6 +1549,24 @@ void SonaraAudioProcessor::setLaneMix(int laneIndex,LaneMixParameter parameter,f
     }
 }
 
+void SonaraAudioProcessor::setSelectedLane(int i)
+{
+    const int bounded=juce::jlimit(0,11,i);
+    selectedLane.store(bounded);
+    auto a=arrangementSnapshot();
+    if(!a||!juce::isPositiveAndBelow(bounded,(int)a->getLanes().size()))return;
+
+    const auto& lane=a->getLanes()[(size_t)bounded];
+    if(!lane.drums)
+    {
+        // The selected arrangement sound also becomes the live SONARA instrument.
+        // This lets editable FL Piano Roll MIDI play the same SoundDNA when the
+        // MIDI is placed on a SONARA channel.
+        engine.setPatch(lane.sound);
+        generationStatus="LIVE SOUND • "+lane.name+" • drop lane MIDI on this SONARA channel";
+    }
+}
+
 SonaraAudioProcessor::LaneMixState SonaraAudioProcessor::getLaneMix(int laneIndex) const noexcept
 {
     LaneMixState state;
@@ -1606,7 +1624,10 @@ bool SonaraAudioProcessor::setSelectedLaneSound(const juce::String& prompt,bool 
     if(laneIndex<4&&lanes.size()>=4)
         drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
     else if(laneIndex>=firstMusicalLane&&laneIndex<firstMusicalLane+musicalLaneCount)
+    {
         songEngines[(size_t)(laneIndex-firstMusicalLane)].setPatch(lanes[(size_t)laneIndex].sound);
+        engine.setPatch(lanes[(size_t)laneIndex].sound);
+    }
 
     std::atomic_store_explicit(&arrangement,
         std::shared_ptr<const sonara::SongArrangement>(updated),std::memory_order_release);
