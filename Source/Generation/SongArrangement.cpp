@@ -1179,6 +1179,8 @@ void SongArrangement::addHarmony(uint64_t seed)
 
     // Non-mainstream/experimental modes retain the richer Harmony DNA voicing
     // grammar. Mainstream song mode never enters this event-dense path.
+    int lastMainstreamChordBar=-1,mainstreamChordAttacksThisBar=0;
+    int lastMainstreamPadBar=-1,mainstreamPadAttacksThisBar=0;
     if(!mainstreamSong)
     for(size_t hi=0;hi<harmonyEvents.size();++hi)
     {
