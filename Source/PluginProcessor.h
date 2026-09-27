@@ -19,6 +19,7 @@ public:
     enum class LaneMixParameter : int { level=0, pan, width, fxSend };
     struct LaneMixState { float level=1.f,pan=0.f,width=1.f,fxSend=1.f; };
     SonaraAudioProcessor();
+    ~SonaraAudioProcessor() override;
     void prepareToPlay(double,int) override; void releaseResources() override{}; bool isBusesLayoutSupported(const BusesLayout&) const override;
     void processBlock(juce::AudioBuffer<float>&,juce::MidiBuffer&) override;
     juce::AudioProcessorEditor* createEditor() override; bool hasEditor() const override{return true;}
