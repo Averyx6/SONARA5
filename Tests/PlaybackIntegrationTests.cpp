@@ -152,6 +152,35 @@ int main()
         if(renderDrumEnergy(*a,sr)<=1.0e-7)return fail("drums rendered zero/unsafe audio");
         if(sr==48000.0)
         {
+            int leadIndex=-1,bassIndex=-1;
+            for(int i=0;i<(int)a->getLanes().size();++i)
+            {
+                if(a->getLanes()[(size_t)i].name=="LEAD")leadIndex=i;
+                if(a->getLanes()[(size_t)i].name=="BASS")bassIndex=i;
+            }
+            if(leadIndex<0||bassIndex<0)return fail("lane override test could not locate LEAD/BASS");
+            const auto originalLeadSeed=a->getLanes()[(size_t)leadIndex].sound.seed;
+            const auto originalBassSeed=a->getLanes()[(size_t)bassIndex].sound.seed;
+            const auto originalLeadNotes=a->getLanes()[(size_t)leadIndex].notes.size();
+
+            p.setSelectedLane(leadIndex);
+            if(!p.setSelectedLaneSound("glassy emotional festival pluck lead wide but clean",false))
+                return fail("custom selected-lane SoundDNA prompt failed");
+            auto custom=p.arrangementSnapshot();
+            if(!custom||custom->getLanes()[(size_t)leadIndex].sound.seed==originalLeadSeed
+               ||!custom->getLanes()[(size_t)leadIndex].sound.name.containsIgnoreCase("Custom"))
+                return fail("custom lane sound was not published");
+            if(custom->getLanes()[(size_t)bassIndex].sound.seed!=originalBassSeed
+               ||custom->getLanes()[(size_t)leadIndex].notes.size()!=originalLeadNotes)
+                return fail("lane sound override changed another instrument or MIDI");
+
+            if(!p.setSelectedLaneSound({},true))return fail("AUTO FIT selected lane failed");
+            auto refit=p.arrangementSnapshot();
+            if(!refit||refit->getLanes()[(size_t)bassIndex].sound.seed!=originalBassSeed
+               ||refit->getLanes()[(size_t)leadIndex].notes.size()!=originalLeadNotes)
+                return fail("AUTO FIT changed unrelated lane or MIDI");
+
+
             const double percEnergy=renderSingleDrumNote(*a,37);
             const double crashEnergy=renderSingleDrumNote(*a,49);
             const double kickEnergy=renderSingleDrumNote(*a,36);
