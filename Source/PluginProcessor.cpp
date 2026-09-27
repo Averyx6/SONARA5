@@ -1139,6 +1139,18 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
     const int64_t start=songSample.load();
     const double spb=previewSampleRate*60.0/a->getBpm();
     const int64_t total=(int64_t)std::llround(a->getTotalBeats()*spb);
+    const double blockBeat=(double)start/spb;
+    const int blockBar=juce::jlimit(0,juce::jmax(0,a->getBars()-1),(int)std::floor(blockBeat/4.0));
+    juce::String blockSection;
+    for(const auto& s:a->getSections())
+        if(blockBar>=s.startBar&&blockBar<s.startBar+s.bars){blockSection=s.name;break;}
+    const bool mixIntro=blockSection=="INTRO";
+    const bool mixVerse=blockSection=="VERSE";
+    const bool mixBuild=blockSection.contains("BUILD");
+    const bool mixChorus=blockSection=="CHORUS";
+    const bool mixDrop=blockSection=="DROP";
+    const bool mixBreakdown=blockSection=="BREAKDOWN";
+    const bool mixFinal=blockSection=="FINAL HOOK";
 
     out.clear();
     songFxBus.clear(0,renderSamples);
@@ -1270,7 +1282,23 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
             }
         }
 
-        const float mixedGain=laneGain[i]*mix.level;
+        float sectionGain=1.f;
+        if(i==5) // LEAD
+            sectionGain=mixIntro?.62f:(mixVerse?.76f:(mixBuild?.84f:(mixChorus?1.02f:(mixDrop?1.14f:(mixBreakdown?.66f:(mixFinal?1.18f:1.f))))));
+        else if(i==0) // BASS
+            sectionGain=mixIntro?.50f:(mixVerse?.80f:(mixBuild?.88f:(mixChorus?.96f:(mixDrop?1.12f:(mixBreakdown?.48f:(mixFinal?1.14f:1.f))))));
+        else if(i==1) // SUB
+            sectionGain=mixIntro?.25f:(mixVerse?.72f:(mixBuild?.82f:(mixChorus?.92f:(mixDrop?1.10f:(mixBreakdown?.30f:(mixFinal?1.12f:1.f))))));
+        else if(i==2) // CHORDS
+            sectionGain=mixIntro?.72f:(mixVerse?.78f:(mixBuild?.88f:(mixChorus?1.02f:(mixDrop?1.04f:(mixBreakdown?.74f:(mixFinal?1.08f:1.f))))));
+        else if(i==3) // PLUCK
+            sectionGain=mixIntro?.45f:(mixVerse?.62f:(mixBuild?.72f:(mixChorus?.70f:(mixDrop?.88f:(mixBreakdown?.40f:(mixFinal?.92f:1.f))))));
+        else if(i==4) // PAD
+            sectionGain=mixIntro?1.02f:(mixVerse?.88f:(mixBuild?.72f:(mixChorus?.52f:(mixDrop?.38f:(mixBreakdown?1.08f:(mixFinal?.42f:1.f))))));
+        else if(i==6) // COUNTER
+            sectionGain=(mixDrop||mixFinal)?.72f:.42f;
+
+        const float mixedGain=laneGain[i]*sectionGain*mix.level;
         const float sendGain=fxSend[i]*mix.fxSend;
         for(int ch=0;ch<out.getNumChannels();++ch)
         {
