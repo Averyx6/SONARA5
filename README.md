@@ -1,12 +1,16 @@
-# SONARA v0.8
+# SONARA v1.1
 
 SONARA is a Windows x64 JUCE VST3 + Standalone AI music-creation instrument for FL Studio.
 
-v0.8 focuses on musicality and production intelligence. The generator now keeps recognizable lead/support motifs instead of rerolling each bar, scores candidate songs for production coherence as well as novelty, understands production-structure requests such as festival/mainstage, early drop, long build, radio edit and cinematic, and uses energy-aware transitions plus kick-triggered low-cost ducking in preview.
+v1.1 is the producer-quality musicality pass. The default EDM architecture now follows a clear INTRO -> VERSE -> BUILD -> CHORUS -> DROP -> BREAKDOWN flow, with the chorus introducing the main hook and the drop developing that same identity. Lead generation uses strict section-specific note budgets, stronger rests, motif continuity, and reduced support-layer density so arrangements read like phrases instead of note clouds.
 
-SoundDNA now interprets a much wider semantic instrument vocabulary, including festival leads/plucks/chords, reese/growl/psy/acid basses, brass, strings, keys, organ, flute/reed, choir/formant, guitar/harp, mallets/kalimba, chiptune, screech, risers and impacts, with articulation words such as staccato, legato, slow/fast attack, tremolo and detuned.
+The song candidate selector now scores production space as well as novelty, melody, harmony, prompt match, section contrast, and hook recall. It penalizes arrangements where too many musical lanes fire on the same fine-grid positions.
 
-The project preserves prompt-driven synthesis, controlled mutation/variations and locks, multi-section arrangement generation, generated lane sounds, procedural drums, live arrangement playback, piano-roll/timeline UI, Reference tools, mixer, transport, Randomize Everything, Surprise Me, and MIDI/export workflows.
+Every generated lane still receives an automatic SoundDNA design that fits its role and genre. v1.1 also adds per-instrument overrides: select any lane, describe only that instrument in FX & MIX, and apply a custom SoundDNA without changing its MIDI or other lanes. AUTO FIT restores SONARA's role-aware automatic sound for only the selected lane.
+
+Preview synthesis includes a new CPU optimization pass: expensive unison patches receive complexity-aware caps, static filters avoid unnecessary coefficient updates, and pitch/transient envelopes plus bit-crush/downsample values are cached instead of recomputed in the per-sample hot loop.
+
+The project preserves Harmony DNA, different-song generation, festival drum DSP, kick ducking, semantic SoundDNA families, reference/resound tools, lane mixer, timeline/piano-roll UI, editable MIDI export, stem/full-mix audio export, Randomize Everything, Surprise Me, and project/preset persistence.
 
 ## Windows build
 
