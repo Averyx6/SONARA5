@@ -107,6 +107,11 @@ SoundDNA PromptGenerator::generate(const juce::String& prompt, uint64_t seed, Pr
     const bool screechRole=has("screech")||has("hardstyle lead")||has("hardstyle screech");
     const bool vocalRole=has("vocal synth")||has("formant lead")||has("voice-like")||has("vocal-like");
     const bool chipRole=has("chiptune")||has("chip lead")||has("retro game");
+    const bool raveRole=has("future rave")||has("rave stab")||has("rave lead");
+    const bool donkRole=has("donk")||has("bounce bass")||has("bouncy bass");
+    const bool glassRole=has("glassy")||has("glass pluck")||has("crystal pluck");
+    const bool laserRole=has("laser")||has("zap")||has("zappy");
+    const bool wubRole=has("wub")||has("wobble bass")||has("dubstep wobble");
 
     if(brassRole)
     {
@@ -229,6 +234,48 @@ SoundDNA PromptGenerator::generate(const juce::String& prompt, uint64_t seed, Pr
         d.name="Generated Chip";d.oscA=WaveShape::square;d.oscB=WaveShape::square;d.oscMix=.35f;
         d.unison=1;d.phaseRandom=0.f;d.width=.08f;d.attack=.001f;d.decay=.12f;d.sustain=.70f;d.release=.08f;
         d.bitCrush=.34f+.26f*hash01(seed,290);d.downsample=.12f+.20f*hash01(seed,291);d.reverb=.025f;d.delay=.035f;
+    }
+
+    if(raveRole)
+    {
+        d.name="Generated Future Rave";d.oscA=WaveShape::saw;d.oscB=WaveShape::square;d.oscMix=.34f;
+        d.unison=5+(int)(hash01(seed,294)*3.f);d.detune=.07f+.07f*hash01(seed,295);d.width=.88f;
+        d.attack=.001f;d.decay=.16f+.12f*hash01(seed,296);d.sustain=.50f;d.release=.14f+.10f*hash01(seed,297);
+        d.filterMode=FilterMode::bandpass;d.cutoff=1600.f+3200.f*hash01(seed,298);d.resonance=.28f+.14f*hash01(seed,299);
+        d.drive=.20f+.16f*hash01(seed,300);d.transientLevel=.16f+.12f*hash01(seed,301);
+    }
+    if(donkRole)
+    {
+        d.name="Generated Donk Bass";d.oscA=WaveShape::sine;d.oscB=WaveShape::triangle;d.oscMix=.26f;
+        d.unison=1;d.width=.03f;d.attack=.001f;d.decay=.11f+.08f*hash01(seed,302);d.sustain=.08f;d.release=.08f;
+        d.pitchEnv=18.f+12.f*hash01(seed,303);d.pitchEnvDecay=.035f+.035f*hash01(seed,304);
+        d.transientLevel=.36f+.20f*hash01(seed,305);d.transientDecay=.006f;d.drive=.10f+.10f*hash01(seed,306);
+        d.subLevel=.18f+.10f*hash01(seed,307);d.cutoff=1600.f+1800.f*hash01(seed,308);
+    }
+    if(glassRole)
+    {
+        d.name="Generated Glass Pluck";d.oscA=WaveShape::sine;d.oscB=WaveShape::sine;d.oscMix=.26f;
+        d.unison=2;d.detune=.018f;d.width=.78f;d.attack=.001f;d.decay=.28f+.24f*hash01(seed,309);
+        d.sustain=.035f;d.release=.36f+.32f*hash01(seed,310);d.fmAmount=.34f+.26f*hash01(seed,311);
+        d.fmRatio=4.f+std::floor(hash01(seed,312)*4.f);d.transientLevel=.22f+.14f*hash01(seed,313);
+        d.cutoff=10500.f+6000.f*hash01(seed,314);d.reverb=.16f+.12f*hash01(seed,315);
+    }
+    if(laserRole)
+    {
+        d.name="Generated Laser";d.oscA=WaveShape::sine;d.oscB=WaveShape::square;d.oscMix=.20f;
+        d.unison=1;d.width=.35f;d.attack=.001f;d.decay=.08f+.06f*hash01(seed,316);d.sustain=.02f;d.release=.08f;
+        d.pitchEnv=30.f+16.f*hash01(seed,317);d.pitchEnvDecay=.025f+.045f*hash01(seed,318);
+        d.ringMod=.10f+.16f*hash01(seed,319);d.transientLevel=.28f+.16f*hash01(seed,320);
+        d.filterMode=FilterMode::highpass;d.cutoff=2200.f+4200.f*hash01(seed,321);
+    }
+    if(wubRole)
+    {
+        d.name="Generated Wub Bass";d.oscA=WaveShape::saw;d.oscB=WaveShape::square;d.oscMix=.42f;
+        d.unison=2+(int)(hash01(seed,322)*2.f);d.detune=.035f+.045f*hash01(seed,323);d.width=.14f;
+        d.oscBTranspose=-12.f;d.drive=.24f+.18f*hash01(seed,324);d.filterMode=FilterMode::lowpass;
+        d.cutoff=500.f+1100.f*hash01(seed,325);d.resonance=.22f+.16f*hash01(seed,326);
+        d.lfoCutoff=.62f+.24f*hash01(seed,327);d.lfoRate=.35f+2.4f*hash01(seed,328);
+        d.subLevel=.22f+.12f*hash01(seed,329);d.fmAmount=.08f+.14f*hash01(seed,330);
     }
 
     if(festival&&leadRole)
