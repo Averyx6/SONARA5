@@ -30,6 +30,9 @@ private:
     // host/keyboard pitch-wheel performance responsive without touching patch state.
     float pitchBendRatio=1.f;
     int64_t ageSamples=0; int holdCounter=0; float heldL=0.f,heldR=0.f;
+    float pitchEnvState=0.f,pitchEnvMul=1.f,transientState=0.f,transientMul=1.f;
+    float unisonNorm=.28f; int filterUpdateCounter=0; bool lfoActive=false,filterDynamic=false;
+    int holdPeriodSamples=1; float crushLevels=65536.f;
 };
 class SonaraEngine {
 public: SonaraEngine(); void setLowCpuMode(bool enabled); void setVoiceLimit(int voices); void prepare(double,int,int); void render(juce::AudioBuffer<float>&,juce::MidiBuffer&); void render(juce::AudioBuffer<float>&,juce::MidiBuffer&,int numSamples); void setPatch(const SoundDNA&); void allNotesOff() noexcept { synth.allNotesOff(0, false); } bool hasActiveVoices() noexcept; const SoundDNA& patch()const noexcept{return dna;}
