@@ -59,7 +59,7 @@ bool AudioExporter::renderSelectedLane(const SongArrangement& a,int laneIndex,co
             synth.render(view,midi);
         }
         for(int ch=0;ch<2;++ch)for(int i=0;i<n;++i)
-            block.setSample(ch,i,juce::jlimit(-.96f,.96f,std::tanh(block.getSample(ch,i)*.86f)));
+            block.setSample(ch,i,juce::jlimit(-.96f,.96f,std::tanh(block.getSample(ch,i)*1.12f)));
         if(!writer->writeFromAudioSampleBuffer(block,0,n))return false;
         if(cb&&start%(blockSize*64)==0)cb((float)start/(float)total,"Rendering "+lane.name);
     }
@@ -263,7 +263,9 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
 
         juce::AudioBuffer<float> drumView(drumBus.getArrayOfWritePointers(),2,0,n);
         drums.render(drumView,triggers.data(),count);
-        for(int ch=0;ch<2;++ch)block.addFrom(ch,0,drumBus,ch,0,n,.70f);
+        const float drumSectionGain=mixIntro?.46f:(mixVerse?.60f:(mixBuild?.64f:
+            (mixChorus?.68f:(mixDrop?.84f:(mixBreakdown?.48f:(mixFinal?.86f:.70f))))));
+        for(int ch=0;ch<2;++ch)block.addFrom(ch,0,drumBus,ch,0,n,drumSectionGain);
 
         reverb.processStereo(fxBus.getWritePointer(0),fxBus.getWritePointer(1),n);
         for(int ch=0;ch<2;++ch)block.addFrom(ch,0,fxBus,ch,0,n,.66f);
@@ -280,7 +282,7 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
                 const float x=std::isfinite(d[smp])?d[smp]:0.f;
                 const float hp=masterA*(y1+x-x1);
                 x1=x;y1=hp;
-                d[smp]=juce::jlimit(-.96f,.96f,std::tanh(hp*.96f));
+                d[smp]=juce::jlimit(-.96f,.96f,std::tanh(hp*1.22f));
             }
             masterX[(size_t)ch]=x1;masterY[(size_t)ch]=y1;
         }
