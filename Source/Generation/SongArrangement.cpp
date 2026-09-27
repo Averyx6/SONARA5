@@ -681,16 +681,78 @@ void SongArrangement::finalizeSoundPalette()
 {
     if(lanes.empty())return;
     PromptGenerator designer;
+    const auto productionPrompt=sourcePrompt.toLowerCase();
+    const bool festival=productionPrompt.contains("festival")||productionPrompt.contains("mainstage")||productionPrompt.contains("big room");
+    const bool progressive=productionPrompt.contains("progressive house")||productionPrompt.contains("melodic house");
+    const bool tech=productionPrompt.contains("tech house")||productionPrompt.contains("minimal house");
+    const bool dnb=productionPrompt.contains("drum and bass")||productionPrompt.contains("dnb");
+    const bool trance=productionPrompt.contains("trance");
+    const bool cinematic=productionPrompt.contains("cinematic")||productionPrompt.contains("film");
+    const bool tropical=productionPrompt.contains("tropical");
+
     for (size_t i = 0; i < lanes.size(); ++i)
     {
         auto& lane = lanes[i];
         juce::String soundPrompt = sourcePrompt + " " + lane.name + " ";
-        if (lane.drums) soundPrompt += "tight punchy drum transient ";
-        else if (lane.name == "BASS") soundPrompt += "deep controlled bass mono harmonic body ";
-        else if (lane.name == "SUB") soundPrompt += "pure clean sine sub mono lowpass controlled no highs ";
-        else if (lane.name == "CHORDS" || lane.name == "PAD") soundPrompt += "wide musical harmony ";
-        else if (lane.name == "LEAD") soundPrompt += "memorable emotional lead ";
-        else if (lane.name == "PLUCK") soundPrompt += "pluck rhythmic ";
+
+        // Role descriptions intentionally use the semantic vocabulary understood by
+        // PromptGenerator. The palette can now choose topology based on musical job,
+        // not merely lane name + a random adjective.
+        if(lane.name=="KICK")
+            soundPrompt += festival?"festival mainstage punchy kick tight dry hard transient ":
+                           (dnb?"tight fast punchy kick dry transient ":"tight punchy kick dry transient ");
+        else if(lane.name=="SNARE / CLAP")
+            soundPrompt += festival?"festival layered snare clap sharp wide transient ":
+                           "snare clap crisp transient controlled ";
+        else if(lane.name=="HATS")
+            soundPrompt += "bright crisp metallic hats short dry airy ";
+        else if(lane.name=="PERCUSSION")
+            soundPrompt += festival?"festival impact crash tom transition percussion powerful ":
+                           "clean percussion impact crash transition ";
+        else if(lane.name=="BASS")
+        {
+            if(dnb)soundPrompt += "aggressive moving reese bass controlled mono low end ";
+            else if(tech)soundPrompt += "clean mono bass short punchy dry lowpass ";
+            else if(festival)soundPrompt += "festival punchy bass controlled mono harmonic body ";
+            else soundPrompt += "deep controlled bass mono harmonic body ";
+        }
+        else if(lane.name=="SUB")
+            soundPrompt += "pure clean sine sub mono lowpass controlled dry no highs ";
+        else if(lane.name=="CHORDS")
+        {
+            if(festival||progressive)soundPrompt += "festival supersaw chords wide bright controlled anthem ";
+            else if(tech)soundPrompt += "short house chord stab warm tight ";
+            else if(trance)soundPrompt += "wide trance supersaw chords bright ";
+            else soundPrompt += "wide musical harmony chords ";
+        }
+        else if(lane.name=="PLUCK")
+        {
+            if(festival||progressive)soundPrompt += "bright festival pluck rhythmic crisp emotional ";
+            else if(tropical)soundPrompt += "organic woody marimba mallet pluck rhythmic ";
+            else soundPrompt += "pluck rhythmic clean articulated ";
+        }
+        else if(lane.name=="PAD")
+        {
+            if(cinematic)soundPrompt += "emotional string ensemble choir pad wide evolving cinematic ";
+            else if(progressive)soundPrompt += "emotional airy wide pad warm evolving ";
+            else soundPrompt += "wide musical harmony pad soft evolving ";
+        }
+        else if(lane.name=="LEAD")
+        {
+            if(festival)soundPrompt += "huge mainstage festival supersaw lead memorable emotional anthem ";
+            else if(progressive)soundPrompt += "emotional progressive supersaw lead memorable expressive ";
+            else if(trance)soundPrompt += "bright trance supersaw lead wide energetic ";
+            else soundPrompt += "memorable emotional lead expressive ";
+        }
+        else if(lane.name=="COUNTER")
+        {
+            if(cinematic)soundPrompt += "airy expressive flute counter melody thin complementary ";
+            else if(tropical)soundPrompt += "organic mallet counter melody light ";
+            else soundPrompt += "bright thin pluck counter melody complementary ";
+        }
+        else if(lane.name=="FX / TRANSITIONS")
+            soundPrompt += festival?"festival riser uplifter impact transition airy noise ":
+                           "riser impact transition atmospheric texture ";
         else soundPrompt += "clean atmospheric texture ";
         const float flavour = random01(domains.soundPalette, 0x9000ULL + static_cast<uint64_t>(i) * 0x9e37ULL);
         soundPrompt += flavour < .25f ? "warm soft spacious long release" :
@@ -770,7 +832,8 @@ void SongArrangement::finalizeSoundPalette()
             lane.sound.release=juce::jmin(.45f,lane.sound.release);
         }
 
-        lane.sound.name = lane.name + " • Generated";
+        const auto semanticName=lane.sound.name.replace("Generated ","").trim();
+        lane.sound.name=lane.name+" • "+(semanticName.isEmpty()?juce::String("Custom"):semanticName);
     }
 }
 
@@ -1618,22 +1681,46 @@ void SongArrangement::addFx(uint64_t seed)
     {
         const auto& s=sections[i];
         const double boundary=s.startBar*beatsPerBar;
-        if(s.startBar>0)
+        const float previousEnergy=i>0?sections[i-1].energy:s.energy;
+        const float energyDelta=s.energy-previousEnergy;
+        const bool lift=i>0&&energyDelta>.12f;
+        const bool release=i>0&&energyDelta<-.12f;
+        const bool majorArrival=s.name.contains("DROP")||s.name.contains("FINAL")||s.name.contains("CHORUS");
+
+        if(s.startBar>0&&lift)
         {
-            const double leadIn=(style==0?1.0:style==1?2.0:style==2?.5:4.0);
+            const double leadIn=s.name.contains("DROP")||s.name.contains("FINAL")?
+                (style==0?4.0:style==1?8.0:style==2?2.0:6.0):
+                (style==0?2.0:style==1?4.0:1.0);
             const int riserNote=81+(int)(random01(seed,810+i)*9.f);
-            addNote(fx,riserNote,juce::jmax(0.0,boundary-leadIn),juce::jmax(.25,leadIn-.08),
-                    62+(int)(s.energy*36.f)+(int)(random01(seed,820+i)*10.f));
-            if(random01(seed,830+i)>.25f)
-                addNote(fx,72+(int)(random01(seed,840+i)*12.f),boundary+.125,.35+random01(seed,850+i)*.8,
-                        68+(int)(s.energy*28.f));
+            addNote(fx,riserNote,juce::jmax(0.0,boundary-leadIn),juce::jmax(.35,leadIn-.08),
+                    juce::jlimit(58,122,66+(int)(s.energy*38.f)+(int)(random01(seed,820+i)*8.f)));
+
+            // Short pre-impact suck/air cue in the final half-beat.
+            if(majorArrival)
+                addNote(fx,92+(int)(random01(seed,825+i)*5.f),juce::jmax(0.0,boundary-.5),.38,
+                        juce::jlimit(60,112,72+(int)(s.energy*26.f)));
         }
-        if(s.energy>.75f)
+        else if(s.startBar>0&&release)
         {
-            addNote(fx,48+(style%2)*12,boundary,.20+random01(seed,860+i)*.35,
-                    juce::jlimit(70,127,90+(int)(s.energy*30.f)));
-            if(s.name.contains("FINAL") && random01(seed,870+i)>.3f)
-                addNote(fx,36,boundary+.5,.55,108);
+            // Downlifters only happen when the arrangement actually releases energy.
+            addNote(fx,55+(int)(random01(seed,830+i)*8.f),boundary,.75+random01(seed,831+i)*1.2,
+                    64+(int)(previousEnergy*25.f));
+        }
+        else if(s.startBar>0&&random01(seed,832+i)>.72f)
+        {
+            // Neutral section change gets a subtle marker, not a full riser every time.
+            addNote(fx,72+(int)(random01(seed,840+i)*8.f),boundary+.125,.30+random01(seed,850+i)*.45,
+                    58+(int)(s.energy*20.f));
+        }
+
+        if(majorArrival)
+        {
+            addNote(fx,48+(style%2)*12,boundary,.24+random01(seed,860+i)*.34,
+                    juce::jlimit(78,127,94+(int)(s.energy*28.f)));
+            if(s.name.contains("FINAL")||s.name.contains("DROP"))
+                addNote(fx,36,boundary+.5,.48+random01(seed,870+i)*.20,
+                        juce::jlimit(90,124,103+(int)(s.energy*18.f)));
         }
     }
     lanes.push_back(std::move(fx));
