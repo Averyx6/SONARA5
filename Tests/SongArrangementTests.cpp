@@ -436,6 +436,25 @@ int main()
     if(maxPluckOnsets>3)
     {std::cerr<<"v1.6 PLUCK is still over-filling bars\n";return 65;}
 
+    auto maxDistinctOnsetsPerBar=[&](const sonara::ArrangementLane& lane)
+    {
+        int maximum=0;
+        for(int bar=0;bar<rolePure.getBars();++bar)
+        {
+            std::set<int> onsets;
+            const double begin=bar*4.0,end=begin+4.0;
+            for(const auto& n:lane.notes)
+                if(n.beat>=begin&&n.beat<end)
+                    onsets.insert((int)std::llround((n.beat-begin)*16.0));
+            maximum=juce::jmax(maximum,(int)onsets.size());
+        }
+        return maximum;
+    };
+    if(maxDistinctOnsetsPerBar(*rpChords)>2)
+    {std::cerr<<"v1.6 CHORDS re-trigger more than twice per bar\n";return 66;}
+    if(maxDistinctOnsetsPerBar(*rpPad)>2)
+    {std::cerr<<"v1.6 PAD re-trigger more than twice per bar\n";return 67;}
+
     auto midi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-arrangement-test",".mid");
     if(!a.writeMidiFile(midi)||!midi.existsAsFile()||midi.getSize()<512){std::cerr<<"MIDI export failed\n";return 7;}
     midi.deleteFile();
