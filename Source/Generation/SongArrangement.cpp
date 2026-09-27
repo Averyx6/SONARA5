@@ -580,6 +580,40 @@ void SongArrangement::buildSongPlan(uint64_t seed)
         plan.phraseBars=4;
         plan.development=juce::jlimit(.48f,.68f,plan.development);
     }
+
+    // v1.5 explicit songwriter controls. These phrases are also exposed as UI
+    // suggestion chips, so the prompt can function like production direction.
+    if(p.contains("strong hook")||p.contains("clear hook")||p.contains("main melody"))
+    {
+        plan.phraseBars=4;plan.motifLength=juce::jlimit(4,5,plan.motifLength);
+        plan.development=juce::jmin(plan.development,.44f);
+        plan.density=juce::jlimit(.48f,.66f,plan.density);
+        plan.restAmount=juce::jmax(plan.restAmount,.14f);
+    }
+    if(p.contains("simple melody")||p.contains("clean melody")||p.contains("no random notes"))
+    {
+        plan.phraseBars=4;plan.motifLength=juce::jlimit(3,5,plan.motifLength);
+        plan.density=juce::jmin(plan.density,.56f);
+        plan.syncopation=juce::jmin(plan.syncopation,.28f);
+        plan.restAmount=juce::jmax(plan.restAmount,.18f);
+        plan.development=juce::jmin(plan.development,.38f);
+        plan.octaveRange=1;
+        plan.melodyArchetype=(plan.melodyArchetype%2==0)?0:4;
+    }
+    if(p.contains("less busy")||p.contains("more space"))
+    {
+        plan.density=juce::jmin(plan.density,.54f);
+        plan.restAmount=juce::jmax(plan.restAmount,.25f);
+        plan.syncopation=juce::jmin(plan.syncopation,.34f);
+    }
+    if(p.contains("radio structure")||p.contains("song structure"))
+        plan.structureStyle=0;
+    if(p.contains("powerful drop")||p.contains("massive drop"))
+    {
+        plan.chordMode=juce::jmax(plan.chordMode,2);
+        plan.hatMode=juce::jmax(plan.hatMode,1);
+        plan.bassMode=juce::jmin(plan.bassMode,2);
+    }
 }
 
 void SongArrangement::buildSections(uint64_t seed)
@@ -632,6 +666,11 @@ void SongArrangement::buildSections(uint64_t seed)
         lengths[0]=juce::jmax(lengths[0],8);
         lengths[5]=juce::jmax(lengths[5],12);
     }
+    if(p.contains("short intro")||p.contains("minimal intro"))lengths[0]=juce::jmin(lengths[0],4);
+    if(p.contains("big chorus")||p.contains("long chorus"))lengths[3]=juce::jmax(lengths[3],12);
+    if(p.contains("long drop")||p.contains("extended drop"))lengths[4]=juce::jmax(lengths[4],20);
+    if(p.contains("short breakdown"))lengths[5]=juce::jmin(lengths[5],4);
+    if(p.contains("long breakdown"))lengths[5]=juce::jmax(lengths[5],12);
 
     static constexpr const char* names[8] = {
         "INTRO","VERSE","BUILD","CHORUS","DROP","BREAKDOWN","BUILD 2","FINAL HOOK"
@@ -1307,6 +1346,8 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
     const bool progressive=p.contains("progressive house")||p.contains("melodic house");
     const bool trance=p.contains("trance");
     const bool tropical=p.contains("tropical");
+    const bool disableCounter=p.contains("no counter")||p.contains("no counter melody")
+        ||p.contains("main melody only")||p.contains("single lead");
 
     int architecture=plan.melodyArchetype%12;
     const bool mainstreamEdm=progressive||pop||trance||p.contains("festival")||p.contains("mainstage")
@@ -1693,7 +1734,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         const int leadNotesThisBar=(int)(lead.notes.size()-leadBeforeBar);
         const bool answerBar=motifBar==1;
         const bool counterSpace=leadNotesThisBar<=(finalHook?6:5);
-        if((drop||finalHook)&&!tech&&answerBar&&counterSpace)
+        if(!disableCounter&&(drop||finalHook)&&!tech&&answerBar&&counterSpace)
         {
             const uint64_t cs=mix64(domains.counter
                 ^ ((uint64_t)themeGroup+1ULL)*0x9e3779b97f4a7c15ULL
