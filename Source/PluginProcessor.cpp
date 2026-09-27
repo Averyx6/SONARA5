@@ -260,6 +260,31 @@ float internalTwoBarRepeat(const sonara::ArrangementLane* lane,
     return sectionRhythmOverlap(lane,section,&second);
 }
 
+float sectionPitchRhythmRecall(const sonara::ArrangementLane* lane,
+                               const sonara::ArrangementSection* a,
+                               const sonara::ArrangementSection* b)
+{
+    if(lane==nullptr||a==nullptr||b==nullptr)return 0.f;
+    struct Cell{int beat=0,pitch=0;};
+    std::vector<Cell> first,second;
+    const double aStart=a->startBar*4.0,bStart=b->startBar*4.0;
+    const double aEnd=aStart+16.0,bEnd=bStart+16.0;
+    for(const auto& n:lane->notes)
+    {
+        if(n.beat>=aStart&&n.beat<aEnd)
+            first.push_back({(int)std::llround((n.beat-aStart)*8.0),((n.note%12)+12)%12});
+        if(n.beat>=bStart&&n.beat<bEnd)
+            second.push_back({(int)std::llround((n.beat-bStart)*8.0),((n.note%12)+12)%12});
+    }
+    if(first.empty()||second.empty())return 0.f;
+    int matched=0;
+    for(const auto& x:first)
+        for(const auto& y:second)
+            if(x.beat==y.beat&&x.pitch==y.pitch){++matched;break;}
+    return juce::jlimit(0.f,1.f,matched/(float)juce::jmax<size_t>(1,juce::jmin(first.size(),second.size())));
+}
+
+
 float arrangementSpaceScore(const sonara::SongArrangement& song,const sonara::ArrangementSection* section)
 {
     if(section==nullptr)return .5f;
@@ -313,6 +338,7 @@ float productionQualityScore(const sonara::SongArrangement& song)
 
     const float motifRepeat=internalTwoBarRepeat(lead,drop);
     const float chorusDropRecall=chorus?sectionRhythmOverlap(lead,chorus,drop):.5f;
+    const float chorusDropPitchRecall=chorus?sectionPitchRhythmRecall(lead,chorus,drop):.5f;
     const float hookRecall=finalHook?sectionRhythmOverlap(lead,drop,finalHook):.5f;
     const float spaceScore=arrangementSpaceScore(song,drop);
 
@@ -347,11 +373,11 @@ float productionQualityScore(const sonara::SongArrangement& song)
     // Reward recognisable motif memory without demanding exact cloning.
     const float repeatShape=juce::jlimit(0.f,1.f,1.f-std::abs(motifRepeat-.72f)/.72f);
     const float recallShape=juce::jlimit(0.f,1.f,1.f-std::abs(hookRecall-.68f)/.68f);
-    const float chorusRecallShape=juce::jlimit(0.f,1.f,1.f-std::abs(chorusDropRecall-.78f)/.78f);
+    const float chorusRecallShape=juce::jlimit(0.f,1.f,1.f-std::abs(chorusDropRecall-.88f)/.88f);
     return juce::jlimit(0.f,1.f,
-        sectionShape*.20f+repeatShape*.14f+chorusRecallShape*.15f+recallShape*.11f+
-        spaceScore*.12f+drumContrast*.10f+bassContrast*.07f+leadContrast*.05f+
-        leadDensityShape*.04f+kickDensityShape*.02f);
+        sectionShape*.18f+repeatShape*.11f+chorusRecallShape*.12f+chorusDropPitchRecall*.16f+
+        recallShape*.09f+spaceScore*.11f+drumContrast*.09f+bassContrast*.06f+
+        leadContrast*.04f+leadDensityShape*.03f+kickDensityShape*.01f);
 }
 
 float promptCompositionMatch(const juce::String& prompt,const sonara::SongArrangement& song)
@@ -374,7 +400,7 @@ float melodyQualityScore(const sonara::SongArrangement& song)
     const auto* lead=laneNamed(song,"LEAD");
     if(lead==nullptr||lead->notes.size()<20)return 0.f;
 
-    int hugeLeaps=0,repeatedRun=1,maxRepeated=1;
+    int hugeLeaps=0,repeatedRun=1,maxRepeated=1,isolatedOutliers=0;
     int minNote=127,maxNote=0;
     double totalLength=0.0;
     std::array<bool,33> gapKinds{};
@@ -398,6 +424,16 @@ float melodyQualityScore(const sonara::SongArrangement& song)
         }
     }
 
+    for(size_t i=1;i+1<lead->notes.size();++i)
+    {
+        const auto& prev=lead->notes[i-1];
+        const auto& cur=lead->notes[i];
+        const auto& next=lead->notes[i+1];
+        if(std::abs(cur.note-prev.note)>7&&std::abs(cur.note-next.note)>7
+           &&std::abs(prev.note-next.note)<=5&&cur.length<.60)
+            ++isolatedOutliers;
+    }
+
     const float leapRatio=(float)hugeLeaps/(float)juce::jmax<size_t>(1,lead->notes.size()-1);
     const float rangeScore=juce::jlimit(0.f,1.f,1.f-std::abs((float)(maxNote-minNote)-24.f)/36.f);
     const float leapScore=juce::jlimit(0.f,1.f,1.f-leapRatio*3.8f);
@@ -406,11 +442,13 @@ float melodyQualityScore(const sonara::SongArrangement& song)
     const float avgLength=(float)(totalLength/(double)lead->notes.size());
     const float lengthScore=juce::jlimit(0.f,1.f,1.f-std::abs(avgLength-.38f)/.75f);
     const float density=(float)lead->notes.size()/(float)juce::jmax(1,song.getBars());
-    const float densityScore=juce::jlimit(0.f,1.f,1.f-std::abs(density-2.8f)/3.5f);
+    const float densityScore=juce::jlimit(0.f,1.f,1.f-std::abs(density-2.55f)/3.2f);
+    const float outlierRatio=isolatedOutliers/(float)juce::jmax<size_t>(1,lead->notes.size());
+    const float outlierScore=juce::jlimit(0.f,1.f,1.f-outlierRatio*12.f);
 
     return juce::jlimit(0.f,1.f,
-        rangeScore*.17f+leapScore*.23f+repeatScore*.18f+
-        rhythmScore*.18f+lengthScore*.10f+densityScore*.14f);
+        rangeScore*.14f+leapScore*.18f+repeatScore*.15f+
+        rhythmScore*.14f+lengthScore*.09f+densityScore*.12f+outlierScore*.18f);
 }
 
 juce::ValueTree makeLaneMixTree(const SonaraAudioProcessor& p)
