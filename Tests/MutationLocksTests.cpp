@@ -77,6 +77,17 @@ int main(){
  const auto staccato=generator.generate("warm lead staccato short decay",609);
  if(!(legato.release>staccato.release*2.f&&legato.sustain>staccato.sustain))return fail("articulation language did not alter envelope");
 
+ const auto rave=generator.generate("future rave stab powerful",701);
+ const auto donk=generator.generate("bouncy donk bounce bass",702);
+ const auto glass=generator.generate("glassy crystal pluck",703);
+ const auto laser=generator.generate("bright laser zap fx",704);
+ const auto wub=generator.generate("aggressive dubstep wobble wub bass",705);
+ if(rave.name!="Generated Future Rave"||rave.filterMode!=sonara::FilterMode::bandpass||rave.drive<.18f)return fail("future-rave semantic design missing");
+ if(donk.name!="Generated Donk Bass"||donk.pitchEnv<16.f||donk.transientLevel<.30f||donk.width>.08f)return fail("donk/bounce bass semantic design missing");
+ if(glass.name!="Generated Glass Pluck"||glass.fmAmount<.30f||glass.sustain>.08f)return fail("glass-pluck semantic design missing");
+ if(laser.name!="Generated Laser"||laser.pitchEnv<28.f||laser.filterMode!=sonara::FilterMode::highpass)return fail("laser/zap semantic design missing");
+ if(wub.name!="Generated Wub Bass"||wub.lfoCutoff<.58f||wub.drive<.20f||wub.width>.20f)return fail("wub/wobble semantic design missing");
+
  if(generator.generate("gated square lfo bass",21).lfoShape!=sonara::LfoShape::square)return fail("square LFO prompt intent"); if(generator.generate("rising lfo animated pad",22).lfoShape!=sonara::LfoShape::sawUp)return fail("rising LFO prompt intent"); if(generator.generate("falling lfo texture",23).lfoShape!=sonara::LfoShape::sawDown)return fail("falling LFO prompt intent"); if(generator.generate("triangle lfo evolving texture",24).lfoShape!=sonara::LfoShape::triangle)return fail("triangle LFO prompt intent"); if(generator.generate("vibrato gated lead",25).lfoShape!=sonara::LfoShape::sine)return fail("vibrato must use smooth sine LFO");
  auto similarSource=generator.generate("high-pass animated texture",14); similarSource.filterMode=sonara::FilterMode::bandpass; similarSource.lfoShape=sonara::LfoShape::sawUp; const auto similar=generator.mutate(similarSource,15,.18f); if(similar.filterMode!=sonara::FilterMode::bandpass)return fail("similar generation changed discrete filter topology"); if(similar.lfoShape!=sonara::LfoShape::sawUp)return fail("similar generation changed discrete LFO shape");
  const sonara::MutationLocks none; const auto mutated=generator.mutate(source,0xabcdefULL,1.f,none); if(same(mutated.attack,source.attack)&&same(mutated.cutoff,source.cutoff)&&same(mutated.oscAMorph,source.oscAMorph))return fail("unlocked mutation did not evolve"); const auto repeated=generator.mutate(source,0xabcdefULL,1.f,none); if(!same(repeated.attack,mutated.attack)||!same(repeated.lfoRate,mutated.lfoRate)||!same(repeated.chorus,mutated.chorus)||repeated.filterMode!=mutated.filterMode||repeated.lfoShape!=mutated.lfoShape)return fail("mutation is not deterministic");
