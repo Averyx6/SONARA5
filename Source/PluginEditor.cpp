@@ -197,7 +197,7 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     setLookAndFeel(&look);setSize(1320,820);setResizable(true,true);setResizeLimits(1180,720,1900,1200);setOpaque(true);
     soundPrompt.setText("Future rave lead, aggressive bright festival, wide fast attack");
     songPrompt.setText("Emotional progressive house, 128 BPM, F minor, huge memorable lead, warm chords, deep bass, powerful evolving drop");
-    for(auto* editor:{&soundPrompt,&songPrompt})
+    for(auto* editor:{&soundPrompt,&songPrompt,&laneSoundPrompt})
     {
         editor->setMultiLine(false);
         editor->setFont(14.f);
@@ -208,11 +208,13 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     }
     soundPrompt.setTextToShowWhenEmpty("Describe one custom sound...",dim);
     songPrompt.setTextToShowWhenEmpty("Describe the whole song: genre, key, BPM, energy, drop, instruments...",dim);
+    laneSoundPrompt.setTextToShowWhenEmpty("Describe ONLY the selected lane sound: e.g. warm supersaw lead, clean pluck, donk bass...",dim);
 
-    std::array<juce::Button*,39> buttons {&generateSound,&generateTrack,&generateDrums,&randomizeEverythingButton,&surpriseMe,&similar,&mutate,&randomize,&undo,&redo,
+    std::array<juce::Button*,41> buttons {&generateSound,&generateTrack,&generateDrums,&randomizeEverythingButton,&surpriseMe,&similar,&mutate,&randomize,&undo,&redo,
         &variation1,&variation2,&variation3,&variation4,&captureA,&captureB,&recallA,&recallB,&connect,&previewSound,&playSong,&stop,
         &dragPreviewMidi,&dragFullMidi,&dragLaneMidi,&dragReferenceMidi,&dragFullAudio,&dragLaneAudio,&dragStems,
-        &loadReference,&importMidi,&resound,&rebuildReference,&saveSoundButton,&loadSoundButton,&saveProjectButton,&loadProjectButton,&exportMixButton,&exportStemsButton};
+        &loadReference,&importMidi,&resound,&rebuildReference,&saveSoundButton,&loadSoundButton,&saveProjectButton,&loadProjectButton,&exportMixButton,&exportStemsButton,
+        &applyLaneSound,&autoLaneSound};
     for(auto* b:buttons){addAndMakeVisible(*b);styleButton(*b,b==&generateSound||b==&generateTrack||b==&generateDrums||b==&randomizeEverythingButton||b==&surpriseMe||b==&playSong||b==&resound||b==&rebuildReference||b==&exportMixButton||b==&exportStemsButton);}
 
     juce::TextButton* tabs[]={&tabInstrument,&tabSong,&tabDrums,&tabFx,&tabReference,&tabMidi,&tabExport};
@@ -260,6 +262,14 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     }
 
     generateSound.onClick=[this]{p.generatePatch(soundPrompt.getText());};
+    applyLaneSound.onClick=[this]{
+        if(!p.setSelectedLaneSound(laneSoundPrompt.getText(),false))
+            showStatus("Select a lane and describe its sound first");
+    };
+    autoLaneSound.onClick=[this]{
+        if(!p.setSelectedLaneSound({},true))
+            showStatus("Select a lane first");
+    };
     generateTrack.onClick=[this]{p.generateTrack(songPrompt.getText());bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);setTab(1);};
     generateDrums.onClick=[this]{p.regenerateDrums(songPrompt.getText());p.setSelectedLane(0);setTab(2);};
     randomizeEverythingButton.onClick=[this]{
@@ -384,7 +394,8 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     soundView.setVisible(instrumentTab);
     referenceSummary.setVisible(referenceTab);
     soundPrompt.setVisible(instrumentTab);
-    songPrompt.setVisible(!instrumentTab);
+    songPrompt.setVisible(!instrumentTab&&!mixTab);
+    laneSoundPrompt.setVisible(mixTab);
 
     generateSound.setVisible(instrumentTab);
     similar.setVisible(instrumentTab);
@@ -396,6 +407,8 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     randomizeEverythingButton.setVisible(songTab);
     surpriseMe.setVisible(songTab);
     generateDrums.setVisible(drumsTab);
+    applyLaneSound.setVisible(mixTab);
+    autoLaneSound.setVisible(mixTab);
 
     for(auto* b:std::array<juce::Component*,4>{&loadReference,&importMidi,&resound,&rebuildReference})b->setVisible(referenceTab);
     for(auto* b:std::array<juce::Component*,6>{&saveSoundButton,&loadSoundButton,&saveProjectButton,&loadProjectButton,&exportMixButton,&exportStemsButton})b->setVisible(exportTab);
@@ -488,8 +501,10 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
     g.drawRoundedRectangle(252,118,(float)getWidth()-516,(float)getHeight()-195,12,1);
 
     g.setColour(cyan.withAlpha(.72f));g.setFont(9.f);
-    g.drawText(instrumentTab?"SOUND PROMPT • SOUND DESIGN ONLY":"SONG / ARRANGEMENT PROMPT • COMPOSITION + GROOVE + STRUCTURE",
-               270,120,getWidth()-570,15,juce::Justification::left);
+    const juce::String promptTitle=instrumentTab?"SOUND PROMPT • SOUND DESIGN ONLY":
+        (activeTab==3?"SELECTED LANE SOUND PROMPT • OVERRIDES ONLY THIS INSTRUMENT":
+                      "SONG / ARRANGEMENT PROMPT • COMPOSITION + GROOVE + STRUCTURE");
+    g.drawText(promptTitle,270,120,getWidth()-570,15,juce::Justification::left);
 
     if(instrumentTab)
     {
@@ -647,6 +662,7 @@ void SonaraAudioProcessorEditor::resized()
     const int cx=270,cw=w-550;
     soundPrompt.setBounds(cx,138,cw,36);
     songPrompt.setBounds(cx,138,cw,36);
+    laneSoundPrompt.setBounds(cx,138,cw,36);
 
     auto layoutRow=[&](std::initializer_list<juce::Component*> items,int y,int height=38)
     {
@@ -662,6 +678,7 @@ void SonaraAudioProcessorEditor::resized()
         case 0: layoutRow({&generateSound,&similar,&mutate,&randomize,&undo,&redo},184); break;
         case 1: layoutRow({&generateTrack,&randomizeEverythingButton,&surpriseMe},184); break;
         case 2: layoutRow({&generateDrums},184); break;
+        case 3: layoutRow({&applyLaneSound,&autoLaneSound},184); break;
         case 4: layoutRow({&loadReference,&importMidi,&resound,&rebuildReference},184); break;
         case 6: layoutRow({&saveSoundButton,&loadSoundButton,&saveProjectButton,&loadProjectButton,&exportMixButton,&exportStemsButton},184); break;
         default: break;
