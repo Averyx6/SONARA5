@@ -108,6 +108,13 @@ private:
         juce::TextButton("Dream Pad"), juce::TextButton("Tech House Bass"), juce::TextButton("Cinematic Bell"), juce::TextButton("Experimental")
     }};
 
+    std::array<juce::TextButton,10> promptSuggestions {{
+        juce::TextButton("STRONG HOOK"), juce::TextButton("SIMPLE MELODY"), juce::TextButton("SHORT INTRO"),
+        juce::TextButton("BIG CHORUS"), juce::TextButton("LONG DROP"), juce::TextButton("DRUM BUILD"),
+        juce::TextButton("RADIO STRUCTURE"), juce::TextButton("POWERFUL DROP"), juce::TextButton("MORE SPACE"),
+        juce::TextButton("NO COUNTER")
+    }};
+
     SoundDNAView soundView{p};
     TimelineView timeline{p};
     PianoRollView pianoRoll{p};
