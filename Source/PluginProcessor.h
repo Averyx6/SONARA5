@@ -79,6 +79,7 @@ public:
     void setMacro(Macro,float normalized);
     void setLaneMix(int laneIndex,LaneMixParameter,float value) noexcept;
     LaneMixState getLaneMix(int laneIndex) const noexcept;
+    bool setSelectedLaneSound(const juce::String& prompt,bool automatic=false);
     const sonara::SoundDNA& currentPatch()const{return engine.patch();}
     sonara::MutationLocks& mutationLocks() noexcept { return locks; }
     const sonara::MutationLocks& mutationLocks() const noexcept { return locks; }
