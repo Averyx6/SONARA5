@@ -355,6 +355,55 @@ int main()
     if(!(avgLength(*genreLeads[2])>avgLength(*genreLeads[0])*1.25))
     {std::cerr<<"Cinematic/tech melody articulation not distinct enough\n";return 23;}
 
+
+    // v0.8 production-intent acceptance: explicit arrangement language must
+    // influence structure and all support lanes should behave like one production.
+    sonara::SongArrangement festivalSmart;
+    festivalSmart.generate("huge festival mainstage progressive house 128 BPM F minor memorable anthem",128.0,0x880011ULL);
+    const sonara::ArrangementSection* festBuild=nullptr;
+    const sonara::ArrangementSection* festDrop=nullptr;
+    const sonara::ArrangementSection* festFinal=nullptr;
+    for(const auto& s:festivalSmart.getSections())
+    {
+        if(s.name=="BUILD")festBuild=&s;
+        else if(s.name=="DROP")festDrop=&s;
+        else if(s.name=="FINAL HOOK")festFinal=&s;
+    }
+    if(!festBuild||!festDrop||!festFinal||festBuild->bars<8||festDrop->bars<16||festFinal->bars<12)
+    {std::cerr<<"Festival production intent did not reshape song structure\n";return 36;}
+
+    const auto* festBass=findLane(festivalSmart,"BASS");
+    const auto* festPluck=findLane(festivalSmart,"PLUCK");
+    const auto* festLead=findLane(festivalSmart,"LEAD");
+    const auto* festChords=findLane(festivalSmart,"CHORDS");
+    if(!festBass||!festPluck||!festLead||!festChords)
+    {std::cerr<<"Festival smart-production lane missing\n";return 37;}
+    if(twoBarMotifRhythmOverlap(*festBass,*festDrop)<.70||twoBarMotifRhythmOverlap(*festPluck,*festDrop)<.70)
+    {std::cerr<<"Support lanes do not preserve coherent two-bar production motifs\n";return 38;}
+    if(!festLead->sound.name.containsIgnoreCase("Festival Lead")
+       ||!festChords->sound.name.containsIgnoreCase("Festival Chords")
+       ||!festPluck->sound.name.containsIgnoreCase("Festival Pluck"))
+    {std::cerr<<"Finalized SoundDNA palette lost semantic role identity\n";return 39;}
+
+    sonara::SongArrangement earlyDrop;
+    earlyDrop.generateComposition("emotional house 128 BPM F minor early drop",128.0,0x880022ULL);
+    const sonara::ArrangementSection *earlyIntro=nullptr,*earlyVerse=nullptr,*earlyBuild=nullptr;
+    for(const auto& s:earlyDrop.getSections())
+    {
+        if(s.name=="INTRO")earlyIntro=&s;
+        else if(s.name=="VERSE")earlyVerse=&s;
+        else if(s.name=="BUILD")earlyBuild=&s;
+    }
+    if(!earlyIntro||!earlyVerse||!earlyBuild||earlyIntro->bars>4||earlyVerse->bars>4||earlyBuild->bars>4)
+    {std::cerr<<"Early-drop prompt did not shorten pre-drop structure\n";return 40;}
+
+    sonara::SongArrangement longBuild;
+    longBuild.generateComposition("progressive house 128 BPM F minor long build",128.0,0x880033ULL);
+    const sonara::ArrangementSection* longBuildSection=nullptr;
+    for(const auto& s:longBuild.getSections())if(s.name=="BUILD"){longBuildSection=&s;break;}
+    if(!longBuildSection||longBuildSection->bars<12)
+    {std::cerr<<"Long-build prompt did not extend build section\n";return 41;}
+
     sonara::SongArrangement deterministic;
     deterministic.generate(prompt,120.0,123456789ULL);
     if(deterministic.getLanes().size()!=a.getLanes().size()){std::cerr<<"Determinism lane count failed\n";return 18;}
