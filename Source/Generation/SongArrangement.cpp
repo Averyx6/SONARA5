@@ -586,10 +586,11 @@ void SongArrangement::buildSections(uint64_t seed)
 {
     struct Layout { int lengths[8]; };
     static constexpr Layout layouts[] = {
-        {{8,8,8,12,8,8,4,16}},
-        {{4,12,8,16,8,8,4,12}},
-        {{8,8,4,16,12,8,4,12}},
-        {{4,8,8,12,8,12,8,12}}
+        // INTRO, VERSE, BUILD, CHORUS, DROP, BREAKDOWN, BUILD 2, FINAL HOOK
+        {{8,8,8,8,16,8,8,16}},
+        {{4,12,8,8,16,8,8,12}},
+        {{8,8,4,8,16,12,8,12}},
+        {{4,8,8,8,12,8,8,12}}
     };
 
     const int style = plan.structureStyle;
@@ -601,9 +602,10 @@ void SongArrangement::buildSections(uint64_t seed)
     if(festival)
     {
         lengths[2]=juce::jmax(lengths[2],8);   // BUILD
-        lengths[3]=juce::jmax(lengths[3],16); // DROP
-        lengths[6]=juce::jmax(lengths[6],8);  // BUILD 2
-        lengths[7]=juce::jmax(lengths[7],12); // FINAL HOOK
+        lengths[3]=juce::jmax(lengths[3],8);   // CHORUS
+        lengths[4]=juce::jmax(lengths[4],16);  // DROP
+        lengths[6]=juce::jmax(lengths[6],8);   // BUILD 2
+        lengths[7]=juce::jmax(lengths[7],12);  // FINAL HOOK
     }
     if(p.contains("early drop"))
     {
@@ -620,21 +622,22 @@ void SongArrangement::buildSections(uint64_t seed)
     {
         lengths[0]=juce::jmin(lengths[0],4);
         lengths[1]=juce::jmin(lengths[1],8);
-        lengths[3]=juce::jmin(lengths[3],12);
-        lengths[4]=juce::jmin(lengths[4],8);
+        lengths[3]=juce::jmin(lengths[3],8);
+        lengths[4]=juce::jmin(lengths[4],12);
+        lengths[5]=juce::jmin(lengths[5],8);
         lengths[7]=juce::jmin(lengths[7],12);
     }
     if(p.contains("cinematic"))
     {
         lengths[0]=juce::jmax(lengths[0],8);
-        lengths[4]=juce::jmax(lengths[4],12);
+        lengths[5]=juce::jmax(lengths[5],12);
     }
 
     static constexpr const char* names[8] = {
-        "INTRO","VERSE","BUILD","DROP","BREAKDOWN","CHORUS","BUILD 2","FINAL HOOK"
+        "INTRO","VERSE","BUILD","CHORUS","DROP","BREAKDOWN","BUILD 2","FINAL HOOK"
     };
     static constexpr float energy[8] = {
-        .18f,.40f,.66f,.96f,.30f,.76f,.82f,1.00f
+        .18f,.40f,.68f,.80f,.98f,.30f,.84f,1.00f
     };
 
     sections.clear();
@@ -1220,11 +1223,12 @@ void SongArrangement::addHarmony(uint64_t seed)
         // chord, then mixes chord tones with scale passing tones.
         if((energy>.5f||chorus)&&!breakdown)
         {
-            const int steps=(drop||finalHook)?8:(chorus?6:(build?6:4));
+            // Supporting plucks must frame the hook, not machine-gun underneath it.
+            const int steps=(finalHook?6:(drop?4:(chorus?4:(build?4:3))));
             for(int i=0;i<steps;++i)
             {
                 const uint64_t ps=(uint64_t)i;
-                if(i>0&&random01(pluckMotifSeed,0x8100+ps)<(drop?.08f:.20f))continue;
+                if(i>0&&random01(pluckMotifSeed,0x8100+ps)<((drop||chorus)?.16f:.24f))continue;
 
                 double pos=i*(4.0/steps);
                 if(i%2&&random01(pluckMotifSeed,0x8110+ps)<.45f)
@@ -1354,7 +1358,9 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
 
         // DROP and FINAL HOOK share a recognizable song identity, but the final hook
         // develops it. Other sections get genuinely separate theme seeds.
-        const int themeGroup=(drop||finalHook)?3:(chorus?5:sectionIndex);
+        // CHORUS introduces the song's primary hook. DROP and FINAL HOOK develop
+        // that same identity instead of inventing another melody.
+        const int themeGroup=(chorus||drop||finalHook)?3:sectionIndex;
 
         // One section/theme owns a stable motif. Earlier builds re-rolled the
         // starting degree and rhythm family every bar, creating technically
@@ -1386,16 +1392,17 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         if(architecture==4)count=juce::jlimit(2,4,count);  // lyrical
         if(architecture==5)count=juce::jmax(count,6);      // sync riff
         if(architecture==10)count=juce::jmax(count,5);     // offbeat hook
-        if(plan.density>.80f&&!cinematic)count=juce::jmin(8,count+1);
+        if(plan.density>.80f&&!cinematic)count=juce::jmin(6,count+1);
         if(plan.density<.52f)count=juce::jmax(2,count-1);
 
-        // Section orchestration matters as much as note choice. Verse/breakdown
-        // leave breathing room, builds become busier, and drops/final hooks carry
-        // the full motif instead of every section behaving like the same loop.
-        if(verse)count=juce::jmax(2,count-1);
-        if(breakdown)count=juce::jmin(count,3);
-        if(build)count=juce::jmin(8,count+1);
-        if(drop||finalHook)count=juce::jmax(count,4);
+        // v1.1 note-budget: the hook must be readable at a glance and singable.
+        // No section is allowed to become an eight-note-per-bar event cloud.
+        if(verse)count=juce::jlimit(2,4,count-1);
+        else if(breakdown)count=juce::jlimit(2,3,count);
+        else if(build)count=juce::jlimit(3,4,count);
+        else if(chorus)count=juce::jlimit(3,5,count);
+        else if(drop||finalHook)count=juce::jlimit(4,5,count);
+        else count=juce::jmin(count,4);
 
         double positions[8]{};
         for(int i=0;i<count;++i)positions[i]=rhythmPos[family][i];
@@ -1443,8 +1450,9 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             const bool strong=positions[i]<.08||std::abs(std::fmod(positions[i],1.0))<.08;
 
             float restChance=plan.restAmount;
-            if(drop||finalHook)restChance*=.34f;
-            if(verse)restChance*=1.18f;
+            if(chorus)restChance=juce::jmax(.10f,restChance*.70f);
+            if(drop||finalHook)restChance=juce::jmax(.08f,restChance*.58f);
+            if(verse)restChance=juce::jmax(.16f,restChance*1.28f);
             if(breakdown)restChance=juce::jmax(restChance,.30f);
             if(tech)restChance=juce::jmax(restChance,.24f);
             if(architecture==3)restChance*=.55f; // already sparse by construction
