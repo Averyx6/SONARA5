@@ -242,6 +242,88 @@ int main()
     if(!pluckLane||maxNotesPerBar(*pluckLane,*dropSection)>4)
     {std::cerr<<"v1.1 supporting pluck is over-filling the drop\n";return 48;}
 
+    auto averageNotesPerBar=[&](const sonara::ArrangementLane& lane,const sonara::ArrangementSection& section)
+    {
+        int count=0;
+        const double begin=section.startBar*4.0;
+        const double end=(section.startBar+section.bars)*4.0;
+        for(const auto& n:lane.notes)if(n.beat>=begin&&n.beat<end)++count;
+        return count/(double)juce::jmax(1,section.bars);
+    };
+
+    const sonara::ArrangementSection *introSection=nullptr,*verseSection=nullptr,*buildSection=nullptr;
+    for(const auto& s:a.getSections())
+    {
+        if(s.name=="INTRO")introSection=&s;
+        else if(s.name=="VERSE")verseSection=&s;
+        else if(s.name=="BUILD")buildSection=&s;
+    }
+    if(!introSection||!verseSection||!buildSection)
+    {std::cerr<<"v1.3 songwriter section missing\n";return 49;}
+
+    const double verseLeadDensity=averageNotesPerBar(*firstLead,*verseSection);
+    const double buildLeadDensity=averageNotesPerBar(*firstLead,*buildSection);
+    const double chorusLeadDensity=averageNotesPerBar(*firstLead,*chorusSection);
+    const double dropLeadDensity=averageNotesPerBar(*firstLead,*dropSection);
+    const double breakLeadDensity=averageNotesPerBar(*firstLead,*breakdownSection);
+
+    if(!(chorusLeadDensity>verseLeadDensity+.35
+         && dropLeadDensity>=chorusLeadDensity*.85
+         && breakLeadDensity<chorusLeadDensity*.72
+         && buildLeadDensity<chorusLeadDensity*.80))
+    {
+        std::cerr<<"v1.3 section melody hierarchy does not create verse/build/chorus/drop contrast\n";
+        return 50;
+    }
+
+    int introLeadNotes=0,buildFirstHalfNotes=0;
+    const double introStart=introSection->startBar*4.0;
+    const double introEnd=(introSection->startBar+introSection->bars)*4.0;
+    const double buildStart=buildSection->startBar*4.0;
+    const double buildHalf=(buildSection->startBar+buildSection->bars/2)*4.0;
+    for(const auto& n:firstLead->notes)
+    {
+        if(n.beat>=introStart&&n.beat<introEnd)++introLeadNotes;
+        if(n.beat>=buildStart&&n.beat<buildHalf)++buildFirstHalfNotes;
+    }
+    if(introLeadNotes>4||buildFirstHalfNotes!=0)
+    {std::cerr<<"v1.3 intro/build still behave like continuous full-melody sections\n";return 51;}
+
+    // Chorus and drop must share a recognisable four-bar rhythmic hook.
+    auto fourBarRhythm=[&](const sonara::ArrangementSection& section)
+    {
+        std::set<int> values;
+        const double start=section.startBar*4.0;
+        const double end=start+16.0;
+        for(const auto& n:firstLead->notes)
+            if(n.beat>=start&&n.beat<end)
+                values.insert((int)std::llround((n.beat-start)*8.0));
+        return values;
+    };
+    const auto chorusRhythm=fourBarRhythm(*chorusSection);
+    const auto dropRhythm=fourBarRhythm(*dropSection);
+    int sharedRhythm=0;
+    for(const int v:chorusRhythm)if(dropRhythm.count(v)>0)++sharedRhythm;
+    const double hookOverlap=sharedRhythm/(double)juce::jmax<size_t>(1,juce::jmin(chorusRhythm.size(),dropRhythm.size()));
+    if(hookOverlap<.68)
+    {std::cerr<<"v1.3 chorus/drop no longer share an audible hook rhythm\n";return 52;}
+
+    // Real pre-drop drum tension: final chorus bar must contain an escalating roll,
+    // then leave the final half-beat free of kick before the drop crash.
+    const double lastChorusBar=(chorusSection->startBar+chorusSection->bars-1)*4.0;
+    int preDropRollHits=0,preDropRollMaxVelocity=0;
+    for(const auto& n:snareLane->notes)
+        if(n.beat>=lastChorusBar+2.0&&n.beat<lastChorusBar+3.5)
+        {
+            ++preDropRollHits;
+            preDropRollMaxVelocity=juce::jmax(preDropRollMaxVelocity,n.velocity);
+        }
+    bool lateKick=false;
+    for(const auto& n:kickLane->notes)
+        if(n.beat>=lastChorusBar+3.0&&n.beat<lastChorusBar+4.0)lateKick=true;
+    if(preDropRollHits<7||preDropRollMaxVelocity<112||lateKick)
+    {std::cerr<<"v1.3 chorus-to-drop drum roll/tension is missing or has no breathing gap\n";return 53;}
+
     auto midi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-arrangement-test",".mid");
     if(!a.writeMidiFile(midi)||!midi.existsAsFile()||midi.getSize()<512){std::cerr<<"MIDI export failed\n";return 7;}
     midi.deleteFile();
