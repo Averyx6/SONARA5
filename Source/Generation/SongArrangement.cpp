@@ -1209,7 +1209,8 @@ void SongArrangement::addHarmony(uint64_t seed)
                 int note=rootMidi+scaleSemitoneForDegree(h->scaleDegree)-24;
                 while(note<24)note+=12;
                 while(note>47)note-=12;
-                const double len=subCount==1?juce::jmin(3.30,4.0-pos):juce::jmin(1.45,4.0-pos);
+                const double rawLen=subCount==1?juce::jmin(3.30,4.0-pos):juce::jmin(1.45,4.0-pos);
+                const double len=preDropGap?juce::jmin(rawLen,juce::jmax(.08,3.45-pos)):rawLen;
                 addNote(sub,note,barBeat+pos,len,
                         juce::jlimit(52,96,60+(int)(energy*22.f)+(int)(random01(domains.sub,0x7420+bs+i)*8.f)));
             }
