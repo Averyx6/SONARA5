@@ -85,7 +85,7 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
     engines.reserve((size_t)musicalCount);
 
     static constexpr int voiceBudget[expectedMusical]={1,1,3,2,3,3,2,1};
-    static constexpr float laneGain[expectedMusical]={.60f,.38f,.36f,.32f,.26f,.58f,.27f,.18f};
+    static constexpr float laneGain[expectedMusical]={.64f,.42f,.37f,.27f,.21f,.84f,.18f,.15f};
     static constexpr float hpHz[expectedMusical]={28.f,18.f,120.f,125.f,160.f,120.f,150.f,110.f};
     static constexpr float fxSend[expectedMusical]={0.f,0.f,.14f,.10f,.18f,.12f,.08f,.15f};
 
@@ -112,7 +112,9 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
     reverb.setParameters(rp);
 
     std::array<DrumTrigger,256> triggers{};
-    juce::AudioBuffer<float> block(2,blockSize),fxBus(2,blockSize);
+    std::array<float,blockSize> duckEnvelope{};
+    float duckState=0.f;
+    juce::AudioBuffer<float> block(2,blockSize),fxBus(2,blockSize),drumBus(2,blockSize);
     std::array<float,2> masterX{},masterY{};
 
     const double spb=sampleRate*60.0/a.getBpm();
@@ -121,7 +123,42 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
     for(int64_t startSample=0;startSample<total;startSample+=blockSize)
     {
         const int n=(int)juce::jmin<int64_t>(blockSize,total-startSample);
-        block.clear();fxBus.clear();
+        block.clear();fxBus.clear();drumBus.clear();
+
+        const double blockBeat=(double)startSample/spb;
+        const int blockBar=juce::jlimit(0,juce::jmax(0,a.getBars()-1),(int)std::floor(blockBeat/4.0));
+        juce::String blockSection;
+        for(const auto& s:a.getSections())
+            if(blockBar>=s.startBar&&blockBar<s.startBar+s.bars){blockSection=s.name;break;}
+        const bool mixIntro=blockSection=="INTRO";
+        const bool mixVerse=blockSection=="VERSE";
+        const bool mixBuild=blockSection.contains("BUILD");
+        const bool mixChorus=blockSection=="CHORUS";
+        const bool mixDrop=blockSection=="DROP";
+        const bool mixBreakdown=blockSection=="BREAKDOWN";
+        const bool mixFinal=blockSection=="FINAL HOOK";
+
+        int count=0;
+        for(int lane=0;lane<juce::jmin(4,(int)lanes.size())&&count<(int)triggers.size();++lane)
+            count+=collectDrumTriggers(lanes[(size_t)lane],startSample,n,a.getBpm(),sampleRate,
+                                      triggers.data()+count,(int)triggers.size()-count);
+        std::sort(triggers.begin(),triggers.begin()+count,
+                  [](const DrumTrigger&x,const DrumTrigger&y){return x.sampleOffset<y.sampleOffset;});
+
+        const float duckRelease=std::exp(-1.f/(float)(sampleRate*.18));
+        float duck=duckState;int triggerIndex=0;
+        for(int s=0;s<n;++s)
+        {
+            while(triggerIndex<count&&triggers[(size_t)triggerIndex].sampleOffset<=s)
+            {
+                const auto& trigger=triggers[(size_t)triggerIndex];
+                if(trigger.midiNote==36)duck=juce::jmax(duck,.65f+.35f*trigger.velocity);
+                ++triggerIndex;
+            }
+            duckEnvelope[(size_t)s]=duck;
+            duck*=duckRelease;
+        }
+        duckState=duck;
 
         for(int i=0;i<musicalCount;++i)
         {
@@ -188,7 +225,34 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
                 }
             }
 
-            const float gain=laneGain[i]*juce::jlimit(0.f,1.5f,mixState.level);
+            const float duckDepth=i==1?.54f:(i==0?.46f:(i==2?.28f:(i==4?.20f:0.f)));
+            if(duckDepth>0.f)
+            {
+                for(int ch=0;ch<s.getNumChannels();++ch)
+                {
+                    auto* d=s.getWritePointer(ch);
+                    for(int smp=0;smp<n;++smp)
+                        d[smp]*=1.f-duckDepth*duckEnvelope[(size_t)smp];
+                }
+            }
+
+            float sectionGain=1.f;
+            if(i==5)
+                sectionGain=mixIntro?.62f:(mixVerse?.76f:(mixBuild?.84f:(mixChorus?1.02f:(mixDrop?1.14f:(mixBreakdown?.66f:(mixFinal?1.18f:1.f))))));
+            else if(i==0)
+                sectionGain=mixIntro?.50f:(mixVerse?.80f:(mixBuild?.88f:(mixChorus?.96f:(mixDrop?1.12f:(mixBreakdown?.48f:(mixFinal?1.14f:1.f))))));
+            else if(i==1)
+                sectionGain=mixIntro?.25f:(mixVerse?.72f:(mixBuild?.82f:(mixChorus?.92f:(mixDrop?1.10f:(mixBreakdown?.30f:(mixFinal?1.12f:1.f))))));
+            else if(i==2)
+                sectionGain=mixIntro?.72f:(mixVerse?.78f:(mixBuild?.88f:(mixChorus?1.02f:(mixDrop?1.04f:(mixBreakdown?.74f:(mixFinal?1.08f:1.f))))));
+            else if(i==3)
+                sectionGain=mixIntro?.45f:(mixVerse?.62f:(mixBuild?.72f:(mixChorus?.70f:(mixDrop?.88f:(mixBreakdown?.40f:(mixFinal?.92f:1.f))))));
+            else if(i==4)
+                sectionGain=mixIntro?1.02f:(mixVerse?.88f:(mixBuild?.72f:(mixChorus?.52f:(mixDrop?.38f:(mixBreakdown?1.08f:(mixFinal?.42f:1.f))))));
+            else if(i==6)
+                sectionGain=(mixDrop||mixFinal)?.72f:.42f;
+
+            const float gain=laneGain[i]*sectionGain*juce::jlimit(0.f,1.5f,mixState.level);
             const float send=fxSend[i]*juce::jlimit(0.f,1.5f,mixState.fxSend);
             for(int ch=0;ch<2;++ch)
             {
@@ -197,17 +261,12 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
             }
         }
 
-        int count=0;
-        for(int i=0;i<juce::jmin(4,(int)lanes.size())&&count<(int)triggers.size();++i)
-            count+=collectDrumTriggers(lanes[(size_t)i],startSample,n,a.getBpm(),sampleRate,
-                                      triggers.data()+count,(int)triggers.size()-count);
-        std::sort(triggers.begin(),triggers.begin()+count,
-                  [](const DrumTrigger&x,const DrumTrigger&y){return x.sampleOffset<y.sampleOffset;});
-        juce::AudioBuffer<float> blockView(block.getArrayOfWritePointers(),2,0,n);
-        drums.render(blockView,triggers.data(),count);
+        juce::AudioBuffer<float> drumView(drumBus.getArrayOfWritePointers(),2,0,n);
+        drums.render(drumView,triggers.data(),count);
+        for(int ch=0;ch<2;++ch)block.addFrom(ch,0,drumBus,ch,0,n,.70f);
 
         reverb.processStereo(fxBus.getWritePointer(0),fxBus.getWritePointer(1),n);
-        for(int ch=0;ch<2;++ch)block.addFrom(ch,0,fxBus,ch,0,n,.72f);
+        for(int ch=0;ch<2;++ch)block.addFrom(ch,0,fxBus,ch,0,n,.66f);
 
         const float masterRc=1.f/(juce::MathConstants<float>::twoPi*24.f);
         const float masterDt=1.f/(float)sampleRate;
@@ -221,7 +280,7 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
                 const float x=std::isfinite(d[smp])?d[smp]:0.f;
                 const float hp=masterA*(y1+x-x1);
                 x1=x;y1=hp;
-                d[smp]=juce::jlimit(-.95f,.95f,std::tanh(hp*.82f));
+                d[smp]=juce::jlimit(-.96f,.96f,std::tanh(hp*.96f));
             }
             masterX[(size_t)ch]=x1;masterY[(size_t)ch]=y1;
         }
