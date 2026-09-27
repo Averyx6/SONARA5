@@ -751,7 +751,8 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             {
                 for(int q=0;q<4;++q)
                     if(!intro || q==0 || q==2 || bar-section->startBar>=section->bars-2)
-                        addNote(kick,36,b+q,.10,drop?118:101+(q==0?5:0));
+                        addNote(kick,36,b+q,.11,
+                                drop?123:(chorus?116:(build?111:105+(q==0?5:0))));
                 if((drop||build||chorus) && ((bar+groove)%4==3))
                     addNote(kick,36,b+3.5,.08,88+(int)(random01(seed,1020+bs)*20.f));
                 if(drop && groove%3==2 && bar%2==0)
@@ -781,9 +782,15 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             }
             else
             {
-                addNote(snare,38,b+1.0,.12,98+(drop?12:0));
-                addNote(snare,38,b+3.0,.12,102+(drop?10:0));
-                if((bar+groove)%4==2) addNote(snare,39,b+2.75,.07,64+(int)(random01(seed,1210+bs)*18.f));
+                const int backbeat=drop?122:(chorus?116:(build?110:104));
+                addNote(snare,38,b+1.0,.13,backbeat);
+                addNote(snare,38,b+3.0,.13,juce::jmin(127,backbeat+2));
+                if(drop||chorus)
+                {
+                    addNote(snare,39,b+1.018,.075,drop?108:101);
+                    addNote(snare,39,b+3.018,.075,drop?111:103);
+                }
+                if((bar+groove)%4==2) addNote(snare,39,b+2.75,.07,68+(int)(random01(seed,1210+bs)*18.f));
             }
         }
 
@@ -841,8 +848,15 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             {
                 if(s<4 && groove==3 && s%2==1) continue;
                 addNote(snare,38,b+s*(4.0/divisions),.05,
-                        juce::jlimit(48,127,54+s*(64/divisions)+(int)(random01(seed,1600+s+bar)*8.f)));
+                        juce::jlimit(48,127,58+s*(66/divisions)+(int)(random01(seed,1600+s+bar)*8.f)));
             }
+        }
+
+        if(sectionEnd&&!breakdown&&(build||chorus||drop))
+        {
+            addNote(perc,45,b+3.00,.075,82+(drop?8:0));
+            addNote(perc,47,b+3.50,.070,90+(drop?8:0));
+            addNote(perc,50,b+3.75,.060,100+(drop?10:0));
         }
     }
 
@@ -1180,20 +1194,26 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         // DROP and FINAL HOOK share a recognizable song identity, but the final hook
         // develops it. Other sections get genuinely separate theme seeds.
         const int themeGroup=(drop||finalHook)?3:(chorus?5:sectionIndex);
-        const int devPhrase=(plan.development>.72f)?phraseIndex:
-                            (plan.development>.48f?phraseIndex/2:0);
-        const uint64_t phraseSeed=mix64(seed
+
+        // One section/theme owns a stable motif. Earlier builds re-rolled the
+        // starting degree and rhythm family every bar, creating technically
+        // in-key but musically unrelated notes.
+        const int phraseGeneration=(plan.development>.80f)?phraseIndex/2:
+                                   (plan.development>.58f?phraseIndex/3:0);
+        const uint64_t motifSeed=mix64(seed
             ^ ((uint64_t)themeGroup+1ULL)*0x9e3779b97f4a7c15ULL
-            ^ ((uint64_t)devPhrase+1ULL)*0xbf58476d1ce4e5b9ULL
             ^ ((uint64_t)architecture+1ULL)*0x94d049bb133111ebULL);
+        const uint64_t phraseSeed=mix64(motifSeed
+            ^ ((uint64_t)phraseGeneration+1ULL)*0xbf58476d1ce4e5b9ULL);
 
         const auto chord=chordInfoAtBeat(bar*beatsPerBar);
         const int registerBase=tech?12:((drop||chorus||finalHook)?24:12);
         const int startDegree=(plan.startingDegree
-            +(int)(random01(phraseSeed,0x2001)*7.f)
-            +barInPhrase)%7;
+            +(int)(random01(motifSeed,0x2001)*7.f))%7;
 
-        int family=(rhythmBase+sectionIndex+(int)(random01(phraseSeed,0x2002)*3.f))%10;
+        const int motifBar=barInPhrase%2;
+        const bool developmentBar=barInPhrase>=juce::jmax(1,phraseBars/2);
+        int family=(rhythmBase+themeGroup+(int)(random01(motifSeed,0x2002)*3.f))%10;
         if(tech)family=(family%2)?1:3;
         else if(dnb)family=random01(phraseSeed,0x2003)>.5f?4:7;
         else if(cinematic)family=random01(phraseSeed,0x2004)>.5f?3:6;
@@ -1265,7 +1285,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                     const int cell=i%4;
                     const int call[]={0,2,4,3};
                     degree=startDegree+call[cell];
-                    if(barInPhrase>=phraseBars/2)
+                    if(motifBar==1)
                     {
                         const int answer[]={4,2,1,0};
                         degree=startDegree+answer[cell];
@@ -1276,7 +1296,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                 case 1: // ARPEGGIATED HOOK
                 {
                     static constexpr int chordDegrees[6]={0,2,4,2,4,1};
-                    degree=chordInfoAtBeat(bar*beatsPerBar+positions[i]).degreeIndex+chordDegrees[(i+barInPhrase)%6];
+                    degree=chordInfoAtBeat(bar*beatsPerBar+positions[i]).degreeIndex+chordDegrees[(i+motifBar)%6];
                     if(i%3==2&&random01(phraseSeed,0x2200+salt)>.52f)octaveExtra=12;
                     break;
                 }
@@ -1285,51 +1305,51 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                     const int cell=i%4;
                     const int anthem[]={0,0,4,2};
                     degree=startDegree+anthem[cell];
-                    octaveExtra=(cell==1||((barInPhrase+i)%4==3))?12:0;
+                    octaveExtra=(cell==1||((motifBar+i)%4==3))?12:0;
                     break;
                 }
                 case 3: // SPARSE SIGNATURE MOTIF
                 {
                     const int sparse[]={0,3,1};
                     degree=startDegree+sparse[i%3];
-                    if(barInPhrase%2==1&&i==1)degree+=2;
+                    if(motifBar==1&&i==1)degree+=2;
                     break;
                 }
                 case 4: // LONG LYRIC LINE
                 {
                     const int direction=((phraseSeed>>8)&1ULL)?1:-1;
-                    degree=startDegree+direction*(barInPhrase*2+i);
+                    degree=startDegree+direction*(motifBar*2+i);
                     if(i==count-1&&barInPhrase==phraseBars-1)degree=chord.degreeIndex;
                     break;
                 }
                 case 5: // SYNCOPATED RIFF
                 {
                     static constexpr int riff[8]={0,0,3,1,4,2,1,5};
-                    degree=startDegree+riff[(i+barInPhrase)%8];
+                    degree=startDegree+riff[(i+motifBar)%8];
                     break;
                 }
                 case 6: // PEDAL TONE + MOVING ANSWER
                 {
                     if(i%2==0)degree=startDegree;
-                    else degree=startDegree+1+((barInPhrase+i*2)%5);
+                    else degree=startDegree+1+((motifBar+i*2)%5);
                     break;
                 }
                 case 7: // SEQUENCED CELL
                 {
                     static constexpr int cell[3]={0,2,1};
-                    const int transposition=(barInPhrase%4==0?0:(barInPhrase%4==1?2:(barInPhrase%4==2?4:1)));
+                    const int transposition=motifBar==0?0:2;
                     degree=startDegree+cell[i%3]+transposition;
                     break;
                 }
                 case 8: // FALLING HOOK
                 {
-                    degree=startDegree+6-((i+barInPhrase*2)%7);
+                    degree=startDegree+6-((i+motifBar*2)%7);
                     if(i==count-1)degree=chord.degreeIndex;
                     break;
                 }
                 case 9: // RISING LIFT + RESOLUTION
                 {
-                    const int span=i+barInPhrase*2;
+                    const int span=i+motifBar*2;
                     degree=startDegree+(span%7);
                     if(barInPhrase==phraseBars-1&&i>=count-2)degree=chord.degreeIndex;
                     break;
@@ -1343,7 +1363,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                 default: // WIDE LEAP / RESOLVE
                 {
                     static constexpr int leap[8]={0,4,1,5,2,0,4,1};
-                    degree=startDegree+leap[(i+barInPhrase)%8];
+                    degree=startDegree+leap[(i+motifBar)%8];
                     if(i>0&&i%2==0)degree=lastDegree+(degree>lastDegree?-1:1);
                     break;
                 }
@@ -1355,7 +1375,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             const auto localHarmony=chordInfoAtBeat(bar*beatsPerBar+positions[i]);
             const bool phraseEnding=(barInPhrase==phraseBars-1&&i==count-1);
             const bool barAnchor=positions[i]<.08;
-            const float chordToneChance=phraseEnding?.90f:(barAnchor?.70f:(strong?.34f:.22f));
+            const float chordToneChance=phraseEnding?.98f:(barAnchor?.88f:(strong?.62f:.30f));
             if(random01(phraseSeed,0x2300+salt)<chordToneChance)
             {
                 const int toneChoice=(int)(random01(phraseSeed,0x2310+salt)*3.f)%3;
@@ -1363,11 +1383,29 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                 else if(toneChoice==1)degree=localHarmony.degreeIndex+2;
                 else degree=localHarmony.degreeIndex+4;
             }
-            else if(!strong&&random01(phraseSeed,0x2320+salt)<.24f)
+            else if(!strong&&random01(phraseSeed,0x2320+salt)<.14f)
             {
                 const int dir=random01(phraseSeed,0x2330+salt)>.5f?1:-1;
-                degree+=dir; // scale passing/approach tone
+                degree+=dir; // controlled scale passing/approach tone
             }
+
+            // Keep free motion singable. Large jumps belong to the explicit
+            // anthem/arpeggio/wide-leap archetypes rather than appearing randomly.
+            if(i>0&&architecture!=1&&architecture!=2&&architecture!=11)
+            {
+                int delta=degree-lastDegree;
+                while(delta>4){degree-=7;delta=degree-lastDegree;}
+                while(delta<-4){degree+=7;delta=degree-lastDegree;}
+                if(std::abs(delta)>3&&random01(phraseSeed,0x2340+salt)<.78f)
+                    degree=lastDegree+(delta>0?2:-2);
+            }
+
+            // Phrase development changes one recognisable note instead of
+            // replacing the motif with a new random contour.
+            if(developmentBar&&i==juce::jmax(0,count-2)
+               &&architecture!=1&&architecture!=2
+               &&random01(phraseSeed,0x2350+salt)<plan.development*.55f)
+                degree+=random01(phraseSeed,0x2360+salt)>.5f?2:-1;
 
             if(phraseEnding)
             {
