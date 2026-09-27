@@ -1,16 +1,18 @@
-# SONARA v1.1
+# SONARA v1.3
 
 SONARA is a Windows x64 JUCE VST3 + Standalone AI music-creation instrument for FL Studio.
 
-v1.1 is the producer-quality musicality pass. The default EDM architecture now follows a clear INTRO -> VERSE -> BUILD -> CHORUS -> DROP -> BREAKDOWN flow, with the chorus introducing the main hook and the drop developing that same identity. Lead generation uses strict section-specific note budgets, stronger rests, motif continuity, and reduced support-layer density so arrangements read like phrases instead of note clouds.
+v1.3 is the songwriting-engine pass. It is designed to stop generated tracks from feeling like one long intro or an experiment made of technically-valid random notes.
 
-The song candidate selector now scores production space as well as novelty, melody, harmony, prompt match, section contrast, and hook recall. It penalizes arrangements where too many musical lanes fire on the same fine-grid positions.
+The main song flow stays INTRO -> VERSE -> BUILD -> CHORUS -> DROP -> BREAKDOWN. Section roles are now deliberately different: the intro only teases the melody, verse leaves breathing bars, build introduces melody only in its second half, chorus presents the full memorable hook, drop develops the same hook with stronger production, and breakdown strips the melody back to sparse replies.
 
-Every generated lane still receives an automatic SoundDNA design that fits its role and genre. v1.1 also adds per-instrument overrides: select any lane, describe only that instrument in FX & MIX, and apply a custom SoundDNA without changing its MIDI or other lanes. AUTO FIT restores SONARA's role-aware automatic sound for only the selected lane.
+Mainstream EDM/progressive/pop/trance prompts use a curated group of song-like melody archetypes instead of the full experimental grammar pool. Chorus/drop/final hook use stable four-bar hook phrases, preserve the motif contour over changing chords, avoid random micro-timing, and use tighter note budgets. Counter melody is held back until drop/final-hook answer bars so it does not compete with the main hook.
 
-Preview synthesis includes a new CPU optimization pass: expensive unison patches receive complexity-aware caps, static filters avoid unnecessary coefficient updates, and pitch/transient envelopes plus bit-crush/downsample values are cached instead of recomputed in the per-sample hot loop.
+The chorus-to-drop transition now has a dedicated escalating snare/clap roll, tom fill, kick removal in the final beat, and a half-beat breathing gap before the drop crash/impact. Build-to-chorus uses a smaller lift so the real drop still feels like the main payoff.
 
-The project preserves Harmony DNA, different-song generation, festival drum DSP, kick ducking, semantic SoundDNA families, reference/resound tools, lane mixer, timeline/piano-roll UI, editable MIDI export, stem/full-mix audio export, Randomize Everything, Surprise Me, and project/preset persistence.
+Candidate selection now prioritizes songwriting quality and section shape over novelty. Verse/build/breakdown space, chorus/drop arrival, hook recall, arrangement collisions, harmony quality, prompt fit and novelty are scored together, with novelty used as a constraint rather than the main creative goal.
+
+Preview mixing is lead-forward so the main melody sits above pluck/pad/counter layers. v1.1 per-instrument SoundDNA editing, AUTO FIT, CPU optimizations, automatic genre-aware sound selection, strong drum DSP, kick ducking, editable MIDI, stems/full mix export, reference/resound and project persistence are preserved.
 
 ## Windows build
 
