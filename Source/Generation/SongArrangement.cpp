@@ -2108,6 +2108,25 @@ void SongArrangement::alignPitchedLanesToLead()
     }
     if(lead==nullptr||lead->notes.empty())return;
 
+    // Establish one common melodic octave family first. Preserve pitch class and
+    // hook contour, but remove the unnecessary "lead lives an octave above the
+    // whole song" behavior that makes every lane look unrelated in FL Studio.
+    std::sort(lead->notes.begin(),lead->notes.end(),
+              [](const ArrangementNote& a,const ArrangementNote& b){return a.beat<b.beat;});
+    int previousLead=-1;
+    for(auto& n:lead->notes)
+    {
+        while(n.note>79&&n.note-12>=58)n.note-=12;
+        while(n.note<58&&n.note+12<=79)n.note+=12;
+        if(previousLead>=0)
+        {
+            while(n.note-previousLead>7&&n.note-12>=58)n.note-=12;
+            while(previousLead-n.note>7&&n.note+12<=79)n.note+=12;
+        }
+        n.note=juce::jlimit(58,79,n.note);
+        previousLead=n.note;
+    }
+
     std::vector<int> barCentre((size_t)bars,67);
     int previous=67;
     for(int bar=0;bar<bars;++bar)
