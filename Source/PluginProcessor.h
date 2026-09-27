@@ -125,6 +125,8 @@ private:
     std::array<std::array<float,2>,musicalLaneCount> laneHpX{},laneHpY{};
     std::array<std::array<float,2>,musicalLaneCount> laneLpState{};
     std::array<float,2> masterHpX{},masterHpY{};
+    std::vector<float> songDuckEnvelope;
+    float songDuckState=0.f;
     std::array<sonara::DrumTrigger,256> drumTriggers{};
     std::vector<sonara::SoundDNA> patchHistory; int historyIndex=-1; sonara::SoundDNA patchA,patchB; bool hasA=false,hasB=false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SonaraAudioProcessor)
