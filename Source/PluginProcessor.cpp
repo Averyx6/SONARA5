@@ -20,6 +20,53 @@ const sonara::ArrangementLane* laneNamed(const sonara::SongArrangement& a,const 
     return nullptr;
 }
 
+void applyLaneSoundCpuBudget(const juce::String& laneName,sonara::SoundDNA& d)
+{
+    const auto n=laneName.toUpperCase();
+
+    // Global guard for pathological patches: expensive modulation + many unison
+    // oscillators is where the user-visible CPU spikes came from.
+    const float complexity=d.fmAmount*1.4f+d.ringMod*1.2f
+        +std::abs(d.lfoMorphA)+std::abs(d.lfoMorphB)+d.lfoCutoff*.7f
+        +d.noiseLevel*.5f+d.chorus*.4f+d.delay*.3f+d.reverb*.25f;
+    if(complexity>2.0f)d.unison=juce::jmin(d.unison,3);
+    else if(complexity>1.25f)d.unison=juce::jmin(d.unison,4);
+    else d.unison=juce::jmin(d.unison,6);
+
+    if(n=="BASS")
+    {
+        d.unison=juce::jmin(d.unison,2);d.width=juce::jmin(d.width,.20f);
+        d.release=juce::jmin(d.release,.36f);d.reverb=juce::jmin(d.reverb,.035f);d.delay=0.f;
+    }
+    else if(n=="SUB")
+    {
+        d.unison=1;d.width=0.f;d.chorus=0.f;d.reverb=0.f;d.delay=0.f;
+        d.noiseLevel=0.f;d.release=juce::jmin(d.release,.22f);
+    }
+    else if(n=="CHORDS")
+    {
+        d.unison=juce::jmin(d.unison,4);d.release=juce::jmin(d.release,.55f);
+        d.reverb=juce::jmin(d.reverb,.12f);d.delay=juce::jmin(d.delay,.08f);
+    }
+    else if(n=="PAD")
+    {
+        d.unison=juce::jmin(d.unison,4);d.release=juce::jmin(d.release,.90f);
+        d.reverb=juce::jmin(d.reverb,.18f);d.delay=juce::jmin(d.delay,.08f);
+    }
+    else if(n=="LEAD")
+    {
+        d.unison=juce::jmin(d.unison,5);d.release=juce::jmin(d.release,.50f);
+        d.reverb=juce::jmin(d.reverb,.12f);d.delay=juce::jmin(d.delay,.12f);
+    }
+    else if(n=="PLUCK"||n=="COUNTER")
+    {
+        d.unison=juce::jmin(d.unison,3);d.release=juce::jmin(d.release,.34f);
+    }
+    else if(n=="FX / TRANSITIONS")
+        d.unison=juce::jmin(d.unison,2);
+}
+
+
 std::vector<int> melodyFingerprint(const sonara::SongArrangement& a)
 {
     return a.getMelodyFingerprint();
@@ -1365,6 +1412,60 @@ SonaraAudioProcessor::LaneMixState SonaraAudioProcessor::getLaneMix(int laneInde
     state.width=laneMixWidth[i].load(std::memory_order_relaxed);
     state.fxSend=laneMixFx[i].load(std::memory_order_relaxed);
     return state;
+}
+
+bool SonaraAudioProcessor::setSelectedLaneSound(const juce::String& prompt,bool automatic)
+{
+    auto current=arrangementSnapshot();
+    if(!current)return false;
+    const int laneIndex=selectedLane.load();
+    if(!juce::isPositiveAndBelow(laneIndex,(int)current->getLanes().size()))return false;
+
+    auto updated=std::make_shared<sonara::SongArrangement>(*current);
+    auto& lanes=updated->editLanes();
+    sonara::SoundDNA next;
+
+    if(automatic)
+    {
+        std::vector<sonara::SoundDNA> preserved;
+        preserved.reserve(lanes.size());
+        for(const auto& lane:lanes)preserved.push_back(lane.sound);
+
+        // Re-run SONARA's automatic palette intelligence, then keep only the
+        // selected lane's newly fitted sound so all other manual choices survive.
+        updated->finalizeSoundPalette();
+        next=updated->getLanes()[(size_t)laneIndex].sound;
+        for(size_t i=0;i<lanes.size();++i)
+            if((int)i!=laneIndex)lanes[i].sound=preserved[i];
+    }
+    else
+    {
+        const auto userPrompt=prompt.trim();
+        if(userPrompt.isEmpty())return false;
+        const uint64_t seed=scrambleSongSeed(sessionSalt
+            ^ (++generationCounter*0x9e3779b97f4a7c15ULL)
+            ^ (uint64_t)userPrompt.hashCode64()
+            ^ ((uint64_t)laneIndex+1ULL)*0xbf58476d1ce4e5b9ULL);
+        next=generator.generate(userPrompt+" • "+lanes[(size_t)laneIndex].name+" instrument",seed);
+        applyLaneSoundCpuBudget(lanes[(size_t)laneIndex].name,next);
+        const auto semantic=next.name.replace("Generated ","").trim();
+        next.name=lanes[(size_t)laneIndex].name+" • Custom "+(semantic.isEmpty()?juce::String("Sound"):semantic);
+        lanes[(size_t)laneIndex].sound=next;
+    }
+
+    if(automatic)
+        applyLaneSoundCpuBudget(lanes[(size_t)laneIndex].name,lanes[(size_t)laneIndex].sound);
+
+    if(laneIndex<4&&lanes.size()>=4)
+        drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
+    else if(laneIndex>=firstMusicalLane&&laneIndex<firstMusicalLane+musicalLaneCount)
+        songEngines[(size_t)(laneIndex-firstMusicalLane)].setPatch(lanes[(size_t)laneIndex].sound);
+
+    std::atomic_store_explicit(&arrangement,
+        std::shared_ptr<const sonara::SongArrangement>(updated),std::memory_order_release);
+    generationProgress.store(1.f);
+    generationStatus=(automatic?"AUTO FIT • ":"CUSTOM SOUND • ")+lanes[(size_t)laneIndex].name;
+    return true;
 }
 
 void SonaraAudioProcessor::setMacro(Macro macro, float normalized)
