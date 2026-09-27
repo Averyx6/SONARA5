@@ -1618,7 +1618,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         // when the main lead has enough space.
         const int leadNotesThisBar=(int)(lead.notes.size()-leadBeforeBar);
         const bool answerBar=motifBar==1;
-        const bool counterSpace=leadNotesThisBar<=(finalHook?6:4);
+        const bool counterSpace=leadNotesThisBar<=(finalHook?6:5);
         if((drop||chorus||finalHook)&&!tech&&answerBar&&counterSpace)
         {
             const uint64_t cs=mix64(domains.counter
