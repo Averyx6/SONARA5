@@ -1120,6 +1120,11 @@ void SongArrangement::addHarmony(uint64_t seed)
             repeats=(chordMode==0?1:(chordMode==1?2:(chordMode==2?4:2)));
         else if(build)
             repeats=chordMode>=3?2:1;
+        if(mainstreamSong)
+        {
+            if(drop||chorus||finalHook)repeats=juce::jmin(repeats,2);
+            else if(build||verse)repeats=juce::jmin(repeats,1);
+        }
 
         const double unit=event.length/(double)repeats;
         for(int r=0;r<repeats;++r)
@@ -1216,6 +1221,12 @@ void SongArrangement::addHarmony(uint64_t seed)
             else if(bassMode==4){positions=pos4;count=(drop||chorus)?5:3;}
 
             if(breakdown)count=juce::jmin(count,2);
+            if(mainstreamSong)
+            {
+                if(drop||chorus||finalHook)count=juce::jmin(count,4);
+                else if(verse||build)count=juce::jmin(count,3);
+                if(breakdown)count=juce::jmin(count,1);
+            }
 
             for(int i=0;i<count;++i)
             {
@@ -1256,6 +1267,11 @@ void SongArrangement::addHarmony(uint64_t seed)
             else if(verse&&random01(subMotifSeed,0x7410)>.62f)
                 subCount=2;
             if(breakdown)subCount=(localBar%2==0)?1:0;
+            if(mainstreamSong)
+            {
+                subCount=juce::jmin(subCount,(drop||chorus||finalHook)?2:1);
+                if(build&&localBar<section->bars/2)subCount=0;
+            }
 
             for(int i=0;i<subCount;++i)
             {
@@ -1278,7 +1294,9 @@ void SongArrangement::addHarmony(uint64_t seed)
         if((energy>.5f||chorus)&&!breakdown)
         {
             // Supporting plucks must frame the hook, not machine-gun underneath it.
-            const int steps=(finalHook?6:(drop?4:(chorus?4:(build?4:3))));
+            int steps=(finalHook?6:(drop?4:(chorus?4:(build?4:3))));
+            if(mainstreamSong)
+                steps=(drop||chorus||finalHook)?3:(build?3:2);
             for(int i=0;i<steps;++i)
             {
                 const uint64_t ps=(uint64_t)i;
