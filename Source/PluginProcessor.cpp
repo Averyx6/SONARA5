@@ -302,6 +302,8 @@ float arrangementSpaceScore(const sonara::SongArrangement& song,const sonara::Ar
 
 float productionQualityScore(const sonara::SongArrangement& song)
 {
+    const auto* verse=sectionNamed(song,"VERSE");
+    const auto* build=sectionNamed(song,"BUILD");
     const auto* drop=sectionNamed(song,"DROP");
     const auto* chorus=sectionNamed(song,"CHORUS");
     const auto* breakdown=sectionNamed(song,"BREAKDOWN");
@@ -322,13 +324,24 @@ float productionQualityScore(const sonara::SongArrangement& song)
     const float breakBass=laneDensityInSection(song,"BASS",breakdown);
     const float bassContrast=juce::jlimit(0.f,1.f,(dropBass-breakBass+.5f)/5.0f);
 
+    const float verseLead=laneDensityInSection(song,"LEAD",verse);
+    const float buildLead=laneDensityInSection(song,"LEAD",build);
+    const float chorusLead=laneDensityInSection(song,"LEAD",chorus);
     const float dropLead=laneDensityInSection(song,"LEAD",drop);
     const float breakLead=laneDensityInSection(song,"LEAD",breakdown);
-    const float leadContrast=juce::jlimit(0.f,1.f,(dropLead-breakLead+.5f)/5.0f);
+    const float leadContrast=juce::jlimit(0.f,1.f,(dropLead-breakLead+.5f)/4.0f);
+
+    const float verseSpace=juce::jlimit(0.f,1.f,1.f-verseLead/3.2f);
+    const float buildSpace=juce::jlimit(0.f,1.f,1.f-buildLead/3.0f);
+    const float chorusArrival=juce::jlimit(0.f,1.f,(chorusLead-verseLead+.7f)/3.4f);
+    const float dropArrival=juce::jlimit(0.f,1.f,(dropLead-chorusLead+1.2f)/2.4f);
+    const float breakdownRelease=juce::jlimit(0.f,1.f,(chorusLead-breakLead+.6f)/3.6f);
+    const float sectionShape=verseSpace*.16f+buildSpace*.14f+chorusArrival*.25f
+                           +dropArrival*.22f+breakdownRelease*.23f;
 
     // Good EDM drops are neither empty nor note soup. Reward a useful density
     // window while keeping breakdown-to-drop contrast obvious.
-    const float leadDensityShape=juce::jlimit(0.f,1.f,1.f-std::abs(dropLead-4.6f)/4.6f);
+    const float leadDensityShape=juce::jlimit(0.f,1.f,1.f-std::abs(dropLead-3.5f)/3.5f);
     const float kickDensityShape=juce::jlimit(0.f,1.f,1.f-std::abs(dropKick-4.2f)/4.2f);
 
     // Reward recognisable motif memory without demanding exact cloning.
@@ -336,9 +349,9 @@ float productionQualityScore(const sonara::SongArrangement& song)
     const float recallShape=juce::jlimit(0.f,1.f,1.f-std::abs(hookRecall-.68f)/.68f);
     const float chorusRecallShape=juce::jlimit(0.f,1.f,1.f-std::abs(chorusDropRecall-.78f)/.78f);
     return juce::jlimit(0.f,1.f,
-        repeatShape*.17f+chorusRecallShape*.15f+recallShape*.14f+spaceScore*.14f+
-        drumContrast*.14f+bassContrast*.10f+leadContrast*.08f+
-        leadDensityShape*.05f+kickDensityShape*.03f);
+        sectionShape*.20f+repeatShape*.14f+chorusRecallShape*.15f+recallShape*.11f+
+        spaceScore*.12f+drumContrast*.10f+bassContrast*.07f+leadContrast*.05f+
+        leadDensityShape*.04f+kickDensityShape*.02f);
 }
 
 float promptCompositionMatch(const juce::String& prompt,const sonara::SongArrangement& song)
@@ -393,7 +406,7 @@ float melodyQualityScore(const sonara::SongArrangement& song)
     const float avgLength=(float)(totalLength/(double)lead->notes.size());
     const float lengthScore=juce::jlimit(0.f,1.f,1.f-std::abs(avgLength-.38f)/.75f);
     const float density=(float)lead->notes.size()/(float)juce::jmax(1,song.getBars());
-    const float densityScore=juce::jlimit(0.f,1.f,1.f-std::abs(density-3.7f)/4.5f);
+    const float densityScore=juce::jlimit(0.f,1.f,1.f-std::abs(density-2.8f)/3.5f);
 
     return juce::jlimit(0.f,1.f,
         rangeScore*.17f+leapScore*.23f+repeatScore*.18f+
@@ -663,7 +676,7 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
         return value;
     };
 
-    constexpr int maxAttempts=28;
+    constexpr int maxAttempts=32;
     for(int attempt=0;attempt<maxAttempts;++attempt)
     {
         const uint64_t entropy=static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64())
@@ -708,12 +721,14 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
         const float melodyQuality=melodyQualityScore(*candidate);
         const float harmonyQuality=harmonyQualityScore(*candidate);
         const float productionQuality=productionQualityScore(*candidate);
-        const float quality=melodyQuality*.52f+harmonyQuality*.23f+productionQuality*.25f;
+        const float quality=melodyQuality*.42f+harmonyQuality*.20f+productionQuality*.38f;
         const float promptMatch=promptCompositionMatch(prompt,*candidate);
         const float novelty=1.f-wholeSim;
-        const float combined=quality*.40f+promptMatch*.30f+novelty*.30f;
+        // v1.3: novelty is a constraint, not the main creative goal. Prefer the
+        // strongest song that is sufficiently different over the strangest song.
+        const float combined=quality*.58f+promptMatch*.27f+novelty*.15f;
 
-        if(!fingerprint.empty()&&!harmony.empty()&&quality>=.56f&&combined>bestCombined)
+        if(!fingerprint.empty()&&!harmony.empty()&&quality>=.62f&&combined>bestCombined)
         {
             bestCombined=combined;
             bestQuality=quality;
@@ -735,8 +750,8 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
 
         // Harmony and melody both have hard identity gates. This prevents a tiny
         // lead reroll from hiding a recycled chord/root skeleton.
-        if(!fingerprint.empty()&&!harmony.empty()&&melodySim<.72f&&harmonySim<.86f
-           &&wholeSim<.62f&&quality>=.70f&&promptMatch>=.70f)
+        if(!fingerprint.empty()&&!harmony.empty()&&melodySim<.84f&&harmonySim<.93f
+           &&wholeSim<.78f&&quality>=.78f&&promptMatch>=.70f)
         {
             made=std::move(candidate);
             acceptedFingerprint=std::move(fingerprint);
@@ -754,9 +769,9 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
             break;
         }
 
-        generationStatus=(quality<.70f?"Rejecting weak composition":
-                          (harmonySim>=.86f?"Rejecting familiar harmony":
-                          (melodySim>=.72f?"Rejecting familiar melody":"Rejecting familiar whole song")))
+        generationStatus=(quality<.78f?"Rejecting weak song structure":
+                          (harmonySim>=.93f?"Rejecting recycled harmony":
+                          (melodySim>=.84f?"Rejecting recycled hook":"Rejecting familiar whole song")))
                        +juce::String(" • trying composition ")
                        +juce::String(attempt+2)+"/"+juce::String(maxAttempts);
     }
@@ -1114,7 +1129,7 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
     songDuckState=duck;
 
     // Lane order: BASS, SUB, CHORDS, PLUCK, PAD, LEAD, COUNTER, FX.
-    static constexpr float laneGain[musicalLaneCount]={.60f,.38f,.36f,.32f,.26f,.58f,.27f,.18f};
+    static constexpr float laneGain[musicalLaneCount]={.58f,.36f,.31f,.24f,.19f,.72f,.19f,.16f};
     static constexpr float hpHz[musicalLaneCount]={28.f,18.f,120.f,125.f,160.f,120.f,150.f,110.f};
     static constexpr float fxSend[musicalLaneCount]={0.f,0.f,.14f,.10f,.18f,.12f,.08f,.15f};
 
