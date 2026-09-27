@@ -2213,7 +2213,7 @@ void SongArrangement::alignPitchedLanesToLead()
 
     // Same song, same register family. Only BASS/SUB intentionally live below it.
     alignGrouped(chords,-4,52,76);
-    alignGrouped(pluck,-1,58,79);
+    alignGrouped(pluck,-1,60,79);
     alignGrouped(pad,-5,54,78);
     alignGrouped(counter,3,60,84);
 }
