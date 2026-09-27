@@ -446,6 +446,27 @@ int main()
     sonara::AudioExporter exporter;
     auto wav=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-full-mix-test",".wav");
     if(!exporter.renderFullMix(shortSong,wav,44100.0,{})||wav.getSize()<4096)return fail("full mix WAV export failed");
+
+    juce::AudioFormatManager exportFormats;exportFormats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> mixReader(exportFormats.createReaderFor(wav));
+    if(!mixReader)return fail("full mix WAV could not be reopened");
+    const int inspectSamples=(int)juce::jmin<juce::int64>(mixReader->lengthInSamples,44100*12);
+    juce::AudioBuffer<float> renderedMix(2,juce::jmax(1,inspectSamples));
+    renderedMix.clear();
+    if(!mixReader->read(&renderedMix,0,inspectSamples,0,true,true))
+        return fail("full mix WAV readback failed");
+    double mixEnergy=0.0;float mixPeak=0.f;
+    for(int ch=0;ch<renderedMix.getNumChannels();++ch)
+        for(int s=0;s<renderedMix.getNumSamples();++s)
+        {
+            const float x=renderedMix.getSample(ch,s);
+            mixPeak=juce::jmax(mixPeak,std::abs(x));mixEnergy+=(double)x*x;
+        }
+    const double mixRms=std::sqrt(mixEnergy/
+        juce::jmax(1,renderedMix.getNumChannels()*renderedMix.getNumSamples()));
+    if(mixRms<.018||mixPeak<.12f||mixPeak>.965f)
+        return fail("v1.7 exported full mix is too quiet or unsafe");
+
     auto stems=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-stems-test","");
     if(!exporter.renderAllStems(shortSong,stems,44100.0,{}))return fail("stem export failed");
     int wavCount=0;for(const auto& file:stems.findChildFiles(juce::File::findFiles,false,"*.wav")){++wavCount;file.deleteFile();}
