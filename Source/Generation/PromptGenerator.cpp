@@ -83,6 +83,113 @@ SoundDNA PromptGenerator::generate(const juce::String& prompt, uint64_t seed, Pr
     if(has("reese")){d.name="Generated Reese";d.oscA=WaveShape::saw;d.oscB=WaveShape::softSaw;d.oscMix=.42f+.16f*hash01(seed,168);d.unison=4+(int)(hash01(seed,169)*3.f);d.detune=.075f+.10f*hash01(seed,170);d.width=.22f+.22f*hash01(seed,171);d.drive=.12f+.18f*hash01(seed,172);d.cutoff=900.f+2600.f*hash01(seed,173);d.lfoCutoff=.18f+.28f*hash01(seed,174);d.lfoRate=.18f+1.20f*hash01(seed,175);d.subLevel=.18f+.18f*hash01(seed,176);}
     if(has("lead")){d.attack=.002f+.006f*hash01(seed,135);d.sustain=.70f+.18f*hash01(seed,136);d.release=.16f+.24f*hash01(seed,137);d.unison=4+(int)(hash01(seed,138)*3.f);d.filterEnv=.12f+.20f*hash01(seed,139);d.oscAMorph=.06f+.38f*hash01(seed,51);d.oscBMorph=.04f+.34f*hash01(seed,140);d.lfoMorphA*=.58f;d.lfoMorphB*=.58f;d.transientLevel=juce::jmax(d.transientLevel,.045f+.08f*hash01(seed,141));}
     if(has("supersaw")){d.oscA=WaveShape::saw;d.oscB=WaveShape::softSaw;d.oscAMorph=d.oscBMorph=d.lfoMorphA=d.lfoMorphB=0.f;d.unison=9;d.detune=.14f+.1f*hash01(seed,40);d.unisonBlend=.78f;d.width=.98f;}
+    // Semantic instrument families. These are synthesized approximations, but they
+    // give the prompt a much larger vocabulary than the old lead/pluck/bass-only
+    // keyword set. Compound descriptions still combine deterministically.
+    const bool festival=has("festival")||has("mainstage")||has("big room")||has("anthemic")||has("arena");
+    const bool leadRole=has("lead")||has("hook")||has("solo");
+    const bool pluckRole=has("pluck")||has("pizzicato");
+    const bool chordRole=has("chord")||has("stab");
+    const bool brassRole=has("brass")||has("horn")||has("trumpet");
+    const bool stringRole=has("strings")||has("string ensemble")||has("violin")||has("cello");
+    const bool keysRole=has("piano")||has("keys")||has("keyboard");
+    const bool organRole=has("organ");
+    const bool fluteRole=has("flute")||has("whistle")||has("woodwind");
+    const bool choirRole=has("choir")||has("choir-like")||has("vocal pad");
+    const bool guitarRole=has("guitar")||has("picked string");
+    const bool malletRole=has("marimba")||has("xylophone")||has("mallet");
+    const bool growlRole=has("growl")||has("neuro")||has("monster bass");
+
+    if(brassRole)
+    {
+        d.name="Generated Synth Brass";d.oscA=WaveShape::saw;d.oscB=WaveShape::square;d.oscMix=.30f;
+        d.unison=3+(int)(hash01(seed,180)*3.f);d.detune=.045f+.055f*hash01(seed,181);
+        d.attack=.012f+.025f*hash01(seed,182);d.decay=.18f;d.sustain=.76f;d.release=.20f+.18f*hash01(seed,183);
+        d.filterMode=FilterMode::lowpass;d.cutoff=3600.f+5200.f*hash01(seed,184);d.filterEnv=.34f+.30f*hash01(seed,185);
+        d.drive=.10f+.12f*hash01(seed,186);d.transientLevel=juce::jmax(d.transientLevel,.08f);
+    }
+    if(stringRole)
+    {
+        d.name="Generated String Ensemble";d.oscA=WaveShape::softSaw;d.oscB=WaveShape::triangle;d.oscMix=.38f;
+        d.unison=5+(int)(hash01(seed,187)*3.f);d.detune=.035f+.055f*hash01(seed,188);d.width=.88f;
+        d.attack=.12f+.28f*hash01(seed,189);d.decay=.35f;d.sustain=.86f;d.release=.75f+1.0f*hash01(seed,190);
+        d.cutoff=5200.f+5200.f*hash01(seed,191);d.lfoPitch=.035f+.035f*hash01(seed,192);d.lfoRate=4.2f+1.2f*hash01(seed,193);
+    }
+    if(keysRole)
+    {
+        d.name="Generated Synth Keys";d.oscA=WaveShape::triangle;d.oscB=WaveShape::sine;d.oscMix=.32f;
+        d.unison=1+(int)(hash01(seed,194)*2.f);d.attack=.001f;d.decay=.42f+.45f*hash01(seed,195);
+        d.sustain=.30f+.22f*hash01(seed,196);d.release=.35f+.45f*hash01(seed,197);
+        d.transientLevel=.18f+.18f*hash01(seed,198);d.transientDecay=.012f+.018f*hash01(seed,199);
+        d.fmAmount=.08f+.12f*hash01(seed,200);d.cutoff=5200.f+6500.f*hash01(seed,201);
+    }
+    if(organRole)
+    {
+        d.name="Generated Organ";d.oscA=WaveShape::sine;d.oscB=WaveShape::square;d.oscMix=.28f;
+        d.unison=2;d.detune=.018f;d.attack=.006f;d.decay=.08f;d.sustain=.96f;d.release=.18f;
+        d.filterEnv=0.f;d.cutoff=7600.f;d.fmAmount=.06f;d.width=.62f;
+    }
+    if(fluteRole)
+    {
+        d.name="Generated Air Flute";d.oscA=WaveShape::sine;d.oscB=WaveShape::triangle;d.oscMix=.18f;
+        d.unison=1;d.attack=.035f+.035f*hash01(seed,202);d.decay=.14f;d.sustain=.82f;d.release=.30f;
+        d.noiseLevel=.025f+.025f*hash01(seed,203);d.filterMode=FilterMode::lowpass;d.cutoff=5200.f+2200.f*hash01(seed,204);
+        d.lfoPitch=.055f;d.lfoRate=4.8f+.9f*hash01(seed,205);d.width=.36f;
+    }
+    if(choirRole)
+    {
+        d.name="Generated Choir Pad";d.oscA=WaveShape::triangle;d.oscB=WaveShape::softSaw;d.oscMix=.42f;
+        d.unison=5;d.detune=.055f;d.attack=.24f;d.decay=.48f;d.sustain=.90f;d.release=1.35f;
+        d.filterMode=FilterMode::bandpass;d.cutoff=1350.f+1300.f*hash01(seed,206);d.resonance=.24f;
+        d.width=.96f;d.lfoMorphA=.09f;d.lfoMorphB=-.07f;
+    }
+    if(guitarRole)
+    {
+        d.name="Generated Picked String";d.oscA=WaveShape::triangle;d.oscB=WaveShape::softSaw;d.oscMix=.24f;
+        d.unison=2;d.attack=.001f;d.decay=.20f+.24f*hash01(seed,207);d.sustain=.18f;d.release=.28f;
+        d.transientLevel=.24f+.16f*hash01(seed,208);d.transientDecay=.010f;d.noiseLevel=.012f;
+        d.cutoff=4700.f+4600.f*hash01(seed,209);d.filterEnv=.28f;
+    }
+    if(malletRole)
+    {
+        d.name="Generated Mallet";d.oscA=WaveShape::sine;d.oscB=WaveShape::triangle;d.oscMix=.22f;
+        d.unison=1;d.attack=.001f;d.decay=.24f+.34f*hash01(seed,210);d.sustain=.03f;d.release=.22f+.28f*hash01(seed,211);
+        d.transientLevel=.28f+.18f*hash01(seed,212);d.transientDecay=.008f;d.fmAmount=.12f+.18f*hash01(seed,213);
+        d.fmRatio=2.f+std::floor(hash01(seed,214)*3.f);d.cutoff=6500.f+5200.f*hash01(seed,215);
+    }
+    if(growlRole)
+    {
+        d.name="Generated Growl Bass";d.oscA=WaveShape::saw;d.oscB=WaveShape::square;d.oscMix=.46f;
+        d.unison=2+(int)(hash01(seed,216)*3.f);d.detune=.05f+.08f*hash01(seed,217);d.oscBTranspose=-12.f;
+        d.fmAmount=.34f+.28f*hash01(seed,218);d.fmRatio=1.f+std::floor(hash01(seed,219)*4.f);
+        d.ringMod=.12f+.18f*hash01(seed,220);d.drive=.28f+.22f*hash01(seed,221);
+        d.filterMode=FilterMode::bandpass;d.cutoff=700.f+1800.f*hash01(seed,222);d.resonance=.25f+.18f*hash01(seed,223);
+        d.lfoCutoff=.45f+.30f*hash01(seed,224);d.lfoRate=.45f+2.3f*hash01(seed,225);d.width=.18f;
+    }
+
+    if(festival&&leadRole)
+    {
+        d.name="Generated Festival Lead";d.oscA=WaveShape::saw;d.oscB=WaveShape::softSaw;d.oscMix=.46f;
+        d.unison=8+(int)(hash01(seed,226)*3.f);d.detune=.105f+.075f*hash01(seed,227);d.unisonBlend=.84f;d.width=.98f;
+        d.attack=.002f;d.decay=.18f;d.sustain=.83f;d.release=.20f+.18f*hash01(seed,228);
+        d.cutoff=10500.f+6500.f*hash01(seed,229);d.filterEnv=.16f+.16f*hash01(seed,230);
+        d.transientLevel=juce::jmax(d.transientLevel,.12f);d.drive=.13f+.10f*hash01(seed,231);d.subLevel=juce::jmin(d.subLevel,.04f);
+    }
+    if(festival&&pluckRole)
+    {
+        d.name="Generated Festival Pluck";d.oscA=WaveShape::saw;d.oscB=WaveShape::triangle;d.oscMix=.30f;
+        d.unison=3+(int)(hash01(seed,232)*3.f);d.detune=.055f+.055f*hash01(seed,233);d.width=.84f;
+        d.attack=.001f;d.decay=.095f+.075f*hash01(seed,234);d.sustain=.05f;d.release=.12f+.12f*hash01(seed,235);
+        d.filterEnv=.58f+.18f*hash01(seed,236);d.cutoff=5200.f+6200.f*hash01(seed,237);
+        d.transientLevel=juce::jmax(d.transientLevel,.18f);d.drive=.08f+.08f*hash01(seed,238);
+    }
+    if(festival&&chordRole)
+    {
+        d.name="Generated Festival Chords";d.oscA=WaveShape::saw;d.oscB=WaveShape::softSaw;
+        d.unison=6+(int)(hash01(seed,239)*3.f);d.detune=.075f+.055f*hash01(seed,240);d.width=.96f;
+        d.attack=.006f;d.decay=.22f;d.sustain=.76f;d.release=.25f;d.cutoff=8200.f+6200.f*hash01(seed,241);
+        d.drive=.08f+.08f*hash01(seed,242);
+    }
     if(has("soft")||has("mellow")){d.oscA=WaveShape::sine;d.oscB=WaveShape::softSaw;d.oscAMorph=.18f+.22f*hash01(seed,52);d.drive=.03f;d.cutoff*=.62f;}
     if(has("square")||has("8-bit")){d.oscA=d.oscB=WaveShape::square;d.oscAMorph=d.oscBMorph=d.lfoMorphA=d.lfoMorphB=0.f;d.unison=1;d.phaseRandom=0.f;}
     if(has("morph")||has("wavetable")||has("evolving")){d.oscAMorph=.55f+.40f*hash01(seed,53);d.oscBMorph=.45f+.48f*hash01(seed,54);d.lfoCutoff=juce::jmax(d.lfoCutoff,.18f);d.lfoMorphA=.30f+.34f*hash01(seed,59);d.lfoMorphB=-(.24f+.38f*hash01(seed,60));d.lfoRate=.12f+1.1f*hash01(seed,61);d.lfoShape=LfoShape::triangle;}
@@ -109,6 +216,48 @@ SoundDNA PromptGenerator::generate(const juce::String& prompt, uint64_t seed, Pr
     if(has("reese")){d.chorus=.10f+.12f*hash01(seed,71);d.chorusRate=.12f+.18f*hash01(seed,72);d.chorusDepth=.34f+.20f*hash01(seed,73);}
     if(has("chorus")||has("lush")){d.chorus=.38f+.22f*hash01(seed,74);d.chorusRate=.12f+.42f*hash01(seed,75);d.chorusDepth=.58f+.28f*hash01(seed,76);}
     if(has("dry")||has("tight")){d.chorus=0.f;d.reverb=.015f;d.delay=.01f;} if(has("mono")||has("centered"))d.chorus=juce::jmin(d.chorus,.05f); if(has("wet")||has("space")||has("cinematic")){d.chorus=juce::jmax(d.chorus,.26f);d.reverb=.52f;d.delay=.30f;} if(has("noisy")||has("texture"))d.noiseLevel=.10f+.10f*hash01(seed,45);
+    // Final role-aware production polish runs after the generic FX defaults so
+    // festival requests keep the intended scale and impact.
+    if(festival&&leadRole)
+    {
+        d.chorus=juce::jmax(d.chorus,.22f);d.chorusDepth=juce::jmax(d.chorusDepth,.52f);
+        d.reverb=juce::jlimit(.10f,.28f,juce::jmax(d.reverb,.16f));
+        d.delay=juce::jlimit(.08f,.22f,.11f+.08f*hash01(seed,243));
+    }
+    if(festival&&pluckRole)
+    {
+        d.chorus=juce::jmax(d.chorus,.10f);d.reverb=juce::jlimit(.08f,.22f,juce::jmax(d.reverb,.12f));
+        d.delay=.08f+.08f*hash01(seed,244);
+    }
+    if(festival&&chordRole)
+    {
+        d.chorus=juce::jmax(d.chorus,.18f);d.chorusDepth=juce::jmax(d.chorusDepth,.48f);
+        d.reverb=juce::jlimit(.10f,.26f,juce::jmax(d.reverb,.15f));d.delay=.05f+.06f*hash01(seed,245);
+    }
+    if(festival&&has("kick"))
+    {
+        d.transientLevel=juce::jmax(d.transientLevel,.72f);d.transientDecay=.0075f;
+        d.pitchEnv=juce::jmax(d.pitchEnv,40.f);d.pitchEnvDecay=.050f;
+        d.drive=juce::jmax(d.drive,.27f);d.decay=juce::jmax(d.decay,.20f);d.subLevel=juce::jmax(d.subLevel,.38f);
+        d.reverb=0.f;d.delay=0.f;d.chorus=0.f;
+    }
+    if(festival&&(has("snare")||has("clap")))
+    {
+        d.transientLevel=juce::jmax(d.transientLevel,.62f);d.noiseLevel=juce::jmax(d.noiseLevel,.52f);
+        d.width=juce::jmax(d.width,.68f);d.drive=juce::jmax(d.drive,.12f);d.reverb=juce::jlimit(.04f,.13f,d.reverb);
+    }
+    if(has("riser")||has("uplifter"))
+    {
+        d.name="Generated Riser";d.noiseLevel=juce::jmax(d.noiseLevel,.16f);d.filterMode=FilterMode::highpass;
+        d.cutoff=900.f+2200.f*hash01(seed,246);d.lfoCutoff=.55f+.25f*hash01(seed,247);d.lfoRate=.18f+.8f*hash01(seed,248);
+        d.attack=.18f;d.release=.65f;d.width=.98f;d.reverb=juce::jmax(d.reverb,.28f);d.delay=juce::jmax(d.delay,.14f);
+    }
+    if(has("impact")||has("downlifter"))
+    {
+        d.name="Generated Impact";d.transientLevel=juce::jmax(d.transientLevel,.78f);d.transientDecay=.014f;
+        d.pitchEnv=has("downlifter")?30.f:18.f;d.pitchEnvDecay=.16f;d.subLevel=juce::jmax(d.subLevel,.36f);
+        d.noiseLevel=juce::jmax(d.noiseLevel,.12f);d.drive=juce::jmax(d.drive,.22f);d.release=.55f;
+    }
     if(has("pure sub")||has("clean sub")||has("sine sub"))
     {
         d.name="Generated Sub";
