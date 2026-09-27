@@ -1407,6 +1407,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
 
         const uint64_t motifDecisionSeed=mix64(motifSeed
             ^ ((uint64_t)motifBar+1ULL)*0x517cc1b727220a95ULL);
+        const size_t leadBeforeBar=lead.notes.size();
         int lastDegree=startDegree;
         int repeated=0;
         for(int i=0;i<count;++i)
@@ -1612,14 +1613,18 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                     bar*beatsPerBar+3.5,.16,juce::jlimit(72,122,80+(int)(energy*34.f)));
         }
 
-        // Counter melody is generated from an independent rhythm/contour family and
-        // deliberately occupies the second half of the bar so it answers the lead.
-        if((drop||chorus||finalHook)&&!tech)
+        // Counter melody behaves like an answering musician, not another lead
+        // playing continuously. It enters primarily on motif answer bars and only
+        // when the main lead has enough space.
+        const int leadNotesThisBar=(int)(lead.notes.size()-leadBeforeBar);
+        const bool answerBar=motifBar==1;
+        const bool counterSpace=leadNotesThisBar<=(finalHook?6:4);
+        if((drop||chorus||finalHook)&&!tech&&answerBar&&counterSpace)
         {
             const uint64_t cs=mix64(domains.counter
                 ^ ((uint64_t)themeGroup+1ULL)*0x9e3779b97f4a7c15ULL
                 ^ ((uint64_t)motifBar+1ULL)*0xbf58476d1ce4e5b9ULL);
-            const int counterCount=finalHook?4:3;
+            const int counterCount=finalHook?3:2;
             int cd=(startDegree+3+(int)(random01(cs,1)*4.f))%7;
             for(int i=0;i<counterCount;++i)
             {
