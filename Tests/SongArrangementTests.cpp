@@ -392,15 +392,17 @@ int main()
     sonara::SongArrangement festivalSmart;
     festivalSmart.generate("huge festival mainstage progressive house 128 BPM F minor memorable anthem",128.0,0x880011ULL);
     const sonara::ArrangementSection* festBuild=nullptr;
+    const sonara::ArrangementSection* festChorus=nullptr;
     const sonara::ArrangementSection* festDrop=nullptr;
     const sonara::ArrangementSection* festFinal=nullptr;
     for(const auto& s:festivalSmart.getSections())
     {
         if(s.name=="BUILD")festBuild=&s;
+        else if(s.name=="CHORUS")festChorus=&s;
         else if(s.name=="DROP")festDrop=&s;
         else if(s.name=="FINAL HOOK")festFinal=&s;
     }
-    if(!festBuild||!festDrop||!festFinal||festBuild->bars<8||festDrop->bars<16||festFinal->bars<12)
+    if(!festBuild||!festChorus||!festDrop||!festFinal||festBuild->bars<8||festChorus->bars<8||festDrop->bars<16||festFinal->bars<12)
     {std::cerr<<"Festival production intent did not reshape song structure\n";return 36;}
 
     const auto* festBass=findLane(festivalSmart,"BASS");
@@ -421,23 +423,23 @@ int main()
     const auto* festSub=findLane(festivalSmart,"SUB");
     if(!festKick||!festHats||!festSub)
     {std::cerr<<"v0.9 pre-drop lane missing\n";return 42;}
-    const double finalBuildBar=(festBuild->startBar+festBuild->bars-1)*4.0;
+    const double finalChorusBar=(festChorus->startBar+festChorus->bars-1)*4.0;
     auto hasLateStart=[&](const sonara::ArrangementLane& lane,double from)
     {
         for(const auto& n:lane.notes)
-            if(n.beat>=from&&n.beat<finalBuildBar+4.0)return true;
+            if(n.beat>=from&&n.beat<finalChorusBar+4.0)return true;
         return false;
     };
-    if(hasLateStart(*festKick,finalBuildBar+3.0)
-       ||hasLateStart(*festHats,finalBuildBar+3.5)
-       ||hasLateStart(*festBass,finalBuildBar+3.5)
-       ||hasLateStart(*festSub,finalBuildBar+3.5)
-       ||hasLateStart(*festPluck,finalBuildBar+3.5)
-       ||hasLateStart(*festLead,finalBuildBar+3.5))
-    {std::cerr<<"v0.9 festival pre-drop breathing window was filled by late notes\n";return 43;}
+    if(hasLateStart(*festKick,finalChorusBar+3.0)
+       ||hasLateStart(*festHats,finalChorusBar+3.5)
+       ||hasLateStart(*festBass,finalChorusBar+3.5)
+       ||hasLateStart(*festSub,finalChorusBar+3.5)
+       ||hasLateStart(*festPluck,finalChorusBar+3.5)
+       ||hasLateStart(*festLead,finalChorusBar+3.5))
+    {std::cerr<<"v1.1 CHORUS-to-DROP breathing window was filled by late notes\n";return 43;}
     for(const auto& n:festSub->notes)
-        if(n.beat<finalBuildBar+3.5&&n.beat+n.length>finalBuildBar+3.50&&n.beat>=finalBuildBar)
-        {std::cerr<<"v0.9 sub tail spills across pre-drop gap\n";return 44;}
+        if(n.beat<finalChorusBar+3.5&&n.beat+n.length>finalChorusBar+3.50&&n.beat>=finalChorusBar)
+        {std::cerr<<"v1.1 sub tail spills across CHORUS-to-DROP gap\n";return 44;}
 
     sonara::SongArrangement earlyDrop;
     earlyDrop.generateComposition("emotional house 128 BPM F minor early drop",128.0,0x880022ULL);
