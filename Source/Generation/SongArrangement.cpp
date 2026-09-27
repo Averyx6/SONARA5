@@ -974,32 +974,40 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             addNote(perc,39,b+2.5,.10,58+(int)(random01(seed,1520+bar)*18.f));
         }
 
+        // BUILD -> CHORUS gets a restrained lift. The true festival-style drum
+        // tension belongs at CHORUS -> DROP, where the listener expects the payoff.
         if(build && sectionEnd)
         {
-            const int divisions = house ? (hatMode>=2?16:8) : (hatMode>=2?24:16);
+            const int divisions=8;
             for(int s=0;s<divisions;++s)
             {
-                if(s<4 && groove==3 && s%2==1) continue;
-                const double rollBeat=b+s*(4.0/divisions);
-                if(preDropGap&&rollBeat>=b+3.5)continue;
+                const double rollBeat=b+2.0+s*(2.0/divisions);
                 addNote(snare,38,rollBeat,.05,
-                        juce::jlimit(48,127,58+s*(66/divisions)+(int)(random01(seed,1600+s+bar)*8.f)));
+                        juce::jlimit(54,104,58+s*6+(int)(random01(seed,1600+s+bar)*5.f)));
             }
         }
 
-        if(sectionEnd&&!breakdown&&(build||chorus||drop))
+        if(preDropGap)
         {
-            if(preDropGap)
+            // Two-beat accelerating snare/clap build, followed by a half-beat of
+            // air. The DROP itself already receives a crash/impact on beat one.
+            constexpr int rollHits=8;
+            for(int s=0;s<rollHits;++s)
             {
-                addNote(perc,45,b+2.75,.075,88);
-                addNote(perc,47,b+3.25,.070,98);
+                const double pos=2.0+s*(1.5/rollHits);
+                const int velocity=juce::jlimit(68,124,70+s*7);
+                addNote(snare,(s%2==0)?38:39,b+pos,.045,velocity);
             }
-            else
-            {
-                addNote(perc,45,b+3.00,.075,82+(drop?8:0));
-                addNote(perc,47,b+3.50,.070,90+(drop?8:0));
-                addNote(perc,50,b+3.75,.060,100+(drop?10:0));
-            }
+            addNote(perc,45,b+2.75,.07,88);
+            addNote(perc,47,b+3.10,.065,98);
+            addNote(perc,50,b+3.35,.055,108);
+        }
+
+        if(sectionEnd&&!breakdown&&(build||chorus||drop)&&!preDropGap)
+        {
+            addNote(perc,45,b+3.00,.075,82+(drop?8:0));
+            addNote(perc,47,b+3.50,.070,90+(drop?8:0));
+            addNote(perc,50,b+3.75,.060,100+(drop?10:0));
         }
     }
 
