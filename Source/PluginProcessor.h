@@ -49,7 +49,7 @@ public:
     std::shared_ptr<const sonara::SongArrangement> arrangementSnapshot() const noexcept { return std::atomic_load_explicit(&arrangement,std::memory_order_acquire); }
     bool writeArrangementMidiFile(const juce::File&) const;
     bool writeSelectedLaneMidiFile(const juce::File&) const;
-    void setSelectedLane(int i) noexcept { selectedLane.store(juce::jlimit(0,11,i)); }
+    void setSelectedLane(int i);
     int getSelectedLane() const noexcept { return selectedLane.load(); }
 
 
