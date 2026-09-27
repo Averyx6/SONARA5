@@ -529,6 +529,8 @@ void SonaraAudioProcessor::prepareToPlay(double sr, int bs)
     }
     songFxBus.setSize(channels,maximumBlockSize,false,false,true);
     songFxBus.clear();
+    songDrumBus.setSize(channels,maximumBlockSize,false,false,true);
+    songDrumBus.clear();
     songDuckEnvelope.assign((size_t)maximumBlockSize,0.f);
     songDuckState=0.f;
     for (auto& m : songMidi) m.ensureSize(16384);
@@ -1200,7 +1202,8 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
     songDuckState=duck;
 
     // Lane order: BASS, SUB, CHORDS, PLUCK, PAD, LEAD, COUNTER, FX.
-    static constexpr float laneGain[musicalLaneCount]={.58f,.36f,.31f,.24f,.19f,.72f,.19f,.16f};
+    // v1.7 music-forward balance: the hook sits clearly above the drum kit.
+    static constexpr float laneGain[musicalLaneCount]={.64f,.42f,.37f,.27f,.21f,.84f,.18f,.15f};
     static constexpr float hpHz[musicalLaneCount]={28.f,18.f,120.f,125.f,160.f,120.f,150.f,110.f};
     static constexpr float fxSend[musicalLaneCount]={0.f,0.f,.14f,.10f,.18f,.12f,.08f,.15f};
 
@@ -1329,7 +1332,10 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
         }
     }
 
-    drumSynth.render(out,drumTriggers.data(),drumCount);
+    songDrumBus.clear(0,renderSamples);
+    drumSynth.render(songDrumBus,drumTriggers.data(),drumCount);
+    for(int ch=0;ch<out.getNumChannels();++ch)
+        out.addFrom(ch,0,songDrumBus,ch,0,renderSamples,.70f);
 
     // One shared wet-only reverb bus; drums/BASS/SUB stay dry.
     if(songFxBus.getNumChannels()>=2)
@@ -1337,7 +1343,7 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
     else if(songFxBus.getNumChannels()==1)
         songReverb.processMono(songFxBus.getWritePointer(0),renderSamples);
     for(int ch=0;ch<out.getNumChannels();++ch)
-        out.addFrom(ch,0,songFxBus,ch,0,renderSamples,.72f);
+        out.addFrom(ch,0,songFxBus,ch,0,renderSamples,.66f);
 
     const float masterRc=1.f/(juce::MathConstants<float>::twoPi*24.f);
     const float masterDt=1.f/(float)previewSampleRate;
@@ -1353,7 +1359,7 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
             const float x=std::isfinite(d[s])?d[s]:0.f;
             const float hp=masterAlpha*(y1+x-x1);
             x1=x;y1=hp;
-            float y=juce::jlimit(-.95f,.95f,std::tanh(hp*.82f));
+            float y=juce::jlimit(-.96f,.96f,std::tanh(hp*.96f));
             if(fadeStart>s)
             {
                 const int remaining=fadeStart-s;
