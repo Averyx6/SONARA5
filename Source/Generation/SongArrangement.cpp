@@ -1228,6 +1228,14 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         if(plan.density>.80f&&!cinematic)count=juce::jmin(8,count+1);
         if(plan.density<.52f)count=juce::jmax(2,count-1);
 
+        // Section orchestration matters as much as note choice. Verse/breakdown
+        // leave breathing room, builds become busier, and drops/final hooks carry
+        // the full motif instead of every section behaving like the same loop.
+        if(verse)count=juce::jmax(2,count-1);
+        if(breakdown)count=juce::jmin(count,3);
+        if(build)count=juce::jmin(8,count+1);
+        if(drop||finalHook)count=juce::jmax(count,4);
+
         double positions[8]{};
         for(int i=0;i<count;++i)positions[i]=rhythmPos[family][i];
 
