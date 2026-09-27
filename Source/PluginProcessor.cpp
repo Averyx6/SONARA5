@@ -232,11 +232,21 @@ float productionQualityScore(const sonara::SongArrangement& song)
     const float breakBass=laneDensityInSection(song,"BASS",breakdown);
     const float bassContrast=juce::jlimit(0.f,1.f,(dropBass-breakBass+.5f)/5.0f);
 
+    const float dropLead=laneDensityInSection(song,"LEAD",drop);
+    const float breakLead=laneDensityInSection(song,"LEAD",breakdown);
+    const float leadContrast=juce::jlimit(0.f,1.f,(dropLead-breakLead+.5f)/5.0f);
+
+    // Good EDM drops are neither empty nor note soup. Reward a useful density
+    // window while keeping breakdown-to-drop contrast obvious.
+    const float leadDensityShape=juce::jlimit(0.f,1.f,1.f-std::abs(dropLead-4.6f)/4.6f);
+    const float kickDensityShape=juce::jlimit(0.f,1.f,1.f-std::abs(dropKick-4.2f)/4.2f);
+
     // Reward recognisable motif memory without demanding exact cloning.
     const float repeatShape=juce::jlimit(0.f,1.f,1.f-std::abs(motifRepeat-.72f)/.72f);
     const float recallShape=juce::jlimit(0.f,1.f,1.f-std::abs(hookRecall-.68f)/.68f);
     return juce::jlimit(0.f,1.f,
-        repeatShape*.30f+recallShape*.25f+drumContrast*.25f+bassContrast*.20f);
+        repeatShape*.22f+recallShape*.18f+drumContrast*.18f+bassContrast*.14f+
+        leadContrast*.12f+leadDensityShape*.10f+kickDensityShape*.06f);
 }
 
 float promptCompositionMatch(const juce::String& prompt,const sonara::SongArrangement& song)
@@ -561,7 +571,7 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
         return value;
     };
 
-    constexpr int maxAttempts=24;
+    constexpr int maxAttempts=28;
     for(int attempt=0;attempt<maxAttempts;++attempt)
     {
         const uint64_t entropy=static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64())
