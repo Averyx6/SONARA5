@@ -42,6 +42,21 @@ int main(){
  const auto pureSub=generator.generate("pure clean sine sub mono lowpass dry",404);
  if(pureSub.unison!=1||pureSub.width>.06f||pureSub.cutoff>180.f||pureSub.reverb>.02f||pureSub.delay>.02f||pureSub.chorus>.02f)return fail("pure sub is not mono/dry/low-passed");
 
+ const auto festivalLead=generator.generate("huge mainstage festival supersaw lead",501);
+ const auto festivalPluck=generator.generate("bright festival pluck",501);
+ const auto synthBrass=generator.generate("powerful brass horn stab",501);
+ const auto strings=generator.generate("emotional wide string ensemble",501);
+ const auto flute=generator.generate("airy expressive flute",501);
+ const auto growl=generator.generate("aggressive neuro growl bass",501);
+ if(festivalLead.name!="Generated Festival Lead"||festivalLead.unison<8||festivalLead.width<.9f||festivalLead.transientLevel<.10f)return fail("festival lead semantic design missing");
+ if(festivalPluck.name!="Generated Festival Pluck"||festivalPluck.decay>.24f||festivalPluck.transientLevel<.15f)return fail("festival pluck semantic design missing");
+ if(synthBrass.name!="Generated Synth Brass"||synthBrass.filterEnv<.25f)return fail("brass semantic design missing");
+ if(strings.name!="Generated String Ensemble"||strings.attack<.10f||strings.release<.70f)return fail("string semantic design missing");
+ if(flute.name!="Generated Air Flute"||flute.unison!=1||flute.noiseLevel<.02f)return fail("flute semantic design missing");
+ if(growl.name!="Generated Growl Bass"||growl.fmAmount<.30f||growl.drive<.25f)return fail("growl semantic design missing");
+ const auto festivalKick=generator.generate("festival mainstage punchy kick",502);
+ if(festivalKick.transientLevel<.70f||festivalKick.pitchEnv<38.f||festivalKick.reverb>.01f)return fail("festival kick impact missing");
+
  if(generator.generate("gated square lfo bass",21).lfoShape!=sonara::LfoShape::square)return fail("square LFO prompt intent"); if(generator.generate("rising lfo animated pad",22).lfoShape!=sonara::LfoShape::sawUp)return fail("rising LFO prompt intent"); if(generator.generate("falling lfo texture",23).lfoShape!=sonara::LfoShape::sawDown)return fail("falling LFO prompt intent"); if(generator.generate("triangle lfo evolving texture",24).lfoShape!=sonara::LfoShape::triangle)return fail("triangle LFO prompt intent"); if(generator.generate("vibrato gated lead",25).lfoShape!=sonara::LfoShape::sine)return fail("vibrato must use smooth sine LFO");
  auto similarSource=generator.generate("high-pass animated texture",14); similarSource.filterMode=sonara::FilterMode::bandpass; similarSource.lfoShape=sonara::LfoShape::sawUp; const auto similar=generator.mutate(similarSource,15,.18f); if(similar.filterMode!=sonara::FilterMode::bandpass)return fail("similar generation changed discrete filter topology"); if(similar.lfoShape!=sonara::LfoShape::sawUp)return fail("similar generation changed discrete LFO shape");
  const sonara::MutationLocks none; const auto mutated=generator.mutate(source,0xabcdefULL,1.f,none); if(same(mutated.attack,source.attack)&&same(mutated.cutoff,source.cutoff)&&same(mutated.oscAMorph,source.oscAMorph))return fail("unlocked mutation did not evolve"); const auto repeated=generator.mutate(source,0xabcdefULL,1.f,none); if(!same(repeated.attack,mutated.attack)||!same(repeated.lfoRate,mutated.lfoRate)||!same(repeated.chorus,mutated.chorus)||repeated.filterMode!=mutated.filterMode||repeated.lfoShape!=mutated.lfoShape)return fail("mutation is not deterministic");
