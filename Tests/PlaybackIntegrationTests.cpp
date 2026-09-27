@@ -312,6 +312,10 @@ int main()
             composer.generateTrack(prompt);
             auto song=composer.arrangementSnapshot();
             if(!song)return fail("same-prompt generation returned no arrangement");
+            const auto* liveLead=laneNamed(*song,"LEAD");
+            if(!liveLead)return fail("generated song missing LEAD for live SoundDNA sync");
+            if(composer.getSelectedLane()!=9||composer.currentPatch().seed!=liveLead->sound.seed)
+                return fail("selected Piano Roll MIDI is not synced to the generated LEAD SoundDNA");
             const auto hash=leadSkeletonHash(*song);
             if(hash==0||!skeletons.insert(hash).second)
                 return fail("GENERATE TRACK recycled a previous melody skeleton");
