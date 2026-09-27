@@ -1131,6 +1131,8 @@ void SongArrangement::addHarmony(uint64_t seed)
     };
 
     // CHORDS and PAD interpret the same Harmony DNA differently.
+    int lastMainstreamChordBar=-1,mainstreamChordAttacksThisBar=0;
+    int lastMainstreamPadBar=-1,mainstreamPadAttacksThisBar=0;
     for(size_t hi=0;hi<harmonyEvents.size();++hi)
     {
         const auto& event=harmonyEvents[hi];
@@ -1150,6 +1152,12 @@ void SongArrangement::addHarmony(uint64_t seed)
         auto tones=mainstreamSong?closeSongChord(event):chordTonesFor(event);
         if(!mainstreamSong)for(auto& n:tones)n+=12;
 
+        const int eventBar=juce::jlimit(0,bars-1,(int)std::floor(event.beat/beatsPerBar));
+        if(eventBar!=lastMainstreamChordBar){lastMainstreamChordBar=eventBar;mainstreamChordAttacksThisBar=0;}
+        if(eventBar!=lastMainstreamPadBar){lastMainstreamPadBar=eventBar;mainstreamPadAttacksThisBar=0;}
+        const bool allowMainstreamChord=!mainstreamSong||mainstreamChordAttacksThisBar<2;
+        const bool allowMainstreamPad=!mainstreamSong||mainstreamPadAttacksThisBar<2;
+
         int repeats=1;
         if(drop||chorus||finalHook)
             repeats=(chordMode==0?1:(chordMode==1?2:(chordMode==2?4:2)));
@@ -1163,6 +1171,7 @@ void SongArrangement::addHarmony(uint64_t seed)
         }
 
         const double unit=event.length/(double)repeats;
+        if(allowMainstreamChord)
         for(int r=0;r<repeats;++r)
         {
             const uint64_t rs=(uint64_t)hi*97ULL+(uint64_t)r;
@@ -1184,13 +1193,14 @@ void SongArrangement::addHarmony(uint64_t seed)
             if(!mainstreamSong&&finalHook&&r%2==0&&random01(domains.voicing,0x5400+rs)<.58f)
                 addNote(chords,tones[2]+12,startBeat,juce::jmin(len*.78,1.1),juce::jmax(36,baseVel-13));
         }
+        if(mainstreamSong&&allowMainstreamChord)++mainstreamChordAttacksThisBar;
 
         // PAD is slow upper harmony only. Mainstream mode never randomizes the
         // octave/register or adds an unrelated root doubling.
         if(intro||verse||breakdown)
         {
             const float padChance=breakdown?.94f:(intro?.82f:.68f);
-            if(mainstreamSong||random01(domains.pad,0x6100+hi)<padChance)
+            if(allowMainstreamPad&&(mainstreamSong||random01(domains.pad,0x6100+hi)<padChance))
             {
                 const double padStart=mainstreamSong?event.beat:
                     event.beat+(random01(domains.pad,0x6110+hi)<.22f?.25:0.0);
@@ -1211,6 +1221,7 @@ void SongArrangement::addHarmony(uint64_t seed)
 
                 if(!mainstreamSong&&random01(domains.pad,0x6170+hi)<.34f)
                     addNote(pad,tones[0]+12,padStart,padLen*.82,36+(int)(random01(domains.pad,0x6180+hi)*8.f));
+                if(mainstreamSong)++mainstreamPadAttacksThisBar;
             }
         }
     }
