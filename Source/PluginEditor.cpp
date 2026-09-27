@@ -261,6 +261,37 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
         };
     }
 
+    const std::array<juce::String,10> suggestionText={
+        "strong hook clear main melody",
+        "simple melody clean melody no random notes",
+        "short intro",
+        "big chorus",
+        "long drop",
+        "drum build snare roll before drop",
+        "radio structure song structure",
+        "powerful drop",
+        "more space less busy",
+        "no counter melody main melody only"
+    };
+    for(size_t i=0;i<promptSuggestions.size();++i)
+    {
+        addAndMakeVisible(promptSuggestions[i]);
+        styleButton(promptSuggestions[i],i==0||i==1||i==7);
+        promptSuggestions[i].setTooltip("Add ""+suggestionText[i]+"" to the song prompt");
+        promptSuggestions[i].onClick=[this,i,suggestionText]
+        {
+            auto current=songPrompt.getText().trim();
+            const auto token=suggestionText[i];
+            if(!current.containsIgnoreCase(token))
+            {
+                if(current.isNotEmpty()&&!current.endsWithChar(','))current+=",";
+                if(current.isNotEmpty())current+=" ";
+                current+=token;
+                songPrompt.setText(current);
+            }
+        };
+    }
+
     generateSound.onClick=[this]{p.generatePatch(soundPrompt.getText());};
     applyLaneSound.onClick=[this]{
         if(!p.setSelectedLaneSound(laneSoundPrompt.getText(),false))
@@ -396,6 +427,7 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     soundPrompt.setVisible(instrumentTab);
     songPrompt.setVisible(!instrumentTab&&!mixTab);
     laneSoundPrompt.setVisible(mixTab);
+    for(auto& b:promptSuggestions)b.setVisible(songTab);
 
     generateSound.setVisible(instrumentTab);
     similar.setVisible(instrumentTab);
@@ -516,6 +548,11 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
     {
         g.setColour(cyan.withAlpha(.75f));
         g.drawText("REFERENCE / RESOUND",270,238,220,18,juce::Justification::left);
+    }
+    if(activeTab==1)
+    {
+        g.setColour(cyan.withAlpha(.70f));g.setFont(8.5f);
+        g.drawText("PROMPT DIRECTIONS • CLICK TO ADD",270,225,getWidth()-570,14,juce::Justification::left);
     }
     if(activeTab==6)
     {
@@ -684,7 +721,18 @@ void SonaraAudioProcessorEditor::resized()
         default: break;
     }
 
-    const int upperY=232;
+    if(activeTab==1)
+    {
+        const int sx=cx,sg=5;
+        const int cell=(cw-sg*4)/5;
+        for(int i=0;i<10;++i)
+        {
+            const int row=i/5,col=i%5;
+            promptSuggestions[(size_t)i].setBounds(sx+col*(cell+sg),242+row*28,cell,24);
+        }
+    }
+
+    const int upperY=activeTab==1?300:232;
     const int upperH=juce::jlimit(230,320,(int)(h*.34f));
     soundView.setBounds(cx,upperY,cw,upperH);
     timeline.setBounds(cx,upperY,cw,upperH);
