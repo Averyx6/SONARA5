@@ -1268,11 +1268,16 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             for(int i=0;i<count;++i)positions[i]=p10[i];
         }
 
+        const uint64_t motifDecisionSeed=mix64(motifSeed
+            ^ ((uint64_t)motifBar+1ULL)*0x517cc1b727220a95ULL);
         int lastDegree=startDegree;
         int repeated=0;
         for(int i=0;i<count;++i)
         {
-            const uint64_t salt=(uint64_t)bar*256ULL+(uint64_t)i;
+            // Base motif decisions repeat with the two-bar motif. Absolute bar
+            // number is intentionally excluded so later repetitions sound like
+            // the same hook, not a re-roll.
+            const uint64_t salt=(uint64_t)motifBar*256ULL+(uint64_t)i;
             const bool strong=positions[i]<.08||std::abs(std::fmod(positions[i],1.0))<.08;
 
             float restChance=plan.restAmount;
@@ -1281,7 +1286,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             if(breakdown)restChance=juce::jmax(restChance,.30f);
             if(tech)restChance=juce::jmax(restChance,.24f);
             if(architecture==3)restChance*=.55f; // already sparse by construction
-            if(!strong&&random01(phraseSeed,0x2100+salt)<restChance)continue;
+            if(!strong&&random01(motifDecisionSeed,0x2100+salt)<restChance)continue;
 
             int degree=startDegree;
             int octaveExtra=0;
@@ -1305,7 +1310,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                 {
                     static constexpr int chordDegrees[6]={0,2,4,2,4,1};
                     degree=chordInfoAtBeat(bar*beatsPerBar+positions[i]).degreeIndex+chordDegrees[(i+motifBar)%6];
-                    if(i%3==2&&random01(phraseSeed,0x2200+salt)>.52f)octaveExtra=12;
+                    if(i%3==2&&random01(motifDecisionSeed,0x2200+salt)>.52f)octaveExtra=12;
                     break;
                 }
                 case 2: // OCTAVE ANTHEM
@@ -1384,16 +1389,16 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             const bool phraseEnding=(barInPhrase==phraseBars-1&&i==count-1);
             const bool barAnchor=positions[i]<.08;
             const float chordToneChance=phraseEnding?.98f:(barAnchor?.88f:(strong?.62f:.30f));
-            if(random01(phraseSeed,0x2300+salt)<chordToneChance)
+            if(random01(motifDecisionSeed,0x2300+salt)<chordToneChance)
             {
-                const int toneChoice=(int)(random01(phraseSeed,0x2310+salt)*3.f)%3;
+                const int toneChoice=(int)(random01(motifDecisionSeed,0x2310+salt)*3.f)%3;
                 if(toneChoice==0)degree=localHarmony.degreeIndex;
                 else if(toneChoice==1)degree=localHarmony.degreeIndex+2;
                 else degree=localHarmony.degreeIndex+4;
             }
-            else if(!strong&&random01(phraseSeed,0x2320+salt)<.14f)
+            else if(!strong&&random01(motifDecisionSeed,0x2320+salt)<.14f)
             {
-                const int dir=random01(phraseSeed,0x2330+salt)>.5f?1:-1;
+                const int dir=random01(motifDecisionSeed,0x2330+salt)>.5f?1:-1;
                 degree+=dir; // controlled scale passing/approach tone
             }
 
@@ -1404,7 +1409,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                 int delta=degree-lastDegree;
                 while(delta>4){degree-=7;delta=degree-lastDegree;}
                 while(delta<-4){degree+=7;delta=degree-lastDegree;}
-                if(std::abs(delta)>3&&random01(phraseSeed,0x2340+salt)<.78f)
+                if(std::abs(delta)>3&&random01(motifDecisionSeed,0x2340+salt)<.78f)
                     degree=lastDegree+(delta>0?2:-2);
             }
 
@@ -1432,12 +1437,12 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
 
             int registerNow=registerBase+octaveExtra;
             if(cinematic&&breakdown)registerNow=12;
-            if(finalHook&&plan.octaveRange>=2&&random01(phraseSeed,0x2400+salt)>.74f)registerNow+=12;
-            if(verse&&random01(phraseSeed,0x2410+salt)<.16f)registerNow-=12;
+            if(finalHook&&plan.octaveRange>=2&&random01(motifDecisionSeed,0x2400+salt)>.74f)registerNow+=12;
+            if(verse&&random01(motifDecisionSeed,0x2410+salt)<.16f)registerNow-=12;
 
             double pos=positions[i];
-            if(!strong&&plan.syncopation>.45f&&random01(phraseSeed,0x2500+salt)<plan.syncopation*.42f)
-                pos+=random01(phraseSeed,0x2510+salt)>.5f?.125:-.125;
+            if(!strong&&plan.syncopation>.45f&&random01(motifDecisionSeed,0x2500+salt)<plan.syncopation*.42f)
+                pos+=random01(motifDecisionSeed,0x2510+salt)>.5f?.125:-.125;
             pos=juce::jlimit(0.0,3.90,pos);
 
             double length=.34;
@@ -1445,17 +1450,18 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             // Genre articulation outranks architecture. An architecture changes
             // phrase construction, but must not turn a tech-house riff into a
             // cinematic legato line or a cinematic theme into a staccato riff.
-            if(tech)length=.10+random01(phraseSeed,0x2630+salt)*.13;
-            else if(dnb)length=.08+random01(phraseSeed,0x2631+salt)*.14;
-            else if(cinematic)length=.62+random01(phraseSeed,0x2632+salt)*.78;
-            else if(architecture==4)length=.58+random01(phraseSeed,0x2600+salt)*.62;
-            else if(architecture==3)length=.28+random01(phraseSeed,0x2610+salt)*.38;
-            else if(architecture==2)length=.22+random01(phraseSeed,0x2620+salt)*.28;
-            else if(architecture==5||architecture==10)length=.12+random01(phraseSeed,0x2633+salt)*.18;
-            else length=.20+random01(phraseSeed,0x2640+salt)*.42;
+            if(tech)length=.10+random01(motifDecisionSeed,0x2630+salt)*.13;
+            else if(dnb)length=.08+random01(motifDecisionSeed,0x2631+salt)*.14;
+            else if(cinematic)length=.62+random01(motifDecisionSeed,0x2632+salt)*.78;
+            else if(architecture==4)length=.58+random01(motifDecisionSeed,0x2600+salt)*.62;
+            else if(architecture==3)length=.28+random01(motifDecisionSeed,0x2610+salt)*.38;
+            else if(architecture==2)length=.22+random01(motifDecisionSeed,0x2620+salt)*.28;
+            else if(architecture==5||architecture==10)length=.12+random01(motifDecisionSeed,0x2633+salt)*.18;
+            else length=.20+random01(motifDecisionSeed,0x2640+salt)*.42;
 
+            const float phraseAccent=random01(phraseSeed,0x2700+salt);
             const int velocity=juce::jlimit(52,124,
-                60+(int)(energy*38.f)+(strong?7:0)+(int)(random01(phraseSeed,0x2700+salt)*14.f)-7);
+                60+(int)(energy*38.f)+(strong?7:0)+(int)(phraseAccent*10.f)-5);
 
             addNote(lead,scaleNote(degree,registerNow),bar*beatsPerBar+pos,length,velocity);
             lastDegree=degree;
@@ -1473,20 +1479,22 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         // deliberately occupies the second half of the bar so it answers the lead.
         if((drop||chorus||finalHook)&&!tech)
         {
-            const uint64_t cs=mix64(domains.counter ^ ((uint64_t)sectionIndex+1ULL)*0x9e3779b97f4a7c15ULL ^ ((uint64_t)bar+1ULL)*0xbf58476d1ce4e5b9ULL);
+            const uint64_t cs=mix64(domains.counter
+                ^ ((uint64_t)themeGroup+1ULL)*0x9e3779b97f4a7c15ULL
+                ^ ((uint64_t)motifBar+1ULL)*0xbf58476d1ce4e5b9ULL);
             const int counterCount=finalHook?4:3;
             int cd=(startDegree+3+(int)(random01(cs,1)*4.f))%7;
             for(int i=0;i<counterCount;++i)
             {
-                if(i>0&&random01(cs,20+bar*8+i)<.18f)continue;
+                if(i>0&&random01(cs,20+i)<.18f)continue;
                 const double pos=1.75+i*(2.0/counterCount)
-                    +(i%2?.08*(random01(cs,40+i+bar)-.5):0.0);
-                const int move=((int)(random01(cs,60+i+bar)*5.f)-2);
+                    +(i%2?.08*(random01(cs,40+i)-.5):0.0);
+                const int move=((int)(random01(cs,60+i)*5.f)-2);
                 cd=juce::jlimit(0,6,cd+move);
                 const int reg=finalHook?24:12;
                 addNote(counter,scaleNote(cd,reg),bar*beatsPerBar+juce::jlimit(0.0,3.85,pos),
-                        .14+.20*random01(cs,90+i+bar),
-                        juce::jlimit(48,100,56+(int)(energy*25.f)+(int)(random01(cs,110+i+bar)*10.f)));
+                        .14+.20*random01(cs,90+i),
+                        juce::jlimit(48,100,56+(int)(energy*25.f)+(int)(random01(phraseSeed,110+i+bar)*8.f)));
             }
         }
     }
