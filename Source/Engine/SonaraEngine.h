@@ -10,6 +10,7 @@ public:
     bool canPlaySound(juce::SynthesiserSound* s) override{return dynamic_cast<SonaraSound*>(s)!=nullptr;}
     void prepare(double sampleRate, int maximumBlockSize, int numChannels) noexcept;
     void setDNA(const SoundDNA& d) noexcept { dna.copyDSPFrom(d); }
+    void setRuntimeUnisonCap(int cap) noexcept { runtimeUnisonCap=juce::jlimit(1,maxUnison,cap); }
     void startNote(int,float,juce::SynthesiserSound*,int) override; void stopNote(float,bool) override;
     void pitchWheelMoved(int value) override
     {
@@ -32,12 +33,12 @@ private:
     int64_t ageSamples=0; int holdCounter=0; float heldL=0.f,heldR=0.f;
     float pitchEnvState=0.f,pitchEnvMul=1.f,transientState=0.f,transientMul=1.f;
     float unisonNorm=.28f; int filterUpdateCounter=0; bool lfoActive=false,filterDynamic=false;
-    int holdPeriodSamples=1; float crushLevels=65536.f;
+    int holdPeriodSamples=1; float crushLevels=65536.f; int runtimeUnisonCap=maxUnison;
 };
 class SonaraEngine {
-public: SonaraEngine(); void setLowCpuMode(bool enabled); void setVoiceLimit(int voices); void prepare(double,int,int); void render(juce::AudioBuffer<float>&,juce::MidiBuffer&); void render(juce::AudioBuffer<float>&,juce::MidiBuffer&,int numSamples); void setPatch(const SoundDNA&); void allNotesOff() noexcept { synth.allNotesOff(0, false); } bool hasActiveVoices() noexcept; const SoundDNA& patch()const noexcept{return dna;}
+public: SonaraEngine(); void setLowCpuMode(bool enabled); void setRuntimeEcoMode(bool enabled) noexcept; void setVoiceLimit(int voices); void prepare(double,int,int); void render(juce::AudioBuffer<float>&,juce::MidiBuffer&); void render(juce::AudioBuffer<float>&,juce::MidiBuffer&,int numSamples); void setPatch(const SoundDNA&); void allNotesOff() noexcept { synth.allNotesOff(0, false); } bool hasActiveVoices() noexcept; const SoundDNA& patch()const noexcept{return dna;}
 private:
     static float readFractional(const juce::AudioBuffer<float>&,int,int,float) noexcept; float readDelay(int,float) const noexcept; void applyPendingPatch() noexcept; void processChorus(juce::AudioBuffer<float>&,int) noexcept; void processDelay(juce::AudioBuffer<float>&,int) noexcept;
-    juce::Synthesiser synth; SoundDNA dna,pendingDNA,audioDNA; juce::SpinLock pendingLock; bool patchPending=false; double sr=44100.0; juce::Reverb reverb; juce::Reverb::Parameters reverbParams; juce::AudioBuffer<float> chorusBuffer,delayBuffer; int chorusWrite=0,delayWrite=0; float chorusPhase=0.f; bool lowCpuMode=false; int requestedVoices=8; void rebuildVoices();
+    juce::Synthesiser synth; SoundDNA dna,pendingDNA,audioDNA; juce::SpinLock pendingLock; bool patchPending=false; double sr=44100.0; juce::Reverb reverb; juce::Reverb::Parameters reverbParams; juce::AudioBuffer<float> chorusBuffer,delayBuffer; int chorusWrite=0,delayWrite=0; float chorusPhase=0.f; bool lowCpuMode=false,runtimeEcoMode=false; int requestedVoices=8; void rebuildVoices();
 };
 }
