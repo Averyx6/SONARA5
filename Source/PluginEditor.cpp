@@ -314,7 +314,7 @@ void SonaraAudioProcessorEditor::PianoRollView::paint(juce::Graphics& g)
 SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):AudioProcessorEditor(&x),p(x){
     setLookAndFeel(&look);setSize(1320,820);setResizable(true,true);setResizeLimits(1180,720,1900,1200);setOpaque(true);
     soundPrompt.setText("Future rave lead, aggressive bright festival, wide fast attack");
-    songPrompt.setText("Emotional progressive house, 128 BPM, F minor, huge memorable lead, warm chords, deep bass, powerful evolving drop");
+    songPrompt.setText("Emotional progressive house, 128 BPM, F minor, strong hook clear main melody, simple melody clean melody no random notes, short intro, big chorus, drum build snare roll before drop, powerful long drop, warm chords, deep bass, more space");
     for(auto* editor:{&soundPrompt,&songPrompt,&laneSoundPrompt})
     {
         editor->setMultiLine(false);
@@ -360,14 +360,14 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
         "Experimental morphing synth, animated texture"
     };
     const std::array<juce::String,8> songPresetPrompts={
-        "Emotional progressive house, 128 BPM, F minor, memorable lead, warm chords, deep bass, huge evolving drops",
-        "Future rave, 128 BPM, F minor, aggressive festival energy, dark bass, sharp synths, massive drops",
-        "Melodic EDM pop, 124 BPM, emotional bright hook, warm chords, punchy drums, uplifting final drop",
-        "Tech house, 126 BPM, dark tight groove, rolling bass, sparse synth hook, club arrangement",
-        "Drum and bass, 174 BPM, energetic minor key, moving bass, fast drums, atmospheric breakdown, huge final drop",
-        "Electro pop, 122 BPM, catchy melody, clean bass, glossy synths, dynamic chorus sections",
-        "Cinematic EDM, 128 BPM, emotional minor key, wide pads, dramatic builds, powerful melodic drops",
-        "Experimental EDM, 130 BPM, unusual groove, evolving harmony, animated synths, unpredictable but musical sections"
+        "Emotional progressive house, 128 BPM, F minor, strong hook clear main melody, simple melody, short intro, big chorus, drum build, powerful long drop, warm chords, deep bass, more space",
+        "Future rave, 128 BPM, F minor, strong hook, clean melody no random notes, short intro, festival drum build, big chorus, massive powerful drop, dark bass, sharp synths",
+        "Melodic EDM pop, 124 BPM, radio structure, catchy strong hook, simple melody, clean bass, warm chords, punchy drums, big chorus, uplifting final drop",
+        "Tech house, 126 BPM, dark tight groove, rolling bass, sparse clean hook, less busy, short intro, club arrangement, short breakdown",
+        "Drum and bass, 174 BPM, energetic minor key, clear hook, moving bass, fast drums, strong drum build, atmospheric breakdown, powerful final drop",
+        "Electro pop, 122 BPM, radio structure, catchy clean main melody, simple melody, glossy synths, big chorus, punchy drums, more space",
+        "Cinematic EDM, 128 BPM, emotional minor key, clear main melody, wide pads, dramatic build, big chorus, powerful melodic drop, long breakdown",
+        "Experimental EDM, 130 BPM, unusual groove, evolving harmony, animated synths, but keep a strong hook and clear song structure"
     };
     for(size_t i=0;i<presets.size();++i)
     {
