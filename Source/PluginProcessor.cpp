@@ -152,6 +152,93 @@ float harmonyQualityScore(const sonara::SongArrangement& song)
     return juce::jlimit(0.f,1.f,.42f*variety+.34f*repetition+.24f*(tonalCentre?1.f:.55f));
 }
 
+
+const sonara::ArrangementSection* sectionNamed(const sonara::SongArrangement& song,const juce::String& name)
+{
+    for(const auto& s:song.getSections())if(s.name==name)return &s;
+    return nullptr;
+}
+
+float laneDensityInSection(const sonara::SongArrangement& song,const juce::String& laneName,
+                           const sonara::ArrangementSection* section)
+{
+    if(section==nullptr)return 0.f;
+    const auto* lane=laneNamed(song,laneName);
+    if(lane==nullptr)return 0.f;
+    const double start=section->startBar*4.0;
+    const double end=(section->startBar+section->bars)*4.0;
+    int count=0;
+    for(const auto& n:lane->notes)if(n.beat>=start&&n.beat<end)++count;
+    return count/(float)juce::jmax(1,section->bars);
+}
+
+float sectionRhythmOverlap(const sonara::ArrangementLane* lane,
+                           const sonara::ArrangementSection* a,
+                           const sonara::ArrangementSection* b)
+{
+    if(lane==nullptr||a==nullptr||b==nullptr)return 0.f;
+    std::array<bool,64> first{},second{};
+    const double aStart=a->startBar*4.0,bStart=b->startBar*4.0;
+    const double aEnd=aStart+8.0,bEnd=bStart+8.0;
+    for(const auto& n:lane->notes)
+    {
+        if(n.beat>=aStart&&n.beat<aEnd)
+        {
+            const int q=juce::jlimit(0,63,(int)std::llround((n.beat-aStart)*8.0));
+            first[(size_t)q]=true;
+        }
+        if(n.beat>=bStart&&n.beat<bEnd)
+        {
+            const int q=juce::jlimit(0,63,(int)std::llround((n.beat-bStart)*8.0));
+            second[(size_t)q]=true;
+        }
+    }
+    int aCount=0,bCount=0,common=0;
+    for(size_t i=0;i<first.size();++i)
+    {
+        if(first[i])++aCount;
+        if(second[i])++bCount;
+        if(first[i]&&second[i])++common;
+    }
+    if(aCount==0||bCount==0)return 0.f;
+    return juce::jlimit(0.f,1.f,common/(float)juce::jmax(1,juce::jmin(aCount,bCount)));
+}
+
+float internalTwoBarRepeat(const sonara::ArrangementLane* lane,
+                           const sonara::ArrangementSection* section)
+{
+    if(lane==nullptr||section==nullptr||section->bars<4)return .5f;
+    sonara::ArrangementSection second=*section;
+    second.startBar+=2;
+    return sectionRhythmOverlap(lane,section,&second);
+}
+
+float productionQualityScore(const sonara::SongArrangement& song)
+{
+    const auto* drop=sectionNamed(song,"DROP");
+    const auto* breakdown=sectionNamed(song,"BREAKDOWN");
+    const auto* finalHook=sectionNamed(song,"FINAL HOOK");
+    const auto* lead=laneNamed(song,"LEAD");
+    if(drop==nullptr||lead==nullptr)return 0.f;
+
+    const float motifRepeat=internalTwoBarRepeat(lead,drop);
+    const float hookRecall=finalHook?sectionRhythmOverlap(lead,drop,finalHook):.5f;
+
+    const float dropKick=laneDensityInSection(song,"KICK",drop);
+    const float breakKick=laneDensityInSection(song,"KICK",breakdown);
+    const float drumContrast=juce::jlimit(0.f,1.f,(dropKick-breakKick+.5f)/4.0f);
+
+    const float dropBass=laneDensityInSection(song,"BASS",drop);
+    const float breakBass=laneDensityInSection(song,"BASS",breakdown);
+    const float bassContrast=juce::jlimit(0.f,1.f,(dropBass-breakBass+.5f)/5.0f);
+
+    // Reward recognisable motif memory without demanding exact cloning.
+    const float repeatShape=juce::jlimit(0.f,1.f,1.f-std::abs(motifRepeat-.72f)/.72f);
+    const float recallShape=juce::jlimit(0.f,1.f,1.f-std::abs(hookRecall-.68f)/.68f);
+    return juce::jlimit(0.f,1.f,
+        repeatShape*.30f+recallShape*.25f+drumContrast*.25f+bassContrast*.20f);
+}
+
 float promptCompositionMatch(const juce::String& prompt,const sonara::SongArrangement& song)
 {
     const auto p=prompt.toLowerCase();
@@ -516,7 +603,10 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
               harmonySim*.35f+melodySim*.25f+rhythmSim*.12f+bassSim*.10f
              +drumSim*.08f+pluckSim*.05f+structureSim*.05f);
 
-        const float quality=melodyQualityScore(*candidate)*.70f+harmonyQualityScore(*candidate)*.30f;
+        const float melodyQuality=melodyQualityScore(*candidate);
+        const float harmonyQuality=harmonyQualityScore(*candidate);
+        const float productionQuality=productionQualityScore(*candidate);
+        const float quality=melodyQuality*.52f+harmonyQuality*.23f+productionQuality*.25f;
         const float promptMatch=promptCompositionMatch(prompt,*candidate);
         const float novelty=1.f-wholeSim;
         const float combined=quality*.40f+promptMatch*.30f+novelty*.30f;
