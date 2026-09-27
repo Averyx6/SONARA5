@@ -1151,7 +1151,7 @@ void SongArrangement::addHarmony(uint64_t seed)
             const bool preDropGap=chorus&&bar==section->startBar+section->bars-1;
             const auto tones=closeSongChord(*h);
 
-            const double chordLen=preDropGap?3.35:3.82;
+            const double chordLen=preDropGap?2.95:3.82;
             const int baseVel=juce::jlimit(48,104,58+(int)(section->energy*25.f));
             addNote(chords,tones[0],beat,chordLen,baseVel);
             addNote(chords,tones[1],beat,chordLen,juce::jmax(42,baseVel-4));
@@ -1170,7 +1170,7 @@ void SongArrangement::addHarmony(uint64_t seed)
                 // PAD is two slow upper voices, same harmony, same bar.
                 const int padA=foldNear(tones[1],57,74,64);
                 const int padB=foldNear(tones[2],60,79,padA+4);
-                const double padLen=preDropGap?3.35:3.90;
+                const double padLen=preDropGap?2.95:3.90;
                 addNote(pad,padA,beat,padLen,42+(int)(section->energy*8.f));
                 addNote(pad,padB,beat,padLen,39+(int)(section->energy*7.f));
             }
@@ -1336,7 +1336,7 @@ void SongArrangement::addHarmony(uint64_t seed)
             for(int i=0;i<count;++i)
             {
                 const double pos=positions[i];
-                if(preDropGap&&pos>=3.45)continue;
+                if(preDropGap&&pos>=3.0)continue;
                 if(!mainstreamSong&&i>0&&random01(bassMotifSeed,0x7100+i)<(verse?.20f:.08f))continue;
                 const auto* h=harmonyAtBeat(barBeat+pos);
                 if(h==nullptr)continue;
@@ -1364,7 +1364,7 @@ void SongArrangement::addHarmony(uint64_t seed)
 
                 note=foldBass(note);
                 const double rawLen=mainstreamSong?(count==1?2.90:1.55):(bassMode==3?.28:(drop||chorus?.48:.72));
-                const double len=preDropGap?juce::jmin(rawLen,juce::jmax(.08,3.45-pos)):rawLen;
+                const double len=preDropGap?juce::jmin(rawLen,juce::jmax(.08,3.0-pos)):rawLen;
                 addNote(bass,note,barBeat+pos,len,
                         juce::jlimit(62,120,76+(int)(energy*28.f)+(int)(random01(domains.bass,0x7300+bs+i)*12.f)));
             }
@@ -1391,14 +1391,14 @@ void SongArrangement::addHarmony(uint64_t seed)
             for(int i=0;i<subCount;++i)
             {
                 const double pos=positions[i];
-                if(preDropGap&&pos>=3.45)continue;
+                if(preDropGap&&pos>=3.0)continue;
                 const auto* h=harmonyAtBeat(barBeat+pos);
                 if(h==nullptr)continue;
                 int note=rootMidi+scaleSemitoneForDegree(h->scaleDegree)-24;
                 while(note<24)note+=12;
                 while(note>47)note-=12;
                 const double rawLen=subCount==1?juce::jmin(3.30,4.0-pos):juce::jmin(1.45,4.0-pos);
-                const double len=preDropGap?juce::jmin(rawLen,juce::jmax(.08,3.45-pos)):rawLen;
+                const double len=preDropGap?juce::jmin(rawLen,juce::jmax(.08,3.0-pos)):rawLen;
                 addNote(sub,note,barBeat+pos,len,
                         juce::jlimit(52,96,60+(int)(energy*22.f)+(int)(random01(domains.sub,0x7420+bs+i)*8.f)));
             }
@@ -1420,7 +1420,7 @@ void SongArrangement::addHarmony(uint64_t seed)
                 double pos=i*(4.0/steps);
                 if(!mainstreamSong&&i%2&&random01(pluckMotifSeed,0x8110+ps)<.45f)
                     pos+=((random01(pluckMotifSeed,0x8120+ps)-.5f)*.08f);
-                if(preDropGap&&pos>=3.45)continue;
+                if(preDropGap&&pos>=3.0)continue;
 
                 const auto* h=harmonyAtBeat(barBeat+pos);
                 if(h==nullptr)continue;
@@ -1502,7 +1502,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
     int architecture=plan.melodyArchetype%12;
     if(mainstreamEdm)
     {
-        static constexpr int songArchetypes[6]={0,2,3,4,8,9}; // call/response, anthem, sparse, lyric, fall, rise
+        static constexpr int songArchetypes[6]={0,2,3,4,6,7}; // call/response, anthem, sparse, lyric, pedal/answer, short sequence
         architecture=songArchetypes[plan.melodyArchetype%6];
     }
     else if(dnb)
@@ -1624,9 +1624,10 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         else if(verse)count=juce::jlimit(2,3,count-1);
         else if(breakdown)count=juce::jlimit(1,2,count);
         else if(build)count=juce::jlimit(2,3,count);
-        else if(chorus)count=juce::jlimit(3,4,count);
-        else if(drop||finalHook)count=4;
+        else if(chorus)count=3;
+        else if(drop||finalHook)count=3;
         else count=juce::jmin(count,3);
+        if(mainstreamEdm&&p.contains("simple melody"))count=juce::jmin(count,2);
 
         double positions[8]{};
         for(int i=0;i<count;++i)positions[i]=rhythmPos[family][i];
@@ -1659,6 +1660,10 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             count=juce::jmin(6,count);
             for(int i=0;i<count;++i)positions[i]=p10[i];
         }
+
+        // Every mainstream hook begins on the downbeat. A clear first note makes
+        // CHORUS -> DROP transitions readable instead of sounding like one endless loop.
+        if(mainstreamEdm&&(chorus||drop||finalHook)&&count>0)positions[0]=0.0;
 
         const uint64_t motifDecisionSeed=mix64(motifSeed
             ^ ((uint64_t)motifBar+1ULL)*0x517cc1b727220a95ULL);
@@ -1784,7 +1789,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             const bool barAnchor=positions[i]<.08;
             const bool hookSection=chorus||drop||finalHook;
             const float chordToneChance=hookSection
-                ?(phraseEnding?.96f:(barAnchor?.52f:(strong?.28f:.10f)))
+                ?(phraseEnding?.98f:(barAnchor?.78f:(strong?.52f:.24f)))
                 :(phraseEnding?.98f:(barAnchor?.88f:(strong?.62f:.30f)));
             if(random01(motifDecisionSeed,0x2300+salt)<chordToneChance)
             {
@@ -1793,7 +1798,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                 else if(toneChoice==1)degree=localHarmony.degreeIndex+2;
                 else degree=localHarmony.degreeIndex+4;
             }
-            else if(!strong&&random01(motifDecisionSeed,0x2320+salt)<.14f)
+            else if(!strong&&random01(motifDecisionSeed,0x2320+salt)<(mainstreamEdm?.04f:.14f))
             {
                 const int dir=random01(motifDecisionSeed,0x2330+salt)>.5f?1:-1;
                 degree+=dir; // controlled scale passing/approach tone
@@ -1813,7 +1818,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             // Phrase development changes one recognisable note instead of
             // replacing the motif with a new random contour.
             if(developmentBar&&i==juce::jmax(0,count-2)
-               &&architecture!=1&&architecture!=2
+               &&architecture!=1&&architecture!=2&&!mainstreamEdm
                &&random01(phraseSeed,0x2350+salt)<plan.development*.55f)
                 degree+=random01(phraseSeed,0x2360+salt)>.5f?2:-1;
 
@@ -1835,14 +1840,13 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             int registerNow=registerBase+octaveExtra;
             if(cinematic&&breakdown)registerNow=12;
             if(finalHook&&plan.octaveRange>=2&&random01(motifDecisionSeed,0x2400+salt)>.74f)registerNow+=12;
-            if(verse&&random01(motifDecisionSeed,0x2410+salt)<.16f)registerNow-=12;
 
             double pos=positions[i];
             if(!(chorus||drop||finalHook)&&!strong&&plan.syncopation>.45f
                &&random01(motifDecisionSeed,0x2500+salt)<plan.syncopation*.42f)
                 pos+=random01(motifDecisionSeed,0x2510+salt)>.5f?.125:-.125;
             pos=juce::jlimit(0.0,3.90,pos);
-            if(preDropGap&&pos>=3.5)continue;
+            if(preDropGap&&pos>=3.0)continue;
 
             double length=.34;
 
@@ -1868,7 +1872,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         }
 
         // Build sections climb toward the next section with a musically clear pickup.
-        if(build&&barInPhrase>=phraseBars/2)
+        if(build&&localBar>=juce::jmax(0,section->bars-2))
         {
             const int pickupDegree=juce::jlimit(0,13,startDegree+barInPhrase+2);
             const double pickupPos=preDropGap?3.25:3.5;
@@ -1970,8 +1974,8 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             const auto name=s?s->name:juce::String();
             const bool hook=name.contains("CHORUS")||name.contains("DROP")||name.contains("FINAL");
             const bool lowEnergy=name.contains("INTRO")||name.contains("BREAKDOWN");
-            const int low=hook?62:(lowEnergy?55:58);
-            const int high=hook?86:(lowEnergy?76:82);
+            const int low=hook?62:(lowEnergy?58:60);
+            const int high=hook?82:(lowEnergy?74:79);
             while(n.note<low&&n.note+12<=high)n.note+=12;
             while(n.note>high&&n.note-12>=low)n.note-=12;
 
@@ -2018,9 +2022,9 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         }
         lead.notes=std::move(cleaned);
 
-        // Song hook memory: write one clean four-bar chorus phrase, then reuse that
-        // exact musical idea in DROP and FINAL HOOK. Production changes create the
-        // lift; random new lead notes do not.
+        // Song hook memory: keep one identity but give sections different jobs.
+        // CHORUS states the four-bar idea, DROP turns its first two bars into a
+        // simpler driving cell, and FINAL HOOK restores the full phrase.
         const ArrangementSection *chorusSection=nullptr,*dropSection=nullptr,*finalSection=nullptr;
         for(const auto& s:sections)
         {
@@ -2053,20 +2057,25 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                 };
                 for(const auto& n:lead.notes)if(!insideHookSection(n.beat))rebuilt.push_back(n);
 
-                auto writeHook=[&](const ArrangementSection& section,int velocityLift,bool preservePreDropGap)
+                auto writeHook=[&](const ArrangementSection& section,int velocityLift,
+                                     bool preservePreDropGap,bool dropVariant)
                 {
                     const double start=section.startBar*beatsPerBar;
                     const double end=(section.startBar+section.bars)*beatsPerBar;
-                    for(int block=0;block<section.bars;block+=4)
+                    const int blockBars=dropVariant?2:4;
+                    const double sourceBeats=dropVariant?8.0:16.0;
+                    for(int block=0;block<section.bars;block+=blockBars)
                     {
                         for(const auto& t:hookTemplate)
                         {
+                            if(t.beat>=sourceBeats)continue;
                             const double beat=start+block*beatsPerBar+t.beat;
                             if(beat>=end)continue;
-                            const bool finalChorusBlock=preservePreDropGap&&block+4>=section.bars;
-                            if(finalChorusBlock&&t.beat>=15.5)continue;
+                            const bool finalChorusBlock=preservePreDropGap&&block+blockBars>=section.bars;
+                            if(finalChorusBlock&&t.beat>=sourceBeats-1.0)continue;
                             auto n=t;
                             n.beat=beat;
+                            if(dropVariant)n.length=juce::jmax(.12,n.length*.86);
                             n.length=juce::jmin(n.length,juce::jmax(.08,end-beat-.02));
                             n.velocity=juce::jlimit(48,124,n.velocity+velocityLift);
                             rebuilt.push_back(n);
@@ -2074,9 +2083,9 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                     }
                 };
 
-                writeHook(*chorusSection,0,true);
-                writeHook(*dropSection,7,false);
-                writeHook(*finalSection,10,false);
+                writeHook(*chorusSection,0,true,false);
+                writeHook(*dropSection,9,false,true);
+                writeHook(*finalSection,11,false,false);
                 std::sort(rebuilt.begin(),rebuilt.end(),
                           [](const ArrangementNote& a,const ArrangementNote& b){return a.beat<b.beat;});
                 lead.notes=std::move(rebuilt);
