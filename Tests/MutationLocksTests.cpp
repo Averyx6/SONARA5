@@ -57,6 +57,26 @@ int main(){
  const auto festivalKick=generator.generate("festival mainstage punchy kick",502);
  if(festivalKick.transientLevel<.70f||festivalKick.pitchEnv<38.f||festivalKick.reverb>.01f)return fail("festival kick impact missing");
 
+ const auto acid=generator.generate("resonant acid 303 bass staccato",601);
+ const auto psy=generator.generate("tight psytrance psy bass fast attack",602);
+ const auto screech=generator.generate("wide hardstyle screech aggressive",603);
+ const auto reed=generator.generate("expressive saxophone reed vibrato",604);
+ const auto harp=generator.generate("soft harp picked string",605);
+ const auto kalimba=generator.generate("organic kalimba thumb piano",606);
+ const auto formant=generator.generate("moving formant lead vocal synth",607);
+ const auto chip=generator.generate("retro game chiptune chip lead",608);
+ if(acid.name!="Generated Acid"||acid.resonance<.45f||acid.filterEnv<.60f||acid.width>.10f)return fail("acid/303 semantic design missing");
+ if(psy.name!="Generated Psy Bass"||psy.width>.08f||psy.decay>.15f||psy.subLevel<.20f)return fail("psy bass semantic design missing");
+ if(screech.name!="Generated Screech"||screech.drive<.30f||screech.filterMode!=sonara::FilterMode::bandpass)return fail("hardstyle screech semantic design missing");
+ if(reed.name!="Generated Reed"||reed.filterMode!=sonara::FilterMode::bandpass||reed.lfoPitch<.03f)return fail("reed/sax semantic design missing");
+ if(harp.name!="Generated Harp"||harp.transientLevel<.15f||harp.sustain>.12f)return fail("harp semantic design missing");
+ if(kalimba.name!="Generated Kalimba"||kalimba.fmAmount<.15f||kalimba.transientLevel<.30f)return fail("kalimba semantic design missing");
+ if(formant.name!="Generated Formant"||formant.filterMode!=sonara::FilterMode::bandpass||formant.resonance<.34f)return fail("formant semantic design missing");
+ if(chip.name!="Generated Chip"||chip.unison!=1||chip.bitCrush<.25f)return fail("chiptune semantic design missing");
+ const auto legato=generator.generate("warm lead legato sustained",609);
+ const auto staccato=generator.generate("warm lead staccato short decay",609);
+ if(!(legato.release>staccato.release*2.f&&legato.sustain>staccato.sustain))return fail("articulation language did not alter envelope");
+
  if(generator.generate("gated square lfo bass",21).lfoShape!=sonara::LfoShape::square)return fail("square LFO prompt intent"); if(generator.generate("rising lfo animated pad",22).lfoShape!=sonara::LfoShape::sawUp)return fail("rising LFO prompt intent"); if(generator.generate("falling lfo texture",23).lfoShape!=sonara::LfoShape::sawDown)return fail("falling LFO prompt intent"); if(generator.generate("triangle lfo evolving texture",24).lfoShape!=sonara::LfoShape::triangle)return fail("triangle LFO prompt intent"); if(generator.generate("vibrato gated lead",25).lfoShape!=sonara::LfoShape::sine)return fail("vibrato must use smooth sine LFO");
  auto similarSource=generator.generate("high-pass animated texture",14); similarSource.filterMode=sonara::FilterMode::bandpass; similarSource.lfoShape=sonara::LfoShape::sawUp; const auto similar=generator.mutate(similarSource,15,.18f); if(similar.filterMode!=sonara::FilterMode::bandpass)return fail("similar generation changed discrete filter topology"); if(similar.lfoShape!=sonara::LfoShape::sawUp)return fail("similar generation changed discrete LFO shape");
  const sonara::MutationLocks none; const auto mutated=generator.mutate(source,0xabcdefULL,1.f,none); if(same(mutated.attack,source.attack)&&same(mutated.cutoff,source.cutoff)&&same(mutated.oscAMorph,source.oscAMorph))return fail("unlocked mutation did not evolve"); const auto repeated=generator.mutate(source,0xabcdefULL,1.f,none); if(!same(repeated.attack,mutated.attack)||!same(repeated.lfoRate,mutated.lfoRate)||!same(repeated.chorus,mutated.chorus)||repeated.filterMode!=mutated.filterMode||repeated.lfoShape!=mutated.lfoShape)return fail("mutation is not deterministic");
