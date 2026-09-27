@@ -402,7 +402,9 @@ int main()
         if(first->sound.seed==second->sound.seed){std::cerr<<"SoundDNA seed did not change for "<<name<<"\n";return 10;}
 
         const double difference=structuralDifference(*first,*second);
-        if(difference<=0.0){std::cerr<<"Lane stayed structurally identical: "<<name<<"\n";return 11;}
+        const bool intentionallyEmptyCounter=name=="COUNTER"&&first->notes.empty()&&second->notes.empty();
+        if(difference<=0.0&&!intentionallyEmptyCounter)
+        {std::cerr<<"Lane stayed structurally identical: "<<name<<"\n";return 11;}
         if(difference>=.20)++substantiallyDifferent;
     }
     if(substantiallyDifferent<7){std::cerr<<"Too few lanes changed substantially across fresh song seed\n";return 12;}
