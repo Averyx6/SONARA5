@@ -248,6 +248,59 @@ int main()
         if(p.getSongGenerationSeed()==oldSeed)return fail("generate while active reused song seed");
     }
 
+
+    // v1.6 multi-instance regression: loaded but idle SONARAs must be effectively
+    // silent/cheap, and five active live engines must remain finite under the
+    // shared runtime eco budget.
+    {
+        constexpr int instanceCount=5,blockSize=256;
+        std::array<std::unique_ptr<SonaraAudioProcessor>,instanceCount> instances;
+        for(auto& instance:instances)
+        {
+            instance=std::make_unique<SonaraAudioProcessor>();
+            instance->prepareToPlay(48000.0,blockSize);
+        }
+
+        juce::AudioBuffer<float> audio(2,blockSize);
+        juce::MidiBuffer midi;
+        const auto idleStart=std::chrono::steady_clock::now();
+        double idleEnergy=0.0;
+        for(int block=0;block<240;++block)
+            for(auto& instance:instances)
+            {
+                audio.clear();midi.clear();
+                instance->processBlock(audio,midi);
+                for(int ch=0;ch<audio.getNumChannels();++ch)
+                    for(int s=0;s<audio.getNumSamples();++s)
+                        idleEnergy+=(double)audio.getSample(ch,s)*audio.getSample(ch,s);
+            }
+        const double idleElapsed=std::chrono::duration<double>(
+            std::chrono::steady_clock::now()-idleStart).count();
+        if(idleEnergy!=0.0)return fail("idle multi-instance fast path produced audio");
+        if(idleElapsed>1.5)return fail("five idle SONARA instances still consume excessive callback CPU");
+
+        double activeEnergy=0.0;float activePeak=0.f;
+        const auto activeStart=std::chrono::steady_clock::now();
+        for(int block=0;block<180;++block)
+        {
+            for(int i=0;i<instanceCount;++i)
+            {
+                audio.clear();midi.clear();
+                if(block==0)midi.addEvent(juce::MidiMessage::noteOn(1,60+i*2,(juce::uint8)100),0);
+                if(block==120)midi.addEvent(juce::MidiMessage::noteOff(1,60+i*2),0);
+                instances[(size_t)i]->processBlock(audio,midi);
+                if(!finiteAndSafe(audio,activePeak,activeEnergy))
+                    return fail("multi-instance runtime eco path produced unsafe audio");
+            }
+        }
+        const double activeElapsed=std::chrono::duration<double>(
+            std::chrono::steady_clock::now()-activeStart).count();
+        if(activeEnergy<=1.0e-8)return fail("multi-instance runtime eco path rendered silence");
+        // 180 * 256 samples = .96 s of audio per instance. Five instances should
+        // remain comfortably below five-times realtime on the CI runner.
+        if(activeElapsed>4.8)return fail("five active SONARA instances exceeded multi-instance CPU budget");
+    }
+
     // Direct production-path melody test: same exact prompt must never recycle
     // the previous rhythm/interval skeleton.
     {
