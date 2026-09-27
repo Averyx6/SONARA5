@@ -737,7 +737,7 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
         return value;
     };
 
-    constexpr int maxAttempts=32;
+    constexpr int maxAttempts=48;
     for(int attempt=0;attempt<maxAttempts;++attempt)
     {
         const uint64_t entropy=static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64())
@@ -789,7 +789,12 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
         // strongest song that is sufficiently different over the strangest song.
         const float combined=quality*.58f+promptMatch*.27f+novelty*.15f;
 
-        if(!fingerprint.empty()&&!harmony.empty()&&quality>=.62f&&combined>bestCombined)
+        // Fallback is still required to be genuinely new. v1.3's old
+        // fallback could publish a high-quality but familiar hook after the strict
+        // gate missed; that is how repeated "same song" generations slipped out.
+        const bool noveltySafe=melodySim<.55f&&harmonySim<.86f&&wholeSim<.64f;
+        if(!fingerprint.empty()&&!harmony.empty()&&noveltySafe
+           &&quality>=.66f&&promptMatch>=.64f&&combined>bestCombined)
         {
             bestCombined=combined;
             bestQuality=quality;
@@ -811,8 +816,8 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
 
         // Harmony and melody both have hard identity gates. This prevents a tiny
         // lead reroll from hiding a recycled chord/root skeleton.
-        if(!fingerprint.empty()&&!harmony.empty()&&melodySim<.84f&&harmonySim<.93f
-           &&wholeSim<.78f&&quality>=.78f&&promptMatch>=.70f)
+        if(!fingerprint.empty()&&!harmony.empty()&&melodySim<.55f&&harmonySim<.86f
+           &&wholeSim<.64f&&quality>=.76f&&promptMatch>=.68f)
         {
             made=std::move(candidate);
             acceptedFingerprint=std::move(fingerprint);
@@ -830,15 +835,15 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
             break;
         }
 
-        generationStatus=(quality<.78f?"Rejecting weak song structure":
-                          (harmonySim>=.93f?"Rejecting recycled harmony":
-                          (melodySim>=.84f?"Rejecting recycled hook":"Rejecting familiar whole song")))
+        generationStatus=(quality<.76f?"Rejecting weak song structure":
+                          (harmonySim>=.86f?"Rejecting recycled harmony":
+                          (melodySim>=.55f?"Rejecting recycled hook":"Rejecting familiar whole song")))
                        +juce::String(" • trying composition ")
                        +juce::String(attempt+2)+"/"+juce::String(maxAttempts);
     }
 
-    // If all 24 candidates miss the strict threshold, take the objectively most
-    // different candidate rather than blindly accepting the final reroll.
+    // If the strict quality gate misses, fallback may only use a candidate that
+    // already passed the hard novelty floors above. Never publish a recycled hook.
     if(!made&&bestCandidate)
     {
         made=std::move(bestCandidate);
