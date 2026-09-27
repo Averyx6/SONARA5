@@ -1095,6 +1095,41 @@ void SongArrangement::addHarmony(uint64_t seed)
         return note;
     };
 
+    auto foldNear=[&](int note,int low,int high,int anchor)
+    {
+        while(note<low)note+=12;
+        while(note>high)note-=12;
+        int best=note;
+        if(note+12<=high&&std::abs((note+12)-anchor)<std::abs(best-anchor))best=note+12;
+        if(note-12>=low&&std::abs((note-12)-anchor)<std::abs(best-anchor))best=note-12;
+        return juce::jlimit(low,high,best);
+    };
+
+    auto closeSongChord=[&](const HarmonyEvent& event)
+    {
+        const int d=juce::jlimit(0,6,event.scaleDegree);
+        int root=rootMidi+scaleSemitoneForDegree(d);
+        while(root<48)root+=12;
+        while(root>60)root-=12;
+
+        int third=root+(scaleSemitoneForDegree(d+2)-scaleSemitoneForDegree(d));
+        int fifth=root+(scaleSemitoneForDegree(d+4)-scaleSemitoneForDegree(d));
+        int colour=root+(scaleSemitoneForDegree(d+6)-scaleSemitoneForDegree(d));
+        if(event.borrowed&&minor&&d==4)third=root+4;
+        if(event.extension==2)colour=root+14;
+        else if(event.extension==3)colour=root+2;
+        else if(event.extension==4)third=root+5;
+
+        std::array<int,4> out{root,third,fifth,colour};
+        std::sort(out.begin(),out.end());
+        for(size_t i=1;i<out.size();++i)
+            while(out[i]<=out[i-1])out[i]+=12;
+
+        while(out.back()>76)for(auto& n:out)n-=12;
+        while(out.front()<45)for(auto& n:out)n+=12;
+        return out;
+    };
+
     // CHORDS and PAD interpret the same Harmony DNA differently.
     for(size_t hi=0;hi<harmonyEvents.size();++hi)
     {
@@ -1112,8 +1147,8 @@ void SongArrangement::addHarmony(uint64_t seed)
         const bool finalHook=sectionName.contains("FINAL");
         const float energy=section->energy;
 
-        auto tones=chordTonesFor(event);
-        for(auto& n:tones)n+=12;
+        auto tones=mainstreamSong?closeSongChord(event):chordTonesFor(event);
+        if(!mainstreamSong)for(auto& n:tones)n+=12;
 
         int repeats=1;
         if(drop||chorus||finalHook)
@@ -1122,8 +1157,9 @@ void SongArrangement::addHarmony(uint64_t seed)
             repeats=chordMode>=3?2:1;
         if(mainstreamSong)
         {
-            if(drop||chorus||finalHook)repeats=juce::jmin(repeats,2);
-            else if(build||verse)repeats=juce::jmin(repeats,1);
+            // One harmonic event = one visible chord block. Rhythm belongs to
+            // drums/pluck/bass, not dozens of re-triggered chord notes.
+            repeats=1;
         }
 
         const double unit=event.length/(double)repeats;
@@ -1141,32 +1177,40 @@ void SongArrangement::addHarmony(uint64_t seed)
             addNote(chords,tones[1],startBeat,len,juce::jmax(42,baseVel-3));
             addNote(chords,tones[2],startBeat,len,juce::jmax(40,baseVel-5));
 
-            if(event.extension>0&&random01(domains.voicing,0x5300+rs)<(.52f+harmonyPlan.extensionProbability))
+            if(event.extension>0&&(mainstreamSong
+               ||random01(domains.voicing,0x5300+rs)<(.52f+harmonyPlan.extensionProbability)))
                 addNote(chords,tones[3],startBeat,juce::jmin(len*.92,1.6),juce::jmax(38,baseVel-9));
 
-            if(finalHook&&r%2==0&&random01(domains.voicing,0x5400+rs)<.58f)
+            if(!mainstreamSong&&finalHook&&r%2==0&&random01(domains.voicing,0x5400+rs)<.58f)
                 addNote(chords,tones[2]+12,startBeat,juce::jmin(len*.78,1.1),juce::jmax(36,baseVel-13));
         }
 
-        // PAD is not a copy of CHORDS: it uses upper voices, often omits the root,
-        // holds through changes, and can emphasize extensions/suspensions.
+        // PAD is slow upper harmony only. Mainstream mode never randomizes the
+        // octave/register or adds an unrelated root doubling.
         if(intro||verse||breakdown)
         {
             const float padChance=breakdown?.94f:(intro?.82f:.68f);
-            if(random01(domains.pad,0x6100+hi)<padChance)
+            if(mainstreamSong||random01(domains.pad,0x6100+hi)<padChance)
             {
-                const double padStart=event.beat+(random01(domains.pad,0x6110+hi)<.22f?.25:0.0);
+                const double padStart=mainstreamSong?event.beat:
+                    event.beat+(random01(domains.pad,0x6110+hi)<.22f?.25:0.0);
                 const double padLen=juce::jmin(event.length*1.18,8.0);
-                const int octave=random01(domains.pad,0x6120+hi)>.64f?12:0;
+                const int padA=mainstreamSong?foldNear(tones[1],55,78,64):tones[1];
+                const int padB=mainstreamSong?foldNear(tones[2],55,79,padA+4):tones[2];
 
-                addNote(pad,tones[1]+octave,padStart,padLen,42+(int)(random01(domains.pad,0x6130+hi)*10.f));
-                addNote(pad,tones[2]+octave,padStart,padLen,40+(int)(random01(domains.pad,0x6140+hi)*9.f));
+                addNote(pad,padA,padStart,padLen,42+(int)(random01(domains.pad,0x6130+hi)*10.f));
+                addNote(pad,padB,padStart,padLen,40+(int)(random01(domains.pad,0x6140+hi)*9.f));
 
-                if(event.extension>0||random01(domains.pad,0x6150+hi)<harmonyPlan.extensionProbability)
-                    addNote(pad,tones[3]+octave,padStart,padLen*.94,37+(int)(random01(domains.pad,0x6160+hi)*9.f));
+                if(event.extension>0)
+                {
+                    const int padC=mainstreamSong?foldNear(tones[3],57,81,padB+3):tones[3];
+                    addNote(pad,padC,padStart,padLen*.94,37+(int)(random01(domains.pad,0x6160+hi)*9.f));
+                }
+                else if(!mainstreamSong&&random01(domains.pad,0x6150+hi)<harmonyPlan.extensionProbability)
+                    addNote(pad,tones[3],padStart,padLen*.94,37+(int)(random01(domains.pad,0x6160+hi)*9.f));
 
-                if(random01(domains.pad,0x6170+hi)<.34f)
-                    addNote(pad,tones[0]+12+octave,padStart,padLen*.82,36+(int)(random01(domains.pad,0x6180+hi)*8.f));
+                if(!mainstreamSong&&random01(domains.pad,0x6170+hi)<.34f)
+                    addNote(pad,tones[0]+12,padStart,padLen*.82,36+(int)(random01(domains.pad,0x6180+hi)*8.f));
             }
         }
     }
@@ -1240,14 +1284,22 @@ void SongArrangement::addHarmony(uint64_t seed)
                 int note=rootMidi+scaleSemitoneForDegree(degree)-12;
 
                 const float move=random01(bassMotifSeed,0x7200+i);
-                const float bassPassing=mainstreamSong?juce::jmin(.10f,harmonyPlan.passingProbability):harmonyPlan.passingProbability;
-                if(i>0&&move<bassPassing)
+                if(mainstreamSong)
                 {
-                    const int dir=random01(bassMotifSeed,0x7210+i)>.5f?1:-1;
-                    note=rootMidi+scaleSemitoneForDegree(degree+dir)-12;
+                    // Root-first support. At most one predictable fifth pickup.
+                    if((drop||chorus||finalHook)&&i==count-1&&count>=3)note+=7;
                 }
-                else if(move<.26f&&i%3==2)note+=7;
-                else if(!mainstreamSong&&move>.84f&&(drop||finalHook))note+=12;
+                else
+                {
+                    const float bassPassing=harmonyPlan.passingProbability;
+                    if(i>0&&move<bassPassing)
+                    {
+                        const int dir=random01(bassMotifSeed,0x7210+i)>.5f?1:-1;
+                        note=rootMidi+scaleSemitoneForDegree(degree+dir)-12;
+                    }
+                    else if(move<.26f&&i%3==2)note+=7;
+                    else if(move>.84f&&(drop||finalHook))note+=12;
+                }
 
                 note=foldBass(note);
                 const double rawLen=bassMode==3?.28:(drop||chorus?.48:.72);
@@ -1309,17 +1361,27 @@ void SongArrangement::addHarmony(uint64_t seed)
 
                 const auto* h=harmonyAtBeat(barBeat+pos);
                 if(h==nullptr)continue;
-                const auto tones=chordTonesFor(*h);
+                const auto tones=mainstreamSong?closeSongChord(*h):chordTonesFor(*h);
                 const int patternIndex=arpPatterns[arpMode][(i+supportMotifBar+supportTheme)%8];
 
-                int note=tones[(size_t)(patternIndex%4)]+24;
-                const float pluckPassing=mainstreamSong?juce::jmin(.08f,harmonyPlan.passingProbability):harmonyPlan.passingProbability;
-                if(random01(pluckMotifSeed,0x8130+ps)<pluckPassing)
+                int note=tones[(size_t)(patternIndex%3)];
+                if(mainstreamSong)
                 {
-                    const int dir=random01(pluckMotifSeed,0x8140+ps)>.5f?1:-1;
-                    note=rootMidi+scaleSemitoneForDegree(h->scaleDegree+dir)+24;
+                    // PLUCK is a chord-tone support pattern in one register, not a
+                    // second melody. Keep every onset around the same octave.
+                    const int anchor=(i==0||supportMotifBar==0)?67:70;
+                    note=foldNear(note,60,79,anchor);
                 }
-                if(!mainstreamSong&&finalHook&&i%4==3&&random01(pluckMotifSeed,0x8150+ps)>.50f)note+=12;
+                else
+                {
+                    note+=24;
+                    if(random01(pluckMotifSeed,0x8130+ps)<harmonyPlan.passingProbability)
+                    {
+                        const int dir=random01(pluckMotifSeed,0x8140+ps)>.5f?1:-1;
+                        note=rootMidi+scaleSemitoneForDegree(h->scaleDegree+dir)+24;
+                    }
+                    if(finalHook&&i%4==3&&random01(pluckMotifSeed,0x8150+ps)>.50f)note+=12;
+                }
 
                 addNote(pluck,note,barBeat+juce::jlimit(0.0,3.90,pos),
                         .11+random01(pluckMotifSeed,0x8160+ps)*.22,
