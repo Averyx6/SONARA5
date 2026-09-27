@@ -2114,8 +2114,14 @@ void SongArrangement::alignPitchedLanesToLead()
     std::sort(lead->notes.begin(),lead->notes.end(),
               [](const ArrangementNote& a,const ArrangementNote& b){return a.beat<b.beat;});
     int previousLead=-1;
+    const ArrangementSection* previousLeadSection=nullptr;
     for(auto& n:lead->notes)
     {
+        const int bar=juce::jlimit(0,bars-1,(int)std::floor(n.beat/beatsPerBar));
+        const ArrangementSection* currentSection=nullptr;
+        for(const auto& s:sections)if(sectionContains(s,bar)){currentSection=&s;break;}
+        if(currentSection!=previousLeadSection)previousLead=-1;
+
         while(n.note>79&&n.note-12>=58)n.note-=12;
         while(n.note<58&&n.note+12<=79)n.note+=12;
         if(previousLead>=0)
@@ -2125,6 +2131,7 @@ void SongArrangement::alignPitchedLanesToLead()
         }
         n.note=juce::jlimit(58,79,n.note);
         previousLead=n.note;
+        previousLeadSection=currentSection;
     }
 
     std::vector<int> barCentre((size_t)bars,67);
