@@ -89,12 +89,12 @@ private:
     juce::TextButton saveSoundButton{"SAVE SOUND"}, loadSoundButton{"LOAD SOUND"}, saveProjectButton{"SAVE PROJECT"}, loadProjectButton{"LOAD PROJECT"};
     juce::TextButton exportMixButton{"EXPORT MIX"}, exportStemsButton{"EXPORT STEMS"};
 
-    ExternalDragButton dragPreviewMidi{*this,"MIDI NOTES ONLY",ExternalDragButton::Kind::previewMidi};
-    ExternalDragButton dragFullMidi{*this,"FULL MIDI • NOTES ONLY",ExternalDragButton::Kind::fullMidi};
-    ExternalDragButton dragLaneMidi{*this,"LANE MIDI • NOTES ONLY",ExternalDragButton::Kind::laneMidi};
+    ExternalDragButton dragPreviewMidi{*this,"SOUND MIDI • USE ON SONARA",ExternalDragButton::Kind::previewMidi};
+    ExternalDragButton dragFullMidi{*this,"MULTITRACK MIDI • SEPARATE LANES",ExternalDragButton::Kind::fullMidi};
+    ExternalDragButton dragLaneMidi{*this,"PIANO ROLL • SELECTED MIDI",ExternalDragButton::Kind::laneMidi};
     ExternalDragButton dragReferenceMidi{*this,"DRAG REF MIDI",ExternalDragButton::Kind::referenceMidi};
-    ExternalDragButton dragFullAudio{*this,"DRAG FULL MIX",ExternalDragButton::Kind::fullMixAudio};
-    ExternalDragButton dragLaneAudio{*this,"LANE WAV • SONARA SOUND",ExternalDragButton::Kind::laneAudio};
+    ExternalDragButton dragFullAudio{*this,"EXACT PREVIEW WAV",ExternalDragButton::Kind::fullMixAudio};
+    ExternalDragButton dragLaneAudio{*this,"EXACT LANE WAV • SONARA SOUND",ExternalDragButton::Kind::laneAudio};
     ExternalDragButton dragStems{*this,"DRAG STEMS",ExternalDragButton::Kind::stemsAudio};
 
     juce::TextButton tabInstrument{"INSTRUMENT"},tabSong{"SONG"},tabDrums{"DRUMS"},tabFx{"FX & MIX"},tabReference{"REFERENCE"},tabMidi{"MIDI"},tabExport{"EXPORT"};
