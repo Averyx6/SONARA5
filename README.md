@@ -1,22 +1,18 @@
-# SONARA v1.5
+# SONARA v1.6
 
 SONARA is a Windows x64 JUCE VST3 + Standalone AI music-creation instrument for FL Studio.
 
-v1.5 is the songwriter-producer pass. It focuses on making generated tracks feel like songs rather than experiments.
+v1.6 fixes support-lane role confusion and multi-instance CPU scaling.
 
-Mainstream EDM, progressive house, melodic house, pop, trance, festival and future-rave prompts now create one cleaned four-bar main hook and deliberately reuse that musical identity through CHORUS -> DROP -> FINAL HOOK. The production changes around the hook; the lead does not randomly reinvent itself every section. A section-aware melody cleanup removes isolated high/low pitch spikes, octave outliers and tiny accidental grace notes while preserving key and phrase direction.
+Mainstream song generation now uses strict musical roles and register boundaries. CHORDS contains close triad/extension blocks only, one chord block per harmony event, rather than scattered melodic notes and octave doubles. PLUCK is a narrow-register chord-tone support pattern rather than a second melody. BASS is root-first with at most a predictable fifth pickup, SUB stays on the harmonic fundamental, and PAD uses slow upper harmony without random octave layers. These changes specifically target the wide, crowded piano-roll patterns that made CHORDS/PLUCK look and sound like unrelated instruments improvising at once.
 
-Support parts are cleaner too. Mainstream arrangements cap chord repetition, bass movement, SUB movement, pluck density and random passing-note/octave jumps. Counter melody is OFF by default in mainstream song modes unless the user explicitly requests counter melody, secondary lead, call-and-response or an answer melody.
+The v1.5 songwriter engine remains intact: one cleaned main hook is carried through CHORUS -> DROP -> FINAL HOOK, isolated pitch spikes are repaired, support density is controlled, mainstream counter melody is opt-in, and prompt directions control structure/space/hook strength.
 
-SONARA now understands direct songwriter instructions such as strong hook, clear hook, simple melody, clean melody, no random notes, short intro, big chorus, long drop, short breakdown, radio structure, drum build, more space, less busy, powerful drop and no counter melody. The SONG tab exposes these as one-click prompt-direction buttons.
+Multi-instance CPU behavior is also changed. Idle SONARA instances now return from the audio callback before synth/post-processing work when there is no preview, MIDI or active voice. The live engine is capped to four polyphonic voices and automatically enters a runtime eco mode when multiple SONARA instances are open, reducing unison and bypassing redundant per-instance chorus/reverb/delay processing. Low-CPU song engines also skip an unnecessary final saturation pass, and non-sine oscillator shapes no longer calculate a sine value they do not use.
 
-Candidate selection is song-first: pitch-spike penalties, chorus/drop pitch+rhythm recall, section hierarchy, arrangement space, melody quality, harmony, prompt match and production contrast outweigh raw novelty. Novelty remains a constraint so repeated generations are still different without rewarding strange structure just because it is different.
+MIDI and sound transfer are now explicit. Standard MIDI exports carry editable notes only; MIDI cannot embed SONARA SoundDNA or a VST patch. The UI labels those buttons as MIDI/notes-only and exposes LANE WAV • SONARA SOUND directly on the SONG tab for sound-preserving drag to the FL Playlist. For editable FL Piano Roll MIDI with SONARA sound, selecting a musical lane now loads that lane's SoundDNA into SONARA's live synth engine. Put the exported lane MIDI on that SONARA channel and it plays the selected custom sound. Per-lane custom SoundDNA and AUTO FIT stay synchronized with the live engine.
 
-Preview mixing is section-aware. Intro/verse/build/chorus/drop/breakdown/final-hook use different lead, bass, SUB, chord, pluck and pad balances so the energy arc is audible. The main hook is foregrounded while pads/plucks/counter are pushed back.
-
-The piano-roll UI has been upgraded toward an FL-style production view with adaptive pitch range, semitone/key shading, stronger bar/beat grid, clearer note blocks, pitch labels when space allows and a visible playhead. v1.1 per-instrument SoundDNA editing and AUTO FIT remain available so every lane can be individually redesigned while automatic role-aware sound selection still works by default.
-
-CPU optimizations, strong drum DSP, chorus-to-drop drum tension, kick ducking, editable MIDI, stem/full-mix audio export, reference/resound tools, project persistence, SoundDNA families, Randomize Everything and Surprise Me are preserved.
+The FL-style piano roll, prompt suggestion buttons, per-instrument SoundDNA controls, automatic genre-aware sounds, drum build/drop logic, kick ducking, reference/resound tools, MIDI/stem/full-mix export, Randomize Everything and project persistence are preserved.
 
 ## Windows build
 
