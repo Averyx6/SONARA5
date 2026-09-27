@@ -1470,6 +1470,7 @@ bool SonaraAudioProcessor::saveProject(const juce::File& file) const
     juce::ValueTree root("SONARA_PROJECT");
     root.setProperty("schema",2,nullptr);
     root.setProperty("bpm",previewBpm,nullptr);
+    root.setProperty("selectedLane",selectedLane.load(),nullptr);
     root.addChild(engine.patch().toValueTree(),-1,nullptr);
     root.addChild(locks.toValueTree(),-1,nullptr);
     root.addChild(makeLaneMixTree(*this),-1,nullptr);
@@ -1503,6 +1504,7 @@ bool SonaraAudioProcessor::loadProject(const juce::File& file)
                 songEngines[(size_t)i].setPatch(lanes[(size_t)laneIndex].sound);
         }
         std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(made),std::memory_order_release);
+        setSelectedLane(juce::jlimit(0,11,(int)root.getProperty("selectedLane",9)));
     }
 
     generationStatus="Project loaded";
