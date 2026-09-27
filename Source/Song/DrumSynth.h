@@ -39,7 +39,7 @@ private:
     float snareNoise=.70f,snareTone=.18f,snareDecay=.9963f,snareGain=.48f;
     float hatDifference=.55f,hatDecay=.988f,hatGain=.16f;
     float clapTone=.40f,clapDecay=.9935f,clapGain=.34f;
-    float percDecay=.990f,percGain=.18f,percToneHz=760.f;
+    float percDecay=.990f,percGain=.18f,percToneHz=760.f,percBaseToneHz=760.f;
     float crashNoise=.65f,crashTone=.18f,crashDecay=.9991f,crashGain=.22f;
 };
 
