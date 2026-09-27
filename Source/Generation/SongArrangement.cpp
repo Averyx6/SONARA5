@@ -1130,9 +1130,55 @@ void SongArrangement::addHarmony(uint64_t seed)
         return out;
     };
 
-    // CHORDS and PAD interpret the same Harmony DNA differently.
-    int lastMainstreamChordBar=-1,mainstreamChordAttacksThisBar=0;
-    int lastMainstreamPadBar=-1,mainstreamPadAttacksThisBar=0;
+    // Mainstream support harmony is intentionally boring in the best way:
+    // one sustained triad per bar, plus slow upper pad harmony. These lanes
+    // support the song instead of generating extra melodic information.
+    if(mainstreamSong)
+    {
+        for(int bar=0;bar<bars;++bar)
+        {
+            const double beat=bar*beatsPerBar;
+            const auto* h=harmonyAtBeat(beat);
+            const auto [section,sectionIndex]=sectionAtBeat(beat);
+            if(h==nullptr||section==nullptr)continue;
+
+            const bool intro=section->name.contains("INTRO");
+            const bool verse=section->name.contains("VERSE");
+            const bool breakdown=section->name.contains("BREAKDOWN");
+            const bool chorus=section->name.contains("CHORUS");
+            const bool drop=section->name.contains("DROP")||section->name.contains("FINAL")||section->name.contains("HOOK");
+            const bool preDropGap=chorus&&bar==section->startBar+section->bars-1;
+            const auto tones=closeSongChord(*h);
+
+            const double chordLen=preDropGap?3.35:3.82;
+            const int baseVel=juce::jlimit(48,104,58+(int)(section->energy*25.f));
+            addNote(chords,tones[0],beat,chordLen,baseVel);
+            addNote(chords,tones[1],beat,chordLen,juce::jmax(42,baseVel-4));
+            addNote(chords,tones[2],beat,chordLen,juce::jmax(40,baseVel-6));
+
+            // Extensions are opt-in in mainstream song mode; default CHORDS is a
+            // visible triad, not four/five unrelated notes across octaves.
+            const bool wantsColour=productionPrompt.contains("7th chord")
+                ||productionPrompt.contains("extended chord")||productionPrompt.contains("jazz chord");
+            if(wantsColour&&h->extension>0)
+                addNote(chords,foldNear(tones[3],55,76,tones[2]+3),beat,chordLen,
+                        juce::jmax(36,baseVel-11));
+
+            if(intro||verse||breakdown)
+            {
+                // PAD is two slow upper voices, same harmony, same bar.
+                const int padA=foldNear(tones[1],57,74,64);
+                const int padB=foldNear(tones[2],60,79,padA+4);
+                const double padLen=preDropGap?3.35:3.90;
+                addNote(pad,padA,beat,padLen,42+(int)(section->energy*8.f));
+                addNote(pad,padB,beat,padLen,39+(int)(section->energy*7.f));
+            }
+        }
+    }
+
+    // Non-mainstream/experimental modes retain the richer Harmony DNA voicing
+    // grammar. Mainstream song mode never enters this event-dense path.
+    if(!mainstreamSong)
     for(size_t hi=0;hi<harmonyEvents.size();++hi)
     {
         const auto& event=harmonyEvents[hi];
@@ -1278,16 +1324,17 @@ void SongArrangement::addHarmony(uint64_t seed)
             if(breakdown)count=juce::jmin(count,2);
             if(mainstreamSong)
             {
-                if(drop||chorus||finalHook)count=juce::jmin(count,4);
-                else if(verse||build)count=juce::jmin(count,3);
-                if(breakdown)count=juce::jmin(count,1);
+                positions=pos0;
+                count=(drop||chorus||finalHook)?2:1;
+                if(breakdown)count=(localBar%2==0)?1:0;
+                if(build&&localBar<section->bars/2)count=0;
             }
 
             for(int i=0;i<count;++i)
             {
                 const double pos=positions[i];
                 if(preDropGap&&pos>=3.45)continue;
-                if(i>0&&random01(bassMotifSeed,0x7100+i)<(verse?.20f:.08f))continue;
+                if(!mainstreamSong&&i>0&&random01(bassMotifSeed,0x7100+i)<(verse?.20f:.08f))continue;
                 const auto* h=harmonyAtBeat(barBeat+pos);
                 if(h==nullptr)continue;
 
@@ -1298,7 +1345,7 @@ void SongArrangement::addHarmony(uint64_t seed)
                 if(mainstreamSong)
                 {
                     // Root-first support. At most one predictable fifth pickup.
-                    if((drop||chorus||finalHook)&&i==count-1&&count>=3)note+=7;
+                    if((drop||chorus||finalHook)&&i==1&&count==2)note+=7;
                 }
                 else
                 {
@@ -1313,7 +1360,7 @@ void SongArrangement::addHarmony(uint64_t seed)
                 }
 
                 note=foldBass(note);
-                const double rawLen=bassMode==3?.28:(drop||chorus?.48:.72);
+                const double rawLen=mainstreamSong?(count==1?2.90:1.55):(bassMode==3?.28:(drop||chorus?.48:.72));
                 const double len=preDropGap?juce::jmin(rawLen,juce::jmax(.08,3.45-pos)):rawLen;
                 addNote(bass,note,barBeat+pos,len,
                         juce::jlimit(62,120,76+(int)(energy*28.f)+(int)(random01(domains.bass,0x7300+bs+i)*12.f)));
@@ -1332,8 +1379,10 @@ void SongArrangement::addHarmony(uint64_t seed)
             if(breakdown)subCount=(localBar%2==0)?1:0;
             if(mainstreamSong)
             {
-                subCount=juce::jmin(subCount,(drop||chorus||finalHook)?2:1);
+                subCount=1;
+                positions[0]=0.0;
                 if(build&&localBar<section->bars/2)subCount=0;
+                if(breakdown&&localBar%2!=0)subCount=0;
             }
 
             for(int i=0;i<subCount;++i)
@@ -1359,14 +1408,14 @@ void SongArrangement::addHarmony(uint64_t seed)
             // Supporting plucks must frame the hook, not machine-gun underneath it.
             int steps=(finalHook?6:(drop?4:(chorus?4:(build?4:3))));
             if(mainstreamSong)
-                steps=(drop||chorus||finalHook)?3:(build?3:2);
+                steps=2;
             for(int i=0;i<steps;++i)
             {
                 const uint64_t ps=(uint64_t)i;
-                if(i>0&&random01(pluckMotifSeed,0x8100+ps)<((drop||chorus)?.16f:.24f))continue;
+                if(!mainstreamSong&&i>0&&random01(pluckMotifSeed,0x8100+ps)<((drop||chorus)?.16f:.24f))continue;
 
                 double pos=i*(4.0/steps);
-                if(i%2&&random01(pluckMotifSeed,0x8110+ps)<.45f)
+                if(!mainstreamSong&&i%2&&random01(pluckMotifSeed,0x8110+ps)<.45f)
                     pos+=((random01(pluckMotifSeed,0x8120+ps)-.5f)*.08f);
                 if(preDropGap&&pos>=3.45)continue;
 
@@ -1380,8 +1429,10 @@ void SongArrangement::addHarmony(uint64_t seed)
                 {
                     // PLUCK is a chord-tone support pattern in one register, not a
                     // second melody. Keep every onset around the same octave.
-                    const int anchor=(i==0||supportMotifBar==0)?67:70;
-                    note=foldNear(note,60,79,anchor);
+                    const int chordIndex=(i+supportMotifBar)%3;
+                    note=tones[(size_t)chordIndex];
+                    const int anchor=i==0?66:70;
+                    note=foldNear(note,62,76,anchor);
                 }
                 else
                 {
@@ -1395,7 +1446,7 @@ void SongArrangement::addHarmony(uint64_t seed)
                 }
 
                 addNote(pluck,note,barBeat+juce::jlimit(0.0,3.90,pos),
-                        .11+random01(pluckMotifSeed,0x8160+ps)*.22,
+                        mainstreamSong?.32:(.11+random01(pluckMotifSeed,0x8160+ps)*.22),
                         juce::jlimit(48,108,54+(int)(energy*24.f)+(int)(random01(domains.pluck,0x8170+ps)*14.f)));
             }
         }
