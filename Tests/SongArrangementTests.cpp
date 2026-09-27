@@ -324,6 +324,59 @@ int main()
     if(preDropRollHits<7||preDropRollMaxVelocity<112||lateKick)
     {std::cerr<<"v1.3 chorus-to-drop drum roll/tension is missing or has no breathing gap\n";return 53;}
 
+    // v1.5: no isolated octave/pitch spike may survive between two nearby notes.
+    int isolatedPitchSpikes=0;
+    for(size_t i=1;i+1<firstLead->notes.size();++i)
+    {
+        const auto& prev=firstLead->notes[i-1];
+        const auto& cur=firstLead->notes[i];
+        const auto& next=firstLead->notes[i+1];
+        if(std::abs(cur.note-prev.note)>7&&std::abs(cur.note-next.note)>7
+           &&std::abs(prev.note-next.note)<=5&&cur.length<=.55)
+            ++isolatedPitchSpikes;
+    }
+    if(isolatedPitchSpikes!=0)
+    {std::cerr<<"v1.5 lead still contains isolated random high/low notes\n";return 54;}
+
+    // The first four bars of CHORUS and DROP are now one deliberate song hook,
+    // not two separately-randomized interpretations.
+    auto hookCells=[&](const sonara::ArrangementSection& section)
+    {
+        std::vector<std::pair<int,int>> cells;
+        const double begin=section.startBar*4.0,end=begin+16.0;
+        for(const auto& n:firstLead->notes)
+            if(n.beat>=begin&&n.beat<end)
+                cells.push_back({(int)std::llround((n.beat-begin)*8.0),n.note});
+        return cells;
+    };
+    const auto chorusCells=hookCells(*chorusSection);
+    const auto dropCells=hookCells(*dropSection);
+    if(chorusCells.size()<6||chorusCells!=dropCells)
+    {std::cerr<<"v1.5 chorus/drop do not preserve one exact four-bar hook skeleton\n";return 55;}
+
+    // Explicit songwriter controls must affect real generation.
+    sonara::SongArrangement directed;
+    directed.generateComposition(
+        "progressive house 128 BPM F minor, strong hook, simple melody no random notes, short intro, big chorus, long drop, short breakdown, no counter melody",
+        128.0,0x151515ULL);
+    const sonara::ArrangementSection *dIntro=nullptr,*dChorus=nullptr,*dDrop=nullptr,*dBreak=nullptr;
+    for(const auto& s:directed.getSections())
+    {
+        if(s.name=="INTRO")dIntro=&s;
+        else if(s.name=="CHORUS")dChorus=&s;
+        else if(s.name=="DROP")dDrop=&s;
+        else if(s.name=="BREAKDOWN")dBreak=&s;
+    }
+    const auto* dCounter=findLane(directed,"COUNTER");
+    if(!dIntro||!dChorus||!dDrop||!dBreak||!dCounter
+       ||dIntro->bars>4||dChorus->bars<12||dDrop->bars<20||dBreak->bars>4
+       ||!dCounter->notes.empty())
+    {std::cerr<<"v1.5 songwriter prompt directions are not controlling the arrangement\n";return 56;}
+
+    const auto* dLead=findLane(directed,"LEAD");
+    if(!dLead||!melodyQualityOk(directed,*dLead))
+    {std::cerr<<"v1.5 directed simple melody failed musical quality validation\n";return 57;}
+
     auto midi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-arrangement-test",".mid");
     if(!a.writeMidiFile(midi)||!midi.existsAsFile()||midi.getSize()<512){std::cerr<<"MIDI export failed\n";return 7;}
     midi.deleteFile();
