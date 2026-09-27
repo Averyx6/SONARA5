@@ -553,6 +553,33 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     if(p.contains("drum and bass")||p.contains("dnb")){plan.density=juce::jmax(plan.density,.78f);plan.syncopation=juce::jmax(plan.syncopation,.66f);}
     if(p.contains("tech house")){plan.density=juce::jmin(plan.density,.58f);plan.restAmount=juce::jmax(plan.restAmount,.24f);plan.octaveRange=1;}
     if(p.contains("cinematic")){plan.phraseBars=8;plan.restAmount=juce::jmax(plan.restAmount,.22f);plan.development=juce::jmax(plan.development,.72f);}
+
+    // v0.8 production intent: genre/production words shape the composition plan,
+    // not only the final synth palette.
+    const bool festival=p.contains("festival")||p.contains("mainstage")||p.contains("big room");
+    const bool progressive=p.contains("progressive house")||p.contains("melodic house");
+    if(festival)
+    {
+        plan.phraseBars=4;
+        plan.motifLength=juce::jlimit(4,6,plan.motifLength);
+        plan.density=juce::jlimit(.70f,.88f,juce::jmax(plan.density,.72f));
+        plan.restAmount=juce::jmin(plan.restAmount,.16f);
+        plan.syncopation=juce::jlimit(.28f,.62f,plan.syncopation);
+        plan.chordMode=2+(plan.chordMode%2);
+        plan.hatMode=juce::jmax(1,plan.hatMode);
+        if(plan.bassMode==3)plan.bassMode=2; // avoid hyper-busy bass under anthem leads
+    }
+    if(progressive)
+    {
+        plan.development=juce::jlimit(.60f,.82f,juce::jmax(plan.development,.64f));
+        plan.motifLength=juce::jlimit(4,7,plan.motifLength);
+        plan.restAmount=juce::jmin(plan.restAmount,.20f);
+    }
+    if(p.contains("radio edit")||p.contains("radio friendly"))
+    {
+        plan.phraseBars=4;
+        plan.development=juce::jlimit(.48f,.68f,plan.development);
+    }
 }
 
 void SongArrangement::buildSections(uint64_t seed)
@@ -566,7 +593,43 @@ void SongArrangement::buildSections(uint64_t seed)
     };
 
     const int style = plan.structureStyle;
-    const auto& l = layouts[style].lengths;
+    std::array<int,8> lengths{};
+    for(int i=0;i<8;++i)lengths[(size_t)i]=layouts[style].lengths[i];
+
+    const auto p=sourcePrompt.toLowerCase();
+    const bool festival=p.contains("festival")||p.contains("mainstage")||p.contains("big room");
+    if(festival)
+    {
+        lengths[2]=juce::jmax(lengths[2],8);   // BUILD
+        lengths[3]=juce::jmax(lengths[3],16); // DROP
+        lengths[6]=juce::jmax(lengths[6],8);  // BUILD 2
+        lengths[7]=juce::jmax(lengths[7],12); // FINAL HOOK
+    }
+    if(p.contains("early drop"))
+    {
+        lengths[0]=juce::jmin(lengths[0],4);
+        lengths[1]=juce::jmin(lengths[1],4);
+        lengths[2]=juce::jmin(lengths[2],4);
+    }
+    if(p.contains("long build"))
+    {
+        lengths[2]=juce::jmax(lengths[2],12);
+        lengths[6]=juce::jmax(lengths[6],8);
+    }
+    if(p.contains("radio edit")||p.contains("short song"))
+    {
+        lengths[0]=juce::jmin(lengths[0],4);
+        lengths[1]=juce::jmin(lengths[1],8);
+        lengths[3]=juce::jmin(lengths[3],12);
+        lengths[4]=juce::jmin(lengths[4],8);
+        lengths[7]=juce::jmin(lengths[7],12);
+    }
+    if(p.contains("cinematic"))
+    {
+        lengths[0]=juce::jmax(lengths[0],8);
+        lengths[4]=juce::jmax(lengths[4],12);
+    }
+
     static constexpr const char* names[8] = {
         "INTRO","VERSE","BUILD","DROP","BREAKDOWN","CHORUS","BUILD 2","FINAL HOOK"
     };
@@ -578,8 +641,8 @@ void SongArrangement::buildSections(uint64_t seed)
     int start = 0;
     for (int i = 0; i < 8; ++i)
     {
-        sections.push_back({ names[i], start, l[i], energy[i] });
-        start += l[i];
+        sections.push_back({ names[i], start, lengths[(size_t)i], energy[i] });
+        start += lengths[(size_t)i];
     }
     bars = start;
 }
@@ -988,6 +1051,17 @@ void SongArrangement::addHarmony(uint64_t seed)
         const int localBar=bar-section->startBar;
         const float energy=section->energy;
         const uint64_t bs=(uint64_t)bar*173ULL;
+        const int supportTheme=(drop||finalHook)?3:(chorus?5:sectionIndex);
+        const int supportMotifBar=localBar%2;
+        const uint64_t bassMotifSeed=mix64(domains.bass
+            ^ ((uint64_t)supportTheme+1ULL)*0x9e3779b97f4a7c15ULL
+            ^ ((uint64_t)supportMotifBar+1ULL)*0xbf58476d1ce4e5b9ULL);
+        const uint64_t subMotifSeed=mix64(domains.sub
+            ^ ((uint64_t)supportTheme+1ULL)*0x94d049bb133111ebULL
+            ^ ((uint64_t)supportMotifBar+1ULL)*0x517cc1b727220a95ULL);
+        const uint64_t pluckMotifSeed=mix64(domains.pluck
+            ^ ((uint64_t)supportTheme+1ULL)*0xd1342543de82ef95ULL
+            ^ ((uint64_t)supportMotifBar+1ULL)*0xa24baed4963ee407ULL);
 
         if(!intro||localBar>=juce::jmax(1,section->bars/2))
         {
@@ -1009,18 +1083,18 @@ void SongArrangement::addHarmony(uint64_t seed)
             for(int i=0;i<count;++i)
             {
                 const double pos=positions[i];
-                if(i>0&&random01(domains.bass,0x7100+bs+i)<(verse?.20f:.08f))continue;
+                if(i>0&&random01(bassMotifSeed,0x7100+i)<(verse?.20f:.08f))continue;
                 const auto* h=harmonyAtBeat(barBeat+pos);
                 if(h==nullptr)continue;
 
                 int degree=h->scaleDegree;
                 int note=rootMidi+scaleSemitoneForDegree(degree)-12;
 
-                const float move=random01(domains.bass,0x7200+bs+i);
+                const float move=random01(bassMotifSeed,0x7200+i);
                 if(i>0&&move<harmonyPlan.passingProbability)
                 {
                     // diatonic approach/passing note rather than a copied chord root
-                    const int dir=random01(domains.bass,0x7210+bs+i)>.5f?1:-1;
+                    const int dir=random01(bassMotifSeed,0x7210+i)>.5f?1:-1;
                     note=rootMidi+scaleSemitoneForDegree(degree+dir)-12;
                 }
                 else if(move<.34f&&i%3==2)note+=7;
@@ -1039,8 +1113,8 @@ void SongArrangement::addHarmony(uint64_t seed)
             int subCount=1;
             double positions[4]={0.0,2.0,3.0,1.0};
             if(drop||chorus||finalHook)
-                subCount=random01(domains.sub,0x7400+bs)>.52f?2:3;
-            else if(verse&&random01(domains.sub,0x7410+bs)>.62f)
+                subCount=random01(subMotifSeed,0x7400)>.52f?2:3;
+            else if(verse&&random01(subMotifSeed,0x7410)>.62f)
                 subCount=2;
             if(breakdown)subCount=(localBar%2==0)?1:0;
 
@@ -1065,28 +1139,28 @@ void SongArrangement::addHarmony(uint64_t seed)
             const int steps=(drop||finalHook)?8:(chorus?6:(build?6:4));
             for(int i=0;i<steps;++i)
             {
-                const uint64_t ps=bs+(uint64_t)i;
-                if(i>0&&random01(domains.pluck,0x8100+ps)<(drop?.08f:.20f))continue;
+                const uint64_t ps=(uint64_t)i;
+                if(i>0&&random01(pluckMotifSeed,0x8100+ps)<(drop?.08f:.20f))continue;
 
                 double pos=i*(4.0/steps);
-                if(i%2&&random01(domains.pluck,0x8110+ps)<.45f)
-                    pos+=((random01(domains.pluck,0x8120+ps)-.5f)*.08f);
+                if(i%2&&random01(pluckMotifSeed,0x8110+ps)<.45f)
+                    pos+=((random01(pluckMotifSeed,0x8120+ps)-.5f)*.08f);
 
                 const auto* h=harmonyAtBeat(barBeat+pos);
                 if(h==nullptr)continue;
                 const auto tones=chordTonesFor(*h);
-                const int patternIndex=arpPatterns[arpMode][(i+bar+sectionIndex)%8];
+                const int patternIndex=arpPatterns[arpMode][(i+supportMotifBar+supportTheme)%8];
 
                 int note=tones[(size_t)(patternIndex%4)]+24;
-                if(random01(domains.pluck,0x8130+ps)<harmonyPlan.passingProbability)
+                if(random01(pluckMotifSeed,0x8130+ps)<harmonyPlan.passingProbability)
                 {
-                    const int dir=random01(domains.pluck,0x8140+ps)>.5f?1:-1;
+                    const int dir=random01(pluckMotifSeed,0x8140+ps)>.5f?1:-1;
                     note=rootMidi+scaleSemitoneForDegree(h->scaleDegree+dir)+24;
                 }
-                if(finalHook&&i%4==3&&random01(domains.pluck,0x8150+ps)>.50f)note+=12;
+                if(finalHook&&i%4==3&&random01(pluckMotifSeed,0x8150+ps)>.50f)note+=12;
 
                 addNote(pluck,note,barBeat+juce::jlimit(0.0,3.90,pos),
-                        .11+random01(domains.pluck,0x8160+ps)*.22,
+                        .11+random01(pluckMotifSeed,0x8160+ps)*.22,
                         juce::jlimit(48,108,54+(int)(energy*24.f)+(int)(random01(domains.pluck,0x8170+ps)*14.f)));
             }
         }
