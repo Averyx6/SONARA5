@@ -865,7 +865,7 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
         const bool chorus=sectionName.contains("CHORUS");
         const bool sectionStart=section && bar==section->startBar;
         const bool sectionEnd=section && bar==section->startBar+section->bars-1;
-        const bool preDropGap=build&&sectionEnd&&(house||festival);
+        const bool preDropGap=chorus&&sectionEnd&&(house||festival);
         const double b=bar*beatsPerBar;
         const uint64_t bs=(uint64_t)bar*97ULL;
 
@@ -1142,7 +1142,7 @@ void SongArrangement::addHarmony(uint64_t seed)
         const uint64_t pluckMotifSeed=mix64(domains.pluck
             ^ ((uint64_t)supportTheme+1ULL)*0xd1342543de82ef95ULL
             ^ ((uint64_t)supportMotifBar+1ULL)*0xa24baed4963ee407ULL);
-        const bool preDropGap=build&&localBar==section->bars-1
+        const bool preDropGap=chorus&&localBar==section->bars-1
             && (sourcePrompt.containsIgnoreCase("house")||sourcePrompt.containsIgnoreCase("edm")
                 ||sourcePrompt.containsIgnoreCase("festival")||sourcePrompt.containsIgnoreCase("mainstage"));
 
@@ -1344,7 +1344,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         const bool finalHook=sectionName.contains("FINAL")||sectionName.contains("HOOK");
         const int localBar=bar-section->startBar;
         const float energy=section->energy;
-        const bool preDropGap=build&&localBar==section->bars-1
+        const bool preDropGap=chorus&&localBar==section->bars-1
             && (p.contains("house")||p.contains("edm")||p.contains("festival")||p.contains("mainstage"));
 
         bool active=!intro;
