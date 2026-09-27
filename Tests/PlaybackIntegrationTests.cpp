@@ -448,7 +448,7 @@ int main()
     if(!exporter.renderFullMix(shortSong,wav,44100.0,{})||wav.getSize()<4096)return fail("full mix WAV export failed");
 
     juce::AudioFormatManager exportFormats;exportFormats.registerBasicFormats();
-    std::unique_ptr<juce::AudioFormatReader> mixReader(exportFormats.createReaderFor(wav));
+    auto mixReader=exportFormats.createReaderFor(wav);
     if(!mixReader)return fail("full mix WAV could not be reopened");
     const int inspectSamples=(int)juce::jmin<juce::int64>(mixReader->lengthInSamples,44100*12);
     juce::AudioBuffer<float> renderedMix(2,juce::jmax(1,inspectSamples));
