@@ -385,6 +385,29 @@ int main()
        ||!festPluck->sound.name.containsIgnoreCase("Festival Pluck"))
     {std::cerr<<"Finalized SoundDNA palette lost semantic role identity\n";return 39;}
 
+    const auto* festKick=findLane(festivalSmart,"KICK");
+    const auto* festHats=findLane(festivalSmart,"HATS");
+    const auto* festSub=findLane(festivalSmart,"SUB");
+    if(!festKick||!festHats||!festSub)
+    {std::cerr<<"v0.9 pre-drop lane missing\n";return 42;}
+    const double finalBuildBar=(festBuild->startBar+festBuild->bars-1)*4.0;
+    auto hasLateStart=[&](const sonara::ArrangementLane& lane,double from)
+    {
+        for(const auto& n:lane.notes)
+            if(n.beat>=from&&n.beat<finalBuildBar+4.0)return true;
+        return false;
+    };
+    if(hasLateStart(*festKick,finalBuildBar+3.0)
+       ||hasLateStart(*festHats,finalBuildBar+3.5)
+       ||hasLateStart(*festBass,finalBuildBar+3.5)
+       ||hasLateStart(*festSub,finalBuildBar+3.5)
+       ||hasLateStart(*festPluck,finalBuildBar+3.5)
+       ||hasLateStart(*festLead,finalBuildBar+3.5))
+    {std::cerr<<"v0.9 festival pre-drop breathing window was filled by late notes\n";return 43;}
+    for(const auto& n:festSub->notes)
+        if(n.beat<finalBuildBar+3.5&&n.beat+n.length>finalBuildBar+3.50&&n.beat>=finalBuildBar)
+        {std::cerr<<"v0.9 sub tail spills across pre-drop gap\n";return 44;}
+
     sonara::SongArrangement earlyDrop;
     earlyDrop.generateComposition("emotional house 128 BPM F minor early drop",128.0,0x880022ULL);
     const sonara::ArrangementSection *earlyIntro=nullptr,*earlyVerse=nullptr,*earlyBuild=nullptr;
