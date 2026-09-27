@@ -713,6 +713,7 @@ void SongArrangement::generateComposition(const juce::String& prompt, double bpm
     addDrums(domains.drums, energetic);
     addHarmony(domains.harmony);
     addMelody(domains.melody, energetic);
+    alignPitchedLanesToLead();
     addFx(domains.fx);
 
     harmonyId=computeHarmonyId();
@@ -2085,6 +2086,109 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
     lanes.push_back(std::move(counter));
 }
 
+
+void SongArrangement::alignPitchedLanesToLead()
+{
+    const auto p=sourcePrompt.toLowerCase();
+    const bool songMode=p.contains("progressive house")||p.contains("melodic house")
+        ||p.contains("edm")||p.contains("pop")||p.contains("trance")
+        ||p.contains("festival")||p.contains("mainstage")||p.contains("future rave");
+    if(!songMode)return;
+
+    ArrangementLane *lead=nullptr,*chords=nullptr,*pluck=nullptr,*pad=nullptr,*counter=nullptr;
+    for(auto& lane:lanes)
+    {
+        if(lane.name=="LEAD")lead=&lane;
+        else if(lane.name=="CHORDS")chords=&lane;
+        else if(lane.name=="PLUCK")pluck=&lane;
+        else if(lane.name=="PAD")pad=&lane;
+        else if(lane.name=="COUNTER")counter=&lane;
+    }
+    if(lead==nullptr||lead->notes.empty())return;
+
+    std::vector<int> barCentre((size_t)bars,67);
+    int previous=67;
+    for(int bar=0;bar<bars;++bar)
+    {
+        const double begin=bar*beatsPerBar,end=begin+beatsPerBar;
+        std::vector<int> pitches;
+        for(const auto& n:lead->notes)
+            if(n.beat>=begin&&n.beat<end)pitches.push_back(n.note);
+        if(!pitches.empty())
+        {
+            std::sort(pitches.begin(),pitches.end());
+            int centre=pitches[pitches.size()/2];
+            while(centre-previous>6)centre-=12;
+            while(previous-centre>6)centre+=12;
+            previous=centre;
+        }
+        barCentre[(size_t)bar]=previous;
+    }
+
+    auto leadAtBeat=[&](double beat)
+    {
+        const int bar=juce::jlimit(0,bars-1,(int)std::floor(beat/beatsPerBar));
+        int target=barCentre[(size_t)bar];
+        double bestDistance=999.0;
+        const double begin=bar*beatsPerBar,end=begin+beatsPerBar;
+        for(const auto& n:lead->notes)
+        {
+            if(n.beat<begin||n.beat>=end)continue;
+            const double d=std::abs(n.beat-beat);
+            if(d<bestDistance){bestDistance=d;target=n.note;}
+        }
+        return target;
+    };
+
+    auto alignGrouped=[&](ArrangementLane* lane,int offset,int low,int high)
+    {
+        if(lane==nullptr||lane->notes.empty())return;
+        std::sort(lane->notes.begin(),lane->notes.end(),
+                  [](const ArrangementNote& a,const ArrangementNote& b)
+                  {
+                      if(std::abs(a.beat-b.beat)>.0001)return a.beat<b.beat;
+                      return a.note<b.note;
+                  });
+
+        size_t i=0;
+        while(i<lane->notes.size())
+        {
+            size_t j=i+1;
+            while(j<lane->notes.size()&&std::abs(lane->notes[j].beat-lane->notes[i].beat)<.0001)++j;
+
+            float average=0.f;int groupMin=127,groupMax=0;
+            for(size_t k=i;k<j;++k)
+            {
+                average+=lane->notes[k].note;
+                groupMin=juce::jmin(groupMin,lane->notes[k].note);
+                groupMax=juce::jmax(groupMax,lane->notes[k].note);
+            }
+            average/=(float)(j-i);
+
+            const int target=leadAtBeat(lane->notes[i].beat)+offset;
+            int bestShift=0;float bestScore=1.0e9f;
+            for(int oct=-4;oct<=4;++oct)
+            {
+                const int shift=oct*12;
+                const int lo=groupMin+shift,hi=groupMax+shift;
+                float score=std::abs((average+shift)-(float)target);
+                if(lo<low)score+=(low-lo)*5.f;
+                if(hi>high)score+=(hi-high)*5.f;
+                if(score<bestScore){bestScore=score;bestShift=shift;}
+            }
+
+            for(size_t k=i;k<j;++k)
+                lane->notes[k].note=juce::jlimit(low,high,lane->notes[k].note+bestShift);
+            i=j;
+        }
+    };
+
+    // Same song, same register family. Only BASS/SUB intentionally live below it.
+    alignGrouped(chords,-4,52,78);
+    alignGrouped(pluck,-1,58,80);
+    alignGrouped(pad,-5,54,78);
+    alignGrouped(counter,3,60,84);
+}
 
 void SongArrangement::addFx(uint64_t seed)
 {
