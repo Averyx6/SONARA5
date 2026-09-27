@@ -304,7 +304,7 @@ SoundDNA PromptGenerator::generate(const juce::String& prompt, uint64_t seed, Pr
     if(has("soft")||has("mellow")){d.oscA=WaveShape::sine;d.oscB=WaveShape::softSaw;d.oscAMorph=.18f+.22f*hash01(seed,52);d.drive=.03f;d.cutoff*=.62f;}
     if(has("square")||has("8-bit")){d.oscA=d.oscB=WaveShape::square;d.oscAMorph=d.oscBMorph=d.lfoMorphA=d.lfoMorphB=0.f;d.unison=1;d.phaseRandom=0.f;}
     if(has("morph")||has("wavetable")||has("evolving")){d.oscAMorph=.55f+.40f*hash01(seed,53);d.oscBMorph=.45f+.48f*hash01(seed,54);d.lfoCutoff=juce::jmax(d.lfoCutoff,.18f);d.lfoMorphA=.30f+.34f*hash01(seed,59);d.lfoMorphB=-(.24f+.38f*hash01(seed,60));d.lfoRate=.12f+1.1f*hash01(seed,61);d.lfoShape=LfoShape::triangle;}
-    if(has("wobble")||has("movement")||has("animated")){d.lfoCutoff=.45f+.25f*hash01(seed,43);d.lfoRate=.35f+2.4f*hash01(seed,44);d.lfoMorphA=.18f+.28f*hash01(seed,62);d.lfoMorphB=-(.14f+.30f*hash01(seed,63));}
+    if(has("wobble")||has("movement")||has("animated")){d.lfoCutoff=juce::jmax(d.lfoCutoff,.45f+.25f*hash01(seed,43));d.lfoRate=.35f+2.4f*hash01(seed,44);d.lfoMorphA=.18f+.28f*hash01(seed,62);d.lfoMorphB=-(.14f+.30f*hash01(seed,63));}
     // Explicit modulation-language overrides broad timbre categories and remains deterministic for identical prompt+seed.
     if(has("square lfo")||has("stepped")||has("gate")||has("gated")) d.lfoShape=LfoShape::square;
     else if(has("ramp down")||has("falling lfo")||has("down saw")) d.lfoShape=LfoShape::sawDown;
