@@ -574,7 +574,7 @@ void SonaraAudioProcessor::processBlock(juce::AudioBuffer<float>& b, juce::MidiB
     {
         for (int c = 0; c < b.getNumChannels(); ++c)
             for (int i = 0; i < b.getNumSamples(); ++i)
-                b.setSample(c, i, std::tanh(b.getSample(c, i) * .98f));
+                b.setSample(c, i, std::tanh(b.getSample(c, i) * 1.12f));
     }
 }
 
@@ -901,7 +901,7 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
 
     previewBpm=made->getBpm();
     std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(made),std::memory_order_release);
-    selectedLane.store(lanes.size()>9?9:0);
+    setSelectedLane(lanes.size()>9?9:0);
     generationProgress.store(1.f);
     generationStatus="NEW SONG READY • whole "+juce::String((1.f-wholeSimilarityMax)*100.f,0)
                    +"% • harmony "+juce::String((1.f-harmonySimilarityMax)*100.f,0)
@@ -1339,8 +1339,12 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
 
     songDrumBus.clear(0,renderSamples);
     drumSynth.render(songDrumBus,drumTriggers.data(),drumCount);
+    // Section-level drum contrast makes the DROP obvious even when it reuses
+    // the song's hook identity. Builds pull back; drops/final hooks hit harder.
+    const float drumSectionGain=mixIntro?.46f:(mixVerse?.60f:(mixBuild?.64f:
+        (mixChorus?.68f:(mixDrop?.84f:(mixBreakdown?.48f:(mixFinal?.86f:.70f))))));
     for(int ch=0;ch<out.getNumChannels();++ch)
-        out.addFrom(ch,0,songDrumBus,ch,0,renderSamples,.70f);
+        out.addFrom(ch,0,songDrumBus,ch,0,renderSamples,drumSectionGain);
 
     // One shared wet-only reverb bus; drums/BASS/SUB stay dry.
     if(songFxBus.getNumChannels()>=2)
@@ -1364,7 +1368,7 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
             const float x=std::isfinite(d[s])?d[s]:0.f;
             const float hp=masterAlpha*(y1+x-x1);
             x1=x;y1=hp;
-            float y=juce::jlimit(-.96f,.96f,std::tanh(hp*.96f));
+            float y=juce::jlimit(-.96f,.96f,std::tanh(hp*1.22f));
             if(fadeStart>s)
             {
                 const int remaining=fadeStart-s;
@@ -1443,7 +1447,7 @@ void SonaraAudioProcessor::rebuildInstrumentalFromReference(const juce::String& 
     auto& lead=lanes[(size_t)leadIndex];lead.notes.clear();const double loop=juce::jmax(4.0,reference.melodyBeats());const double total=rebuilt->getTotalBeats();
     for(double offset=0.0;offset<total;offset+=loop)for(const auto& n:reference.melody){const double beat=offset+n.beat;if(beat>=total)break;lead.notes.push_back({n.midiNote,n.velocity,beat,juce::jmin(n.length,total-beat)});}std::sort(lead.notes.begin(),lead.notes.end(),[](const sonara::ArrangementNote&a,const sonara::ArrangementNote&b){return a.beat<b.beat;});
     lead.sound=generator.generate(prompt+" emotional lead resounded from reference",(uint64_t)prompt.hashCode64()^(++generationCounter*0x94d049bb133111ebULL));
-    for(int i=0;i<musicalLaneCount;++i){const int laneIndex=firstMusicalLane+i;if(juce::isPositiveAndBelow(laneIndex,(int)lanes.size()))songEngines[(size_t)i].setPatch(lanes[(size_t)laneIndex].sound);}std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(rebuilt),std::memory_order_release);selectedLane.store(leadIndex);generationProgress.store(1.f);generationStatus="Reference instrumental rebuilt • new drums/bass/chords/synths + extracted melody";
+    for(int i=0;i<musicalLaneCount;++i){const int laneIndex=firstMusicalLane+i;if(juce::isPositiveAndBelow(laneIndex,(int)lanes.size()))songEngines[(size_t)i].setPatch(lanes[(size_t)laneIndex].sound);}std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(rebuilt),std::memory_order_release);setSelectedLane(leadIndex);generationProgress.store(1.f);generationStatus="Reference instrumental rebuilt • new drums/bass/chords/synths + extracted melody";
 }
 
 bool SonaraAudioProcessor::writeReferenceMidiFile(const juce::File& file) const
