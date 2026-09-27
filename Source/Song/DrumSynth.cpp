@@ -16,32 +16,34 @@ void DrumSynth::configureKit(const SoundDNA& kick,const SoundDNA& snare,const So
         return std::exp(-1.f/(float)(sr*juce::jmax(.004f,seconds)));
     };
 
-    kickBaseHz=42.f+10.f*normCutoff(kick);
-    kickSweepHz=68.f+76.f*juce::jlimit(0.f,1.f,kick.macroImpact+.12f*kick.drive);
-    kickClick=juce::jlimit(.018f,.16f,.025f+.08f*normCutoff(kick)+.07f*kick.transientLevel);
-    kickDecay=decayFor(.18f+.17f*normRelease(kick));
-    kickGain=juce::jlimit(.56f,.82f,.62f+.13f*kick.macroImpact);
+    kickBaseHz=43.f+11.f*normCutoff(kick);
+    const float kickImpact=juce::jlimit(0.f,1.f,.44f*kick.macroImpact+.34f*kick.transientLevel+.12f*kick.drive+.010f*juce::jmax(0.f,kick.pitchEnv));
+    kickSweepHz=82.f+108.f*kickImpact;
+    kickClick=juce::jlimit(.035f,.28f,.045f+.10f*normCutoff(kick)+.16f*kick.transientLevel);
+    kickDecay=decayFor(.16f+.15f*normRelease(kick));
+    kickGain=juce::jlimit(.72f,.98f,.74f+.14f*kickImpact+.08f*kick.drive);
 
-    snareNoise=juce::jlimit(.42f,.72f,.48f+.18f*normCutoff(snare)+.08f*snare.noiseLevel);
-    snareTone=juce::jlimit(.10f,.24f,.12f+.08f*snare.filterEnv+.04f*snare.macroImpact);
-    snareDecay=decayFor(.11f+.11f*normRelease(snare));
-    snareGain=juce::jlimit(.28f,.50f,.34f+.10f*snare.macroImpact+.04f*snare.drive);
+    snareNoise=juce::jlimit(.55f,.90f,.58f+.20f*normCutoff(snare)+.12f*snare.noiseLevel);
+    snareTone=juce::jlimit(.14f,.34f,.16f+.10f*snare.filterEnv+.08f*snare.macroImpact);
+    snareDecay=decayFor(.105f+.12f*normRelease(snare));
+    snareGain=juce::jlimit(.42f,.72f,.46f+.14f*snare.macroImpact+.09f*snare.drive+.08f*snare.transientLevel);
 
-    hatDifference=juce::jlimit(.76f,.96f,.84f+.10f*normCutoff(hats));
-    hatDecay=decayFor(.035f+.075f*normRelease(hats));
-    hatGain=juce::jlimit(.055f,.16f,.065f+.07f*normCutoff(hats)+.02f*hats.macroImpact);
+    hatDifference=juce::jlimit(.78f,.97f,.85f+.10f*normCutoff(hats));
+    hatDecay=decayFor(.032f+.078f*normRelease(hats));
+    hatGain=juce::jlimit(.065f,.18f,.078f+.075f*normCutoff(hats)+.025f*hats.macroImpact);
 
-    clapTone=juce::jlimit(.15f,.50f,.20f+.22f*perc.macroBrightness+.08f*perc.macroMovement);
-    clapDecay=decayFor(.075f+.075f*normRelease(perc));
-    clapGain=juce::jlimit(.14f,.34f,.18f+.11f*perc.macroImpact+.03f*perc.drive);
-    percDecay=decayFor(.018f+.028f*normRelease(perc));
-    percGain=juce::jlimit(.035f,.095f,.045f+.030f*perc.macroImpact+.012f*perc.drive);
-    percToneHz=620.f+520.f*juce::jlimit(0.f,1.f,perc.macroBrightness);
+    clapTone=juce::jlimit(.15f,.52f,.20f+.22f*perc.macroBrightness+.10f*perc.macroMovement);
+    clapDecay=decayFor(.070f+.085f*normRelease(perc));
+    clapGain=juce::jlimit(.20f,.46f,.23f+.13f*perc.macroImpact+.05f*perc.drive);
+    percDecay=decayFor(.024f+.045f*normRelease(perc));
+    percGain=juce::jlimit(.060f,.16f,.072f+.050f*perc.macroImpact+.020f*perc.drive);
+    percBaseToneHz=620.f+520.f*juce::jlimit(0.f,1.f,perc.macroBrightness);
+    percToneHz=percBaseToneHz;
 
-    crashNoise=juce::jlimit(.36f,.62f,.42f+.16f*normCutoff(hats)+.05f*hats.noiseLevel);
-    crashTone=juce::jlimit(.05f,.16f,.07f+.08f*hats.macroBrightness);
-    crashDecay=decayFor(.55f+.80f*normRelease(hats));
-    crashGain=juce::jlimit(.08f,.22f,.10f+.08f*hats.macroImpact+.03f*hats.reverb);
+    crashNoise=juce::jlimit(.40f,.68f,.46f+.16f*normCutoff(hats)+.06f*hats.noiseLevel);
+    crashTone=juce::jlimit(.06f,.18f,.08f+.08f*hats.macroBrightness);
+    crashDecay=decayFor(.58f+.86f*normRelease(hats));
+    crashGain=juce::jlimit(.11f,.28f,.13f+.10f*hats.macroImpact+.04f*hats.reverb);
 
     reset();
 }
@@ -58,11 +60,22 @@ void DrumSynth::trigger(int note,float v) noexcept
 {
     v=juce::jlimit(0.f,1.f,v);
     if(note==36){kickEnv=1.f;kickVelocity=v;kickPhase=0.0;}
-    else if(note==38){snareEnv=1.f;snareVelocity=v;}
+    else if(note==38){snareEnv=1.f;snareVelocity=v;snarePhase=0.0;}
     else if(note==42||note==46){hatEnv=note==46?1.35f:1.f;hatVelocity=v;}
     else if(note==39){clapEnv=1.f;clapVelocity=v;}
-    else if(note==37){percEnv=1.f;percVelocity=v;}
-    else if(note==49||note==57){crashEnv=1.f;crashVelocity=v;}
+    else if(note==37){percEnv=1.f;percVelocity=v;percToneHz=percBaseToneHz;percPhase=0.0;}
+    else if(note==45||note==47||note==50)
+    {
+        percEnv=1.f;percVelocity=v;percPhase=0.0;
+        const float semis=(float)(note-45);
+        percToneHz=145.f*std::pow(2.f,semis/12.f);
+    }
+    else if(note==49){crashEnv=1.f;crashVelocity=v;}
+    else if(note==57)
+    {
+        crashEnv=1.35f;crashVelocity=v;
+        percEnv=.90f;percVelocity=juce::jmin(1.f,v*.90f);percToneHz=92.f;percPhase=0.0;
+    }
 }
 
 void DrumSynth::render(juce::AudioBuffer<float>& b,const DrumTrigger* triggers,int triggerCount) noexcept
@@ -93,8 +106,9 @@ void DrumSynth::render(juce::AudioBuffer<float>& b,const DrumTrigger* triggers,i
             kickPhase+=juce::MathConstants<double>::twoPi*hz/sr;
             if(kickPhase>=juce::MathConstants<double>::twoPi)kickPhase-=juce::MathConstants<double>::twoPi;
             const float body=(float)std::sin(kickPhase);
+            const float punch=(float)std::sin(kickPhase*2.0)*.13f*pitchEnv;
             const float click=noise()*kickClick*pitchEnv;
-            out+=(body*.95f+click)*kickEnv*kickVelocity*kickGain;
+            out+=(body*.98f+punch+click)*kickEnv*kickVelocity*kickGain;
             kickEnv*=kickDecay;
         }
 
@@ -151,7 +165,7 @@ void DrumSynth::render(juce::AudioBuffer<float>& b,const DrumTrigger* triggers,i
             crashEnv*=crashDecay;
         }
 
-        out=std::tanh(out*1.08f);
+        out=juce::jlimit(-.94f,.94f,std::tanh(out*1.18f));
         for(int channel=0;channel<ch;++channel)
             b.addSample(channel,i,out);
     }
