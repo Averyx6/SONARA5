@@ -1364,8 +1364,11 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
     const bool progressive=p.contains("progressive house")||p.contains("melodic house");
     const bool trance=p.contains("trance");
     const bool tropical=p.contains("tropical");
+    const bool requestCounter=p.contains("counter melody")||p.contains("secondary lead")
+        ||p.contains("call and response")||p.contains("answer melody");
     const bool disableCounter=p.contains("no counter")||p.contains("no counter melody")
-        ||p.contains("main melody only")||p.contains("single lead");
+        ||p.contains("main melody only")||p.contains("single lead")
+        ||(mainstreamEdm&&!requestCounter);
 
     int architecture=plan.melodyArchetype%12;
     const bool mainstreamEdm=progressive||pop||trance||p.contains("festival")||p.contains("mainstage")
