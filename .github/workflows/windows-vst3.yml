@@ -1,7 +1,7 @@
 name: SONARA Windows x64 VST3
 on:
   push:
-    branches: [ main, v0.2-song-engine, v0.4-master-spec, v0.5-melody-rebuild, v0.6-harmony-rootcause, v0.7-musicality-drums, v0.8-smart-production, v0.9-release-polish, v1.1-producer-quality, v1.3-songwriting-engine ]
+    branches: [ main, v0.2-song-engine, v0.4-master-spec, v0.5-melody-rebuild, v0.6-harmony-rootcause, v0.7-musicality-drums, v0.8-smart-production, v0.9-release-polish, v1.1-producer-quality, v1.3-songwriting-engine, v1.5-songwriter-producer ]
   workflow_dispatch:
 permissions:
   contents: read
