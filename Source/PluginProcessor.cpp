@@ -260,16 +260,59 @@ float internalTwoBarRepeat(const sonara::ArrangementLane* lane,
     return sectionRhythmOverlap(lane,section,&second);
 }
 
+float arrangementSpaceScore(const sonara::SongArrangement& song,const sonara::ArrangementSection* section)
+{
+    if(section==nullptr)return .5f;
+    constexpr int maxBins=384;
+    std::array<int,maxBins> stack{};
+    const double start=section->startBar*4.0;
+    const double end=(section->startBar+section->bars)*4.0;
+    const int bins=juce::jlimit(1,maxBins,(int)std::ceil((end-start)*4.0));
+
+    // Count distinct musical lanes starting in each 1/16-note-ish slot. A chord is
+    // one production layer, not three separate "collisions".
+    const auto& lanes=song.getLanes();
+    for(size_t li=4;li<lanes.size();++li)
+    {
+        if(lanes[li].name=="FX / TRANSITIONS")continue;
+        std::array<bool,maxBins> laneUsed{};
+        for(const auto& n:lanes[li].notes)
+        {
+            if(n.beat<start||n.beat>=end)continue;
+            const int b=juce::jlimit(0,bins-1,(int)std::floor((n.beat-start)*4.0+.5));
+            laneUsed[(size_t)b]=true;
+        }
+        for(int b=0;b<bins;++b)if(laneUsed[(size_t)b])++stack[(size_t)b];
+    }
+
+    int used=0,busy=0,severe=0,peak=0;
+    for(int b=0;b<bins;++b)
+    {
+        if(stack[(size_t)b]<=0)continue;
+        ++used;peak=juce::jmax(peak,stack[(size_t)b]);
+        if(stack[(size_t)b]>=5)++busy;
+        if(stack[(size_t)b]>=6)++severe;
+    }
+    if(used==0)return .35f;
+    const float busyRatio=busy/(float)used;
+    const float severeRatio=severe/(float)used;
+    const float peakPenalty=peak<=4?0.f:juce::jlimit(0.f,.35f,(peak-4)*.12f);
+    return juce::jlimit(0.f,1.f,1.f-busyRatio*.65f-severeRatio*.90f-peakPenalty);
+}
+
 float productionQualityScore(const sonara::SongArrangement& song)
 {
     const auto* drop=sectionNamed(song,"DROP");
+    const auto* chorus=sectionNamed(song,"CHORUS");
     const auto* breakdown=sectionNamed(song,"BREAKDOWN");
     const auto* finalHook=sectionNamed(song,"FINAL HOOK");
     const auto* lead=laneNamed(song,"LEAD");
     if(drop==nullptr||lead==nullptr)return 0.f;
 
     const float motifRepeat=internalTwoBarRepeat(lead,drop);
+    const float chorusDropRecall=chorus?sectionRhythmOverlap(lead,chorus,drop):.5f;
     const float hookRecall=finalHook?sectionRhythmOverlap(lead,drop,finalHook):.5f;
+    const float spaceScore=arrangementSpaceScore(song,drop);
 
     const float dropKick=laneDensityInSection(song,"KICK",drop);
     const float breakKick=laneDensityInSection(song,"KICK",breakdown);
@@ -291,9 +334,11 @@ float productionQualityScore(const sonara::SongArrangement& song)
     // Reward recognisable motif memory without demanding exact cloning.
     const float repeatShape=juce::jlimit(0.f,1.f,1.f-std::abs(motifRepeat-.72f)/.72f);
     const float recallShape=juce::jlimit(0.f,1.f,1.f-std::abs(hookRecall-.68f)/.68f);
+    const float chorusRecallShape=juce::jlimit(0.f,1.f,1.f-std::abs(chorusDropRecall-.78f)/.78f);
     return juce::jlimit(0.f,1.f,
-        repeatShape*.22f+recallShape*.18f+drumContrast*.18f+bassContrast*.14f+
-        leadContrast*.12f+leadDensityShape*.10f+kickDensityShape*.06f);
+        repeatShape*.17f+chorusRecallShape*.15f+recallShape*.14f+spaceScore*.14f+
+        drumContrast*.14f+bassContrast*.10f+leadContrast*.08f+
+        leadDensityShape*.05f+kickDensityShape*.03f);
 }
 
 float promptCompositionMatch(const juce::String& prompt,const sonara::SongArrangement& song)
