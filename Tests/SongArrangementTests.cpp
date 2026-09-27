@@ -100,6 +100,26 @@ double melodySkeletonSimilarity(const sonara::ArrangementLane& a,const sonara::A
     return juce::jlimit(0.0,1.0,sequence*(.86+.14*countRatio));
 }
 
+double twoBarMotifRhythmOverlap(const sonara::ArrangementLane& lead,const sonara::ArrangementSection& section)
+{
+    if(section.bars<4)return 0.0;
+    std::set<int> first,second;
+    const double start=section.startBar*4.0;
+    const double split=start+8.0;
+    const double end=start+16.0;
+    for(const auto& n:lead.notes)
+    {
+        if(n.beat>=start&&n.beat<split)
+            first.insert((int)std::llround((n.beat-start)*8.0));
+        else if(n.beat>=split&&n.beat<end)
+            second.insert((int)std::llround((n.beat-split)*8.0));
+    }
+    if(first.empty()||second.empty())return 0.0;
+    int common=0;
+    for(const int v:first)if(second.count(v)>0)++common;
+    return common/(double)juce::jmax<size_t>(1,juce::jmin(first.size(),second.size()));
+}
+
 bool melodyQualityOk(const sonara::SongArrangement& song,const sonara::ArrangementLane& lead)
 {
     if(lead.notes.size()<24||lead.notes.size()>700)return false;
@@ -171,6 +191,25 @@ int main()
     const auto* bassLane=findLane(a,"BASS");
     if(!subLane||subLane->notes.empty()||!bassLane||bassLane->notes.empty())
     {std::cerr<<"Bass/Sub lane missing real MIDI\n";return 22;}
+
+    const auto* kickLane=findLane(a,"KICK");
+    const auto* snareLane=findLane(a,"SNARE / CLAP");
+    const auto* firstLead=findLane(a,"LEAD");
+    const sonara::ArrangementSection* dropSection=nullptr;
+    for(const auto& s:a.getSections())if(s.name=="DROP"){dropSection=&s;break;}
+    if(!kickLane||!snareLane||!firstLead||!dropSection)
+    {std::cerr<<"Festival energy test missing lane/section\n";return 33;}
+
+    int dropKickMax=0,dropSnareNotes=0;
+    const double dropStart=dropSection->startBar*4.0;
+    const double dropEnd=(dropSection->startBar+dropSection->bars)*4.0;
+    for(const auto& n:kickLane->notes)if(n.beat>=dropStart&&n.beat<dropEnd)dropKickMax=juce::jmax(dropKickMax,n.velocity);
+    for(const auto& n:snareLane->notes)if(n.beat>=dropStart&&n.beat<dropEnd)++dropSnareNotes;
+    if(dropKickMax<120||dropSnareNotes<dropSection->bars*3)
+    {std::cerr<<"Drop drums are not strong/layered enough\n";return 34;}
+
+    if(twoBarMotifRhythmOverlap(*firstLead,*dropSection)<.45)
+    {std::cerr<<"Drop lead lacks a repeating two-bar rhythmic motif\n";return 35;}
 
     auto midi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-arrangement-test",".mid");
     if(!a.writeMidiFile(midi)||!midi.existsAsFile()||midi.getSize()<512){std::cerr<<"MIDI export failed\n";return 7;}
