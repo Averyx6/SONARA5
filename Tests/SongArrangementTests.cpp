@@ -175,18 +175,21 @@ int main()
     sonara::SongArrangement a;
     a.generate(prompt,120.0,123456789ULL);
 
-    if(a.getBars()!=72){std::cerr<<"Expected 72 bars\n";return 1;}
+    if(a.getBars()<64||a.getBars()>96){std::cerr<<"Song length outside v1.1 production range\n";return 1;}
     if(std::abs(a.getBpm()-128.0)>.01){std::cerr<<"Prompt BPM was not applied\n";return 2;}
     if(a.getSections().size()!=8){std::cerr<<"Expected 8 named song sections\n";return 3;}
 
-    const juce::String expectedSections[]={"INTRO","VERSE","BUILD","DROP","BREAKDOWN","CHORUS","BUILD 2","FINAL HOOK"};
+    const juce::String expectedSections[]={"INTRO","VERSE","BUILD","CHORUS","DROP","BREAKDOWN","BUILD 2","FINAL HOOK"};
     for(const auto& name:expectedSections)
         if(!hasSection(a,name)){std::cerr<<"Missing section "<<name<<"\n";return 4;}
+    const auto& ordered=a.getSections();
+    if(ordered[2].name!="BUILD"||ordered[3].name!="CHORUS"||ordered[4].name!="DROP"||ordered[5].name!="BREAKDOWN")
+    {std::cerr<<"Required BUILD -> CHORUS -> DROP -> BREAKDOWN order missing\n";return 45;}
 
     if(a.getLanes().size()!=12){std::cerr<<"Expected exactly 12 required lanes\n";return 5;}
     size_t notes=0;bool hasDrums=false,hasLead=false;
     for(const auto& lane:a.getLanes()){notes+=lane.notes.size();hasDrums|=lane.drums;hasLead|=lane.name=="LEAD";}
-    if(notes<650||!hasDrums||!hasLead){std::cerr<<"Arrangement too sparse or missing key lanes\n";return 6;}
+    if(notes<420||!hasDrums||!hasLead){std::cerr<<"Arrangement too sparse or missing key lanes\n";return 6;}
     const auto* subLane=findLane(a,"SUB");
     const auto* bassLane=findLane(a,"BASS");
     if(!subLane||subLane->notes.empty()||!bassLane||bassLane->notes.empty())
@@ -210,6 +213,34 @@ int main()
 
     if(twoBarMotifRhythmOverlap(*firstLead,*dropSection)<.45)
     {std::cerr<<"Drop lead lacks a repeating two-bar rhythmic motif\n";return 35;}
+
+    const sonara::ArrangementSection *chorusSection=nullptr,*breakdownSection=nullptr;
+    for(const auto& s:a.getSections())
+    {
+        if(s.name=="CHORUS")chorusSection=&s;
+        else if(s.name=="BREAKDOWN")breakdownSection=&s;
+    }
+    if(!chorusSection||!breakdownSection
+       ||chorusSection->startBar+chorusSection->bars!=dropSection->startBar
+       ||dropSection->startBar+dropSection->bars!=breakdownSection->startBar)
+    {std::cerr<<"CHORUS -> DROP -> BREAKDOWN boundaries are not contiguous\n";return 46;}
+
+    auto maxNotesPerBar=[&](const sonara::ArrangementLane& lane,const sonara::ArrangementSection& section)
+    {
+        int maximum=0;
+        for(int bar=section.startBar;bar<section.startBar+section.bars;++bar)
+        {
+            int count=0;const double begin=bar*4.0,end=begin+4.0;
+            for(const auto& n:lane.notes)if(n.beat>=begin&&n.beat<end)++count;
+            maximum=juce::jmax(maximum,count);
+        }
+        return maximum;
+    };
+    if(maxNotesPerBar(*firstLead,*chorusSection)>5||maxNotesPerBar(*firstLead,*dropSection)>5)
+    {std::cerr<<"v1.1 main hook exceeded five lead notes per bar\n";return 47;}
+    const auto* pluckLane=findLane(a,"PLUCK");
+    if(!pluckLane||maxNotesPerBar(*pluckLane,*dropSection)>4)
+    {std::cerr<<"v1.1 supporting pluck is over-filling the drop\n";return 48;}
 
     auto midi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-arrangement-test",".mid");
     if(!a.writeMidiFile(midi)||!midi.existsAsFile()||midi.getSize()<512){std::cerr<<"MIDI export failed\n";return 7;}
