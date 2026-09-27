@@ -2135,22 +2135,15 @@ void SongArrangement::alignPitchedLanesToLead()
     }
 
     std::vector<int> barCentre((size_t)bars,67);
-    int previous=67;
+    int lastKnownCentre=67;
     for(int bar=0;bar<bars;++bar)
     {
         const double begin=bar*beatsPerBar,end=begin+beatsPerBar;
-        std::vector<int> pitches;
+        int total=0,count=0;
         for(const auto& n:lead->notes)
-            if(n.beat>=begin&&n.beat<end)pitches.push_back(n.note);
-        if(!pitches.empty())
-        {
-            std::sort(pitches.begin(),pitches.end());
-            int centre=pitches[pitches.size()/2];
-            while(centre-previous>6)centre-=12;
-            while(previous-centre>6)centre+=12;
-            previous=centre;
-        }
-        barCentre[(size_t)bar]=previous;
+            if(n.beat>=begin&&n.beat<end){total+=n.note;++count;}
+        if(count>0)lastKnownCentre=(int)std::lround(total/(double)count);
+        barCentre[(size_t)bar]=lastKnownCentre;
     }
 
     auto alignGrouped=[&](ArrangementLane* lane,int offset,int low,int high)
