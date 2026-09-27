@@ -531,10 +531,10 @@ int main()
         if(n.beat>=chorusEnd-1.0&&n.beat<chorusEnd)
         {std::cerr<<"v1.8 chorus did not leave a full pre-drop beat\n";return 80;}
 
-    const double dropStart=rpDropSection->startBar*4.0;
+    const double rpDropStart=rpDropSection->startBar*4.0;
     bool dropAnchor=false;
     for(const auto& n:rpLead->notes)
-        if(n.beat>=dropStart&&n.beat<=dropStart+.05){dropAnchor=true;break;}
+        if(n.beat>=rpDropStart&&n.beat<=rpDropStart+.05){dropAnchor=true;break;}
     if(!dropAnchor)
     {std::cerr<<"v1.8 DROP is missing a downbeat melody anchor\n";return 81;}
 
