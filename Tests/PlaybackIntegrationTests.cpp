@@ -154,9 +154,19 @@ int main()
         {
             const double percEnergy=renderSingleDrumNote(*a,37);
             const double crashEnergy=renderSingleDrumNote(*a,49);
-            if(percEnergy<=1.0e-8||crashEnergy<=1.0e-8)return fail("percussion/crash voice rendered silent");
+            const double kickEnergy=renderSingleDrumNote(*a,36);
+            const double snareEnergy=renderSingleDrumNote(*a,38);
+            const double lowTomEnergy=renderSingleDrumNote(*a,45);
+            const double midTomEnergy=renderSingleDrumNote(*a,47);
+            const double highTomEnergy=renderSingleDrumNote(*a,50);
+            if(percEnergy<=1.0e-8||crashEnergy<=1.0e-8||kickEnergy<=1.0e-8||snareEnergy<=1.0e-8)
+                return fail("core drum voice rendered silent");
+            if(lowTomEnergy<=1.0e-8||midTomEnergy<=1.0e-8||highTomEnergy<=1.0e-8)
+                return fail("transition tom fill notes rendered silent");
             const double ratio=percEnergy/crashEnergy;
             if(ratio<.03||ratio>.82)return fail("note 37 percussion still behaves like crash/invalid hit");
+            if(kickEnergy<percEnergy*2.0||snareEnergy<percEnergy*1.25)
+                return fail("festival kick/snare are still weaker than supporting percussion");
         }
 
         int dropBar=0,breakBar=0,hookBar=0;
