@@ -280,6 +280,8 @@ void SonaraAudioProcessor::prepareToPlay(double sr, int bs)
     }
     songFxBus.setSize(channels,maximumBlockSize,false,false,true);
     songFxBus.clear();
+    songDuckEnvelope.assign((size_t)maximumBlockSize,0.f);
+    songDuckState=0.f;
     for (auto& m : songMidi) m.ensureSize(16384);
     for (auto& x : laneHpX) x.fill(0.f);
     for (auto& y : laneHpY) y.fill(0.f);
@@ -756,7 +758,7 @@ void SonaraAudioProcessor::startSongPreviewAtBar(int bar)
     const double spb=previewSampleRate*60.0/a->getBpm();
     const int64_t start=(int64_t)std::llround((double)safeBar*sonara::SongArrangement::beatsPerBar*spb);
 
-    drumSynth.reset();songReverb.reset();
+    drumSynth.reset();songReverb.reset();songDuckState=0.f;
     for(auto& e:songEngines)e.allNotesOff();
     for(auto& x:laneHpX)x.fill(0.f);
     for(auto& y:laneHpY)y.fill(0.f);
@@ -777,7 +779,7 @@ void SonaraAudioProcessor::startSongPreviewAtBar(int bar)
 void SonaraAudioProcessor::pauseSongPreview()
 {
     if(!songPlaying.exchange(false))return;
-    drumSynth.reset();songReverb.reset();
+    drumSynth.reset();songReverb.reset();songDuckState=0.f;
     for(auto& e:songEngines)e.allNotesOff();
     songFadeRemaining.store(0,std::memory_order_release);
     generationStatus="Song preview paused • bar "+juce::String(currentSongBar()+1);
@@ -795,7 +797,7 @@ void SonaraAudioProcessor::resumeSongPreview()
 
     const auto& lanes=a->getLanes();
     if(lanes.size()>=4)drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
-    drumSynth.reset();songReverb.reset();
+    drumSynth.reset();songReverb.reset();songDuckState=0.f;
     for(auto& e:songEngines)e.allNotesOff();
     for(auto& x:laneHpX)x.fill(0.f);for(auto& y:laneHpY)y.fill(0.f);for(auto& x:laneLpState)x.fill(0.f);
     masterHpX.fill(0.f);masterHpY.fill(0.f);
@@ -806,7 +808,7 @@ void SonaraAudioProcessor::resumeSongPreview()
 
 void SonaraAudioProcessor::stopSongPreview()
 {
-    songPlaying.store(false);songSample.store(0);drumSynth.reset();songReverb.reset();
+    songPlaying.store(false);songSample.store(0);drumSynth.reset();songReverb.reset();songDuckState=0.f;
     for(auto& e:songEngines)e.allNotesOff();
     for(auto& x:laneHpX)x.fill(0.f);
     for(auto& y:laneHpY)y.fill(0.f);
@@ -895,6 +897,29 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
 
     out.clear();
     songFxBus.clear(0,renderSamples);
+
+    // Build a lightweight kick-triggered sidechain envelope before musical lanes
+    // are mixed. This gives festival drops room for the kick without running a
+    // compressor per lane.
+    const int drumCount=collectDrumTriggers(*a,start,renderSamples);
+    if((int)songDuckEnvelope.size()<renderSamples)
+        songDuckEnvelope.resize((size_t)renderSamples,0.f);
+    const float duckRelease=std::exp(-1.f/(float)(previewSampleRate*.18));
+    float duck=songDuckState;
+    int duckTriggerIndex=0;
+    for(int s=0;s<renderSamples;++s)
+    {
+        while(duckTriggerIndex<drumCount&&drumTriggers[(size_t)duckTriggerIndex].sampleOffset<=s)
+        {
+            const auto& trigger=drumTriggers[(size_t)duckTriggerIndex];
+            if(trigger.midiNote==36)
+                duck=juce::jmax(duck,.65f+.35f*trigger.velocity);
+            ++duckTriggerIndex;
+        }
+        songDuckEnvelope[(size_t)s]=duck;
+        duck*=duckRelease;
+    }
+    songDuckState=duck;
 
     // Lane order: BASS, SUB, CHORDS, PLUCK, PAD, LEAD, COUNTER, FX.
     static constexpr float laneGain[musicalLaneCount]={.60f,.38f,.36f,.32f,.26f,.58f,.27f,.18f};
@@ -987,6 +1012,19 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
             }
         }
 
+        // Duck only the layers that mask a festival kick. Lead/pluck/counter/FX
+        // stay forward, while BASS/SUB duck most and CHORDS/PAD more gently.
+        const float duckDepth=i==1?.54f:(i==0?.46f:(i==2?.28f:(i==4?.20f:0.f)));
+        if(duckDepth>0.f)
+        {
+            for(int ch=0;ch<scratch.getNumChannels();++ch)
+            {
+                auto* d=scratch.getWritePointer(ch);
+                for(int s=0;s<renderSamples;++s)
+                    d[s]*=1.f-duckDepth*songDuckEnvelope[(size_t)s];
+            }
+        }
+
         const float mixedGain=laneGain[i]*mix.level;
         const float sendGain=fxSend[i]*mix.fxSend;
         for(int ch=0;ch<out.getNumChannels();++ch)
@@ -997,7 +1035,6 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
         }
     }
 
-    const int drumCount=collectDrumTriggers(*a,start,renderSamples);
     drumSynth.render(out,drumTriggers.data(),drumCount);
 
     // One shared wet-only reverb bus; drums/BASS/SUB stay dry.
