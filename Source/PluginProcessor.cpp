@@ -6,6 +6,8 @@
 #include <cmath>
 
 namespace {
+std::atomic<int> gSonaraInstanceCount{0};
+
 uint64_t scrambleSongSeed(uint64_t x) noexcept
 {
     x += 0x9e3779b97f4a7c15ULL;
@@ -487,6 +489,8 @@ void applyLaneMixTree(SonaraAudioProcessor& p,const juce::ValueTree& root)
 SonaraAudioProcessor::SonaraAudioProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
+    gSonaraInstanceCount.fetch_add(1,std::memory_order_relaxed);
+    engine.setVoiceLimit(4);
     sessionSalt = static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64())
                 ^ static_cast<uint64_t>(juce::Time::getHighResolutionTicks());
     for(auto& e:songEngines)e.setLowCpuMode(true);
@@ -496,6 +500,11 @@ SonaraAudioProcessor::SonaraAudioProcessor()
     for(int i=0;i<12;++i){laneMixLevel[(size_t)i].store(1.f);laneMixPan[(size_t)i].store(0.f);laneMixWidth[(size_t)i].store(1.f);laneMixFx[(size_t)i].store(1.f);}
     patchHistory.push_back(engine.patch());
     historyIndex = 0;
+}
+
+SonaraAudioProcessor::~SonaraAudioProcessor()
+{
+    gSonaraInstanceCount.fetch_sub(1,std::memory_order_relaxed);
 }
 
 void SonaraAudioProcessor::prepareToPlay(double sr, int bs)
@@ -547,12 +556,24 @@ void SonaraAudioProcessor::processBlock(juce::AudioBuffer<float>& b, juce::MidiB
         return;
     }
 
+    // A loaded but idle SONARA instance must be nearly free. Previously every
+    // instance still entered the synth/render/post-processing path every block.
+    const bool previewActive=previewPlaying.load(std::memory_order_acquire);
+    if(!previewActive&&m.isEmpty()&&!engine.hasActiveVoices())
+        return;
+
+    const bool multiInstance=gSonaraInstanceCount.load(std::memory_order_relaxed)>1;
+    engine.setRuntimeEcoMode(multiInstance);
+
     injectPreviewMidi(m, b.getNumSamples());
     engine.render(b, m);
 
-    for (int c = 0; c < b.getNumChannels(); ++c)
-        for (int i = 0; i < b.getNumSamples(); ++i)
-            b.setSample(c, i, std::tanh(b.getSample(c, i) * .98f));
+    if(!multiInstance)
+    {
+        for (int c = 0; c < b.getNumChannels(); ++c)
+            for (int i = 0; i < b.getNumSamples(); ++i)
+                b.setSample(c, i, std::tanh(b.getSample(c, i) * .98f));
+    }
 }
 
 void SonaraAudioProcessor::startPreview()
