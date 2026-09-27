@@ -122,7 +122,7 @@ private:
     std::shared_ptr<const sonara::SongArrangement> arrangement;
     std::array<std::atomic<float>,12> laneMixLevel{},laneMixPan{},laneMixWidth{},laneMixFx{};
     std::array<juce::AudioBuffer<float>,musicalLaneCount> songScratch;
-    juce::AudioBuffer<float> songFxBus;
+    juce::AudioBuffer<float> songFxBus,songDrumBus;
     std::array<juce::MidiBuffer,musicalLaneCount> songMidi;
     std::array<std::array<float,2>,musicalLaneCount> laneHpX{},laneHpY{};
     std::array<std::array<float,2>,musicalLaneCount> laneLpState{};
