@@ -1091,7 +1091,7 @@ void SongArrangement::addHarmony(uint64_t seed)
 
         // PAD is not a copy of CHORDS: it uses upper voices, often omits the root,
         // holds through changes, and can emphasize extensions/suspensions.
-        if(intro||verse||breakdown||chorus)
+        if(intro||verse||breakdown)
         {
             const float padChance=breakdown?.94f:(intro?.82f:.68f);
             if(random01(domains.pad,0x6100+hi)<padChance)
@@ -1131,7 +1131,7 @@ void SongArrangement::addHarmony(uint64_t seed)
         const int localBar=bar-section->startBar;
         const float energy=section->energy;
         const uint64_t bs=(uint64_t)bar*173ULL;
-        const int supportTheme=(drop||finalHook)?3:(chorus?5:sectionIndex);
+        const int supportTheme=(chorus||drop||finalHook)?3:sectionIndex;
         const int supportMotifBar=localBar%2;
         const uint64_t bassMotifSeed=mix64(domains.bass
             ^ ((uint64_t)supportTheme+1ULL)*0x9e3779b97f4a7c15ULL
@@ -1292,7 +1292,19 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
     const bool trance=p.contains("trance");
     const bool tropical=p.contains("tropical");
 
-    const int architecture=plan.melodyArchetype%12;
+    int architecture=plan.melodyArchetype%12;
+    const bool mainstreamEdm=progressive||pop||trance||p.contains("festival")||p.contains("mainstage")
+        ||p.contains("future rave")||(p.contains("edm")&&!tech&&!dnb);
+    if(mainstreamEdm)
+    {
+        static constexpr int songArchetypes[6]={0,2,3,4,8,9}; // call/response, anthem, sparse, lyric, fall, rise
+        architecture=songArchetypes[plan.melodyArchetype%6];
+    }
+    else if(dnb)
+    {
+        static constexpr int dnbArchetypes[4]={0,5,7,10};
+        architecture=dnbArchetypes[plan.melodyArchetype%4];
+    }
     const int rhythmBase=plan.rhythmFamily%10;
 
     auto scaleNote=[&](int degree,int registerSemitones)
@@ -1347,12 +1359,17 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         const bool preDropGap=chorus&&localBar==section->bars-1
             && (p.contains("house")||p.contains("edm")||p.contains("festival")||p.contains("mainstage"));
 
-        bool active=!intro;
-        if(intro)active=localBar>=juce::jmax(2,section->bars/2);
-        if(breakdown)active=(localBar%2==0);
+        // v1.3 section roles: the main melody is deliberately absent in places.
+        // Silence is part of the arrangement, so the chorus/drop hook feels like
+        // an arrival instead of one continuous intro loop.
+        bool active=true;
+        if(intro)active=localBar>=juce::jmax(0,section->bars-2);       // 2-bar teaser only
+        else if(verse)active=(localBar%4!=2);                          // 3-bar phrase + one breathing bar
+        else if(build)active=localBar>=juce::jmax(1,section->bars/2);  // melody enters only in second half
+        else if(breakdown)active=(localBar%4==0||localBar%4==2);       // sparse replies
         if(!active)continue;
 
-        const int phraseBars=juce::jmax(2,plan.phraseBars);
+        const int phraseBars=(chorus||drop||finalHook)?4:juce::jmax(2,plan.phraseBars);
         const int barInPhrase=localBar%phraseBars;
         const int phraseIndex=localBar/phraseBars;
 
@@ -1365,8 +1382,9 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         // One section/theme owns a stable motif. Earlier builds re-rolled the
         // starting degree and rhythm family every bar, creating technically
         // in-key but musically unrelated notes.
-        const int phraseGeneration=(plan.development>.80f)?phraseIndex/2:
-                                   (plan.development>.58f?phraseIndex/3:0);
+        const int phraseGeneration=(chorus||drop)?0:
+            (finalHook?(localBar>=juce::jmax(4,section->bars-4)?1:0):
+             ((plan.development>.80f)?phraseIndex/2:(plan.development>.58f?phraseIndex/3:0)));
         const uint64_t motifSeed=mix64(seed
             ^ ((uint64_t)themeGroup+1ULL)*0x9e3779b97f4a7c15ULL
             ^ ((uint64_t)architecture+1ULL)*0x94d049bb133111ebULL);
@@ -1397,12 +1415,13 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
 
         // v1.1 note-budget: the hook must be readable at a glance and singable.
         // No section is allowed to become an eight-note-per-bar event cloud.
-        if(verse)count=juce::jlimit(2,4,count-1);
-        else if(breakdown)count=juce::jlimit(2,3,count);
-        else if(build)count=juce::jlimit(3,4,count);
-        else if(chorus)count=juce::jlimit(3,5,count);
-        else if(drop||finalHook)count=juce::jlimit(4,5,count);
-        else count=juce::jmin(count,4);
+        if(intro)count=juce::jlimit(1,2,count);
+        else if(verse)count=juce::jlimit(2,3,count-1);
+        else if(breakdown)count=juce::jlimit(1,2,count);
+        else if(build)count=juce::jlimit(2,3,count);
+        else if(chorus)count=juce::jlimit(3,4,count);
+        else if(drop||finalHook)count=4;
+        else count=juce::jmin(count,3);
 
         double positions[8]{};
         for(int i=0;i<count;++i)positions[i]=rhythmPos[family][i];
@@ -1558,7 +1577,10 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             const auto localHarmony=chordInfoAtBeat(bar*beatsPerBar+positions[i]);
             const bool phraseEnding=(barInPhrase==phraseBars-1&&i==count-1);
             const bool barAnchor=positions[i]<.08;
-            const float chordToneChance=phraseEnding?.98f:(barAnchor?.88f:(strong?.62f:.30f));
+            const bool hookSection=chorus||drop||finalHook;
+            const float chordToneChance=hookSection
+                ?(phraseEnding?.96f:(barAnchor?.52f:(strong?.28f:.10f)))
+                :(phraseEnding?.98f:(barAnchor?.88f:(strong?.62f:.30f)));
             if(random01(motifDecisionSeed,0x2300+salt)<chordToneChance)
             {
                 const int toneChoice=(int)(random01(motifDecisionSeed,0x2310+salt)*3.f)%3;
@@ -1611,7 +1633,8 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             if(verse&&random01(motifDecisionSeed,0x2410+salt)<.16f)registerNow-=12;
 
             double pos=positions[i];
-            if(!strong&&plan.syncopation>.45f&&random01(motifDecisionSeed,0x2500+salt)<plan.syncopation*.42f)
+            if(!(chorus||drop||finalHook)&&!strong&&plan.syncopation>.45f
+               &&random01(motifDecisionSeed,0x2500+salt)<plan.syncopation*.42f)
                 pos+=random01(motifDecisionSeed,0x2510+salt)>.5f?.125:-.125;
             pos=juce::jlimit(0.0,3.90,pos);
             if(preDropGap&&pos>=3.5)continue;
@@ -1628,6 +1651,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             else if(architecture==3)length=.28+random01(motifDecisionSeed,0x2610+salt)*.38;
             else if(architecture==2)length=.22+random01(motifDecisionSeed,0x2620+salt)*.28;
             else if(architecture==5||architecture==10)length=.12+random01(motifDecisionSeed,0x2633+salt)*.18;
+            else if(chorus||drop||finalHook)length=strong?.38:.28;
             else length=.20+random01(motifDecisionSeed,0x2640+salt)*.42;
 
             const float phraseAccent=random01(phraseSeed,0x2700+salt);
@@ -1653,7 +1677,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         const int leadNotesThisBar=(int)(lead.notes.size()-leadBeforeBar);
         const bool answerBar=motifBar==1;
         const bool counterSpace=leadNotesThisBar<=(finalHook?6:5);
-        if((drop||chorus||finalHook)&&!tech&&answerBar&&counterSpace)
+        if((drop||finalHook)&&!tech&&answerBar&&counterSpace)
         {
             const uint64_t cs=mix64(domains.counter
                 ^ ((uint64_t)themeGroup+1ULL)*0x9e3779b97f4a7c15ULL
