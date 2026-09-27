@@ -844,6 +844,7 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
     const bool house = p.contains("house") || p.contains("future rave") || p.contains("edm");
     const bool trap = p.contains("trap") || p.contains("hip hop");
     const bool dnb = p.contains("drum and bass") || p.contains("dnb");
+    const bool festival = p.contains("festival") || p.contains("mainstage") || p.contains("big room");
     const int groove = plan.drumGroove;
     const int hatMode = plan.hatMode;
     const float swing = .012f + random01(seed,13) * .062f;
@@ -861,6 +862,7 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
         const bool chorus=sectionName.contains("CHORUS");
         const bool sectionStart=section && bar==section->startBar;
         const bool sectionEnd=section && bar==section->startBar+section->bars-1;
+        const bool preDropGap=build&&sectionEnd&&(house||festival);
         const double b=bar*beatsPerBar;
         const uint64_t bs=(uint64_t)bar*97ULL;
 
@@ -876,10 +878,11 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             else if(house)
             {
                 for(int q=0;q<4;++q)
-                    if(!intro || q==0 || q==2 || bar-section->startBar>=section->bars-2)
+                    if((!intro || q==0 || q==2 || bar-section->startBar>=section->bars-2)
+                       && !(preDropGap&&q==3))
                         addNote(kick,36,b+q,.11,
                                 drop?123:(chorus?116:(build?111:105+(q==0?5:0))));
-                if((drop||build||chorus) && ((bar+groove)%4==3))
+                if(!preDropGap&&(drop||build||chorus) && ((bar+groove)%4==3))
                     addNote(kick,36,b+3.5,.08,88+(int)(random01(seed,1020+bs)*20.f));
                 if(drop && groove%3==2 && bar%2==0)
                     addNote(kick,36,b+1.75,.07,86);
@@ -929,6 +932,7 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             if(!strong && random01(seed,1300+bs+h)<skip) continue;
             double beat=b+h*(4.0/hatSteps);
             if(h%2==1) beat+=swing*(hatMode==1?1.0:.55);
+            if(preDropGap&&beat>=b+3.5)continue;
             bool open=(drop||chorus) && ((h+groove)%8==3 || (hatMode>=2 && h%8==7));
             if(house&&hatSteps==8)open=(h%2==1)&&((h+bar+groove)%4==1);
             const int vel=juce::jlimit(32,108,46+(strong?15:0)+(int)(random01(seed,1400+bs+h)*32.f));
@@ -973,16 +977,26 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             for(int s=0;s<divisions;++s)
             {
                 if(s<4 && groove==3 && s%2==1) continue;
-                addNote(snare,38,b+s*(4.0/divisions),.05,
+                const double rollBeat=b+s*(4.0/divisions);
+                if(preDropGap&&rollBeat>=b+3.5)continue;
+                addNote(snare,38,rollBeat,.05,
                         juce::jlimit(48,127,58+s*(66/divisions)+(int)(random01(seed,1600+s+bar)*8.f)));
             }
         }
 
         if(sectionEnd&&!breakdown&&(build||chorus||drop))
         {
-            addNote(perc,45,b+3.00,.075,82+(drop?8:0));
-            addNote(perc,47,b+3.50,.070,90+(drop?8:0));
-            addNote(perc,50,b+3.75,.060,100+(drop?10:0));
+            if(preDropGap)
+            {
+                addNote(perc,45,b+2.75,.075,88);
+                addNote(perc,47,b+3.25,.070,98);
+            }
+            else
+            {
+                addNote(perc,45,b+3.00,.075,82+(drop?8:0));
+                addNote(perc,47,b+3.50,.070,90+(drop?8:0));
+                addNote(perc,50,b+3.75,.060,100+(drop?10:0));
+            }
         }
     }
 
@@ -1125,6 +1139,9 @@ void SongArrangement::addHarmony(uint64_t seed)
         const uint64_t pluckMotifSeed=mix64(domains.pluck
             ^ ((uint64_t)supportTheme+1ULL)*0xd1342543de82ef95ULL
             ^ ((uint64_t)supportMotifBar+1ULL)*0xa24baed4963ee407ULL);
+        const bool preDropGap=build&&localBar==section->bars-1
+            && (sourcePrompt.containsIgnoreCase("house")||sourcePrompt.containsIgnoreCase("edm")
+                ||sourcePrompt.containsIgnoreCase("festival")||sourcePrompt.containsIgnoreCase("mainstage"));
 
         if(!intro||localBar>=juce::jmax(1,section->bars/2))
         {
@@ -1146,6 +1163,7 @@ void SongArrangement::addHarmony(uint64_t seed)
             for(int i=0;i<count;++i)
             {
                 const double pos=positions[i];
+                if(preDropGap&&pos>=3.45)continue;
                 if(i>0&&random01(bassMotifSeed,0x7100+i)<(verse?.20f:.08f))continue;
                 const auto* h=harmonyAtBeat(barBeat+pos);
                 if(h==nullptr)continue;
@@ -1164,7 +1182,8 @@ void SongArrangement::addHarmony(uint64_t seed)
                 else if(move>.84f&&(drop||finalHook))note+=12;
 
                 note=foldBass(note);
-                const double len=bassMode==3?.28:(drop||chorus?.48:.72);
+                const double rawLen=bassMode==3?.28:(drop||chorus?.48:.72);
+                const double len=preDropGap?juce::jmin(rawLen,juce::jmax(.08,3.45-pos)):rawLen;
                 addNote(bass,note,barBeat+pos,len,
                         juce::jlimit(62,120,76+(int)(energy*28.f)+(int)(random01(domains.bass,0x7300+bs+i)*12.f)));
             }
@@ -1184,6 +1203,7 @@ void SongArrangement::addHarmony(uint64_t seed)
             for(int i=0;i<subCount;++i)
             {
                 const double pos=positions[i];
+                if(preDropGap&&pos>=3.45)continue;
                 const auto* h=harmonyAtBeat(barBeat+pos);
                 if(h==nullptr)continue;
                 int note=rootMidi+scaleSemitoneForDegree(h->scaleDegree)-24;
@@ -1208,6 +1228,7 @@ void SongArrangement::addHarmony(uint64_t seed)
                 double pos=i*(4.0/steps);
                 if(i%2&&random01(pluckMotifSeed,0x8110+ps)<.45f)
                     pos+=((random01(pluckMotifSeed,0x8120+ps)-.5f)*.08f);
+                if(preDropGap&&pos>=3.45)continue;
 
                 const auto* h=harmonyAtBeat(barBeat+pos);
                 if(h==nullptr)continue;
@@ -1318,6 +1339,8 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         const bool finalHook=sectionName.contains("FINAL")||sectionName.contains("HOOK");
         const int localBar=bar-section->startBar;
         const float energy=section->energy;
+        const bool preDropGap=build&&localBar==section->bars-1
+            && (p.contains("house")||p.contains("edm")||p.contains("festival")||p.contains("mainstage"));
 
         bool active=!intro;
         if(intro)active=localBar>=juce::jmax(2,section->bars/2);
@@ -1582,6 +1605,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             if(!strong&&plan.syncopation>.45f&&random01(motifDecisionSeed,0x2500+salt)<plan.syncopation*.42f)
                 pos+=random01(motifDecisionSeed,0x2510+salt)>.5f?.125:-.125;
             pos=juce::jlimit(0.0,3.90,pos);
+            if(preDropGap&&pos>=3.5)continue;
 
             double length=.34;
 
@@ -1609,8 +1633,9 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         if(build&&barInPhrase>=phraseBars/2)
         {
             const int pickupDegree=juce::jlimit(0,13,startDegree+barInPhrase+2);
+            const double pickupPos=preDropGap?3.25:3.5;
             addNote(lead,scaleNote(pickupDegree,registerBase),
-                    bar*beatsPerBar+3.5,.16,juce::jlimit(72,122,80+(int)(energy*34.f)));
+                    bar*beatsPerBar+pickupPos,.16,juce::jlimit(72,122,80+(int)(energy*34.f)));
         }
 
         // Counter melody behaves like an answering musician, not another lead
