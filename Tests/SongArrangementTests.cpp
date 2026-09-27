@@ -455,6 +455,51 @@ int main()
     if(maxDistinctOnsetsPerBar(*rpPad)>2)
     {std::cerr<<"v1.6 PAD re-trigger more than twice per bar\n";return 67;}
 
+    const auto* rpLead=findLane(rolePure,"LEAD");
+    if(!rpLead){std::cerr<<"v1.7 shared-register test missing LEAD\n";return 68;}
+
+    // v1.7 mainstream support is deliberately sparse.
+    if(maxDistinctOnsetsPerBar(*rpChords)>1)
+    {std::cerr<<"v1.7 CHORDS must be one sustained chord block per bar\n";return 69;}
+    if(maxDistinctOnsetsPerBar(*rpPluck)>2)
+    {std::cerr<<"v1.7 PLUCK exceeded two support onsets per bar\n";return 70;}
+    if(maxDistinctOnsetsPerBar(*rpSub)>1)
+    {std::cerr<<"v1.7 SUB exceeded one root onset per bar\n";return 71;}
+    if(maxDistinctOnsetsPerBar(*rpBass)>2)
+    {std::cerr<<"v1.7 BASS exceeded two support onsets per bar\n";return 72;}
+
+    for(const auto& n:rpChords->notes)
+        if(n.length<3.20)
+        {std::cerr<<"v1.7 CHORDS contains short/retrigger-style notes\n";return 73;}
+
+    // Pitched support lanes must live in the same octave family as the lead.
+    // Bass/Sub are intentionally excluded because they own the low end.
+    auto averagePitchInBar=[&](const sonara::ArrangementLane& lane,int bar,bool& found)
+    {
+        double total=0.0;int count=0;
+        const double begin=bar*4.0,end=begin+4.0;
+        for(const auto& n:lane.notes)
+            if(n.beat>=begin&&n.beat<end){total+=n.note;++count;}
+        found=count>0;
+        return count>0?total/count:0.0;
+    };
+    for(int bar=0;bar<rolePure.getBars();++bar)
+    {
+        bool hasLead=false,hasChord=false,hasPluck=false,hasPad=false;
+        const double leadCentre=averagePitchInBar(*rpLead,bar,hasLead);
+        const double chordCentre=averagePitchInBar(*rpChords,bar,hasChord);
+        const double pluckCentre=averagePitchInBar(*rpPluck,bar,hasPluck);
+        const double padCentre=averagePitchInBar(*rpPad,bar,hasPad);
+        if(!hasLead)continue;
+
+        if(hasChord&&std::abs(chordCentre-leadCentre)>11.5)
+        {std::cerr<<"v1.7 CHORDS octave/register is detached from LEAD\n";return 74;}
+        if(hasPluck&&std::abs(pluckCentre-leadCentre)>11.5)
+        {std::cerr<<"v1.7 PLUCK octave/register is detached from LEAD\n";return 75;}
+        if(hasPad&&std::abs(padCentre-leadCentre)>11.5)
+        {std::cerr<<"v1.7 PAD octave/register is detached from LEAD\n";return 76;}
+    }
+
     auto midi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-arrangement-test",".mid");
     if(!a.writeMidiFile(midi)||!midi.existsAsFile()||midi.getSize()<512){std::cerr<<"MIDI export failed\n";return 7;}
     midi.deleteFile();
