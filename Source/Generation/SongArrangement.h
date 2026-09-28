@@ -32,6 +32,9 @@ class SongArrangement {
 public:
     static constexpr int beatsPerBar = 4;
     static constexpr int defaultBars = 72;
+    static constexpr int melodyFingerprintVersion = 2301;
+    static constexpr int melodyFingerprintStride = 11;
+    static constexpr int melodyFingerprintSummarySize = 9;
 
     void generate(const juce::String& prompt, double bpm, uint64_t seed);
     void generateComposition(const juce::String& prompt, double bpm, uint64_t seed);

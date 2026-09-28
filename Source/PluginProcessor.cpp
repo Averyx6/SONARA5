@@ -74,61 +74,113 @@ std::vector<int> melodyFingerprint(const sonara::SongArrangement& a)
     return a.getMelodyFingerprint();
 }
 
+struct MelodyFingerprintView
+{
+    const std::vector<int>* values=nullptr;
+    int notes=0;
+    int recordOffset=2;
+    int summaryOffset=0;
+    bool valid=false;
+
+    int note(int index,int field) const noexcept
+    {
+        return (*values)[(size_t)(recordOffset+index*sonara::SongArrangement::melodyFingerprintStride+field)];
+    }
+    int summary(int field) const noexcept
+    {
+        return (*values)[(size_t)(summaryOffset+field)];
+    }
+};
+
+MelodyFingerprintView viewMelodyFingerprint(const std::vector<int>& fp)
+{
+    MelodyFingerprintView view;
+    if(fp.size()<2||fp[0]!=sonara::SongArrangement::melodyFingerprintVersion)return view;
+    const int notes=fp[1];
+    const int summary=2+notes*sonara::SongArrangement::melodyFingerprintStride;
+    const int required=summary+sonara::SongArrangement::melodyFingerprintSummarySize;
+    if(notes<=0||required!=(int)fp.size())return view;
+    view.values=&fp;view.notes=notes;view.summaryOffset=summary;view.valid=true;
+    return view;
+}
+
 float fingerprintSimilarity(const std::vector<int>& a,const std::vector<int>& b)
 {
-    if(a.empty()||b.empty())return 0.f;
-    constexpr int stride=7;
-    const int aNotes=((int)a.size()-1)/stride;
-    const int bNotes=((int)b.size()-1)/stride;
-    const int n=juce::jmin(aNotes,bNotes);
-    if(n<8)return 0.f;
+    const auto av=viewMelodyFingerprint(a),bv=viewMelodyFingerprint(b);
+    if(!av.valid||!bv.valid)return 0.f;
+    const int n=juce::jmin(av.notes,bv.notes);
+    if(n<6)return 0.f;
 
-    float pitch=0.f,interval=0.f,contour=0.f,onset=0.f,gap=0.f,length=0.f;
+    float pitch=0.f,interval=0.f,contour=0.f,chordRole=0.f;
+    float onset=0.f,gap=0.f,length=0.f,repeats=0.f,opening=0.f;
+    int openingComparisons=0;
     for(int i=0;i<n;++i)
     {
-        const int ai=i*stride,bi=i*stride;
-        if(a[(size_t)ai]==b[(size_t)bi])pitch+=1.f;
-        if(std::abs(a[(size_t)ai+1]-b[(size_t)bi+1])<=1)interval+=1.f;
-        if(a[(size_t)ai+2]==b[(size_t)bi+2])contour+=1.f;
-        if(std::abs(a[(size_t)ai+4]-b[(size_t)bi+4])<=1)onset+=1.f;
-        if(std::abs(a[(size_t)ai+5]-b[(size_t)bi+5])<=1)gap+=1.f;
-        if(std::abs(a[(size_t)ai+6]-b[(size_t)bi+6])<=1)length+=1.f;
+        if(av.note(i,0)==bv.note(i,0))pitch+=1.f;
+        if(std::abs(av.note(i,1)-bv.note(i,1))<=1)interval+=1.f;
+        if(av.note(i,2)==bv.note(i,2))contour+=1.f;
+        if(av.note(i,3)==bv.note(i,3))chordRole+=1.f;
+        if(std::abs(av.note(i,4)-bv.note(i,4))<=1)onset+=1.f;
+        if(std::abs(av.note(i,5)-bv.note(i,5))<=1)gap+=1.f;
+        if(std::abs(av.note(i,6)-bv.note(i,6))<=1)length+=1.f;
+        if(av.note(i,8)==bv.note(i,8))repeats+=1.f;
+        if(av.note(i,4)<64&&bv.note(i,4)<64)
+        {
+            opening+=(av.note(i,0)==bv.note(i,0)? .30f:0.f)
+                    +(std::abs(av.note(i,1)-bv.note(i,1))<=1?.25f:0.f)
+                    +(av.note(i,2)==bv.note(i,2)?.20f:0.f)
+                    +(std::abs(av.note(i,4)-bv.note(i,4))<=1?.25f:0.f);
+            ++openingComparisons;
+        }
     }
 
     const float inv=1.f/(float)n;
-    pitch*=inv;interval*=inv;contour*=inv;onset*=inv;gap*=inv;length*=inv;
-    const float countRatio=(float)juce::jmin(aNotes,bNotes)/(float)juce::jmax(1,juce::jmax(aNotes,bNotes));
+    pitch*=inv;interval*=inv;contour*=inv;chordRole*=inv;
+    onset*=inv;gap*=inv;length*=inv;repeats*=inv;
+    opening=openingComparisons>0?opening/(float)openingComparisons:0.f;
+    const float countRatio=(float)juce::jmin(av.notes,bv.notes)/(float)juce::jmax(1,juce::jmax(av.notes,bv.notes));
+    float phraseStarts=0.f;
+    for(int bar=0;bar<4;++bar)
+        if(std::abs(av.summary(3+bar)-bv.summary(3+bar))<=1)phraseStarts+=.25f;
+    const float cadence=(av.summary(7)==bv.summary(7)?.65f:0.f)
+                       +(av.summary(8)==bv.summary(8)?.35f:0.f);
+    const float range=1.f-juce::jmin(1.f,std::abs((float)av.summary(0)-(float)bv.summary(0))/24.f);
 
-    // Human listeners notice a reused rhythm skeleton or interval contour even if
-    // notes are transposed. Treat either one as "too similar" instead of averaging
-    // it away with unrelated differences.
-    const float rhythmSkeleton=(onset*.44f+gap*.36f+length*.20f)*(.82f+.18f*countRatio);
-    const float contourSkeleton=(contour*.58f+interval*.42f)*(.84f+.16f*countRatio);
-    const float pitchIdentity=(pitch*.75f+interval*.25f)*(.82f+.18f*countRatio);
-    const float combined=(pitch*.16f+interval*.20f+contour*.18f+onset*.18f+gap*.16f+length*.12f)
+    // Compare what a listener actually recognises: first two-bar hook, complete
+    // four-bar rhythm, interval contour, chord-relative choices, phrase starts,
+    // repeated-note behaviour, range and cadence. A relocated or transposed hook
+    // remains the same identity; novelty must come from a new musical idea.
+    const float rhythmSkeleton=(onset*.34f+gap*.24f+length*.16f+phraseStarts*.26f)*(.82f+.18f*countRatio);
+    const float contourSkeleton=(contour*.48f+interval*.36f+cadence*.16f)*(.84f+.16f*countRatio);
+    const float pitchIdentity=(pitch*.52f+interval*.24f+chordRole*.24f)*(.82f+.18f*countRatio);
+    const float combined=(pitch*.12f+interval*.15f+contour*.13f+chordRole*.10f
+                         +onset*.14f+gap*.10f+length*.07f+phraseStarts*.08f
+                         +repeats*.04f+range*.03f+cadence*.04f)
                          *(.84f+.16f*countRatio);
 
     return juce::jlimit(0.f,1.f,juce::jmax(juce::jmax(rhythmSkeleton,contourSkeleton),
-                                           juce::jmax(pitchIdentity,combined)));
+                    juce::jmax(juce::jmax(pitchIdentity,opening),combined)));
 }
 
 float melodyRhythmSimilarity(const std::vector<int>& a,const std::vector<int>& b)
 {
-    if(a.empty()||b.empty())return 0.f;
-    constexpr int stride=7;
-    const int n=juce::jmin(((int)a.size()-1)/stride,((int)b.size()-1)/stride);
-    if(n<8)return 0.f;
+    const auto av=viewMelodyFingerprint(a),bv=viewMelodyFingerprint(b);
+    if(!av.valid||!bv.valid)return 0.f;
+    const int n=juce::jmin(av.notes,bv.notes);
+    if(n<6)return 0.f;
     float score=0.f;
     for(int i=0;i<n;++i)
     {
-        const int ai=i*stride,bi=i*stride;
-        if(std::abs(a[(size_t)ai+4]-b[(size_t)bi+4])<=1)score+=.42f;
-        if(std::abs(a[(size_t)ai+5]-b[(size_t)bi+5])<=1)score+=.36f;
-        if(std::abs(a[(size_t)ai+6]-b[(size_t)bi+6])<=1)score+=.22f;
+        if(std::abs(av.note(i,4)-bv.note(i,4))<=1)score+=.38f;
+        if(std::abs(av.note(i,5)-bv.note(i,5))<=1)score+=.30f;
+        if(std::abs(av.note(i,6)-bv.note(i,6))<=1)score+=.18f;
+        if(av.note(i,8)==bv.note(i,8))score+=.06f;
     }
-    const float countRatio=(float)juce::jmin(((int)a.size()-1)/stride,((int)b.size()-1)/stride)
-                          /(float)juce::jmax(1,juce::jmax(((int)a.size()-1)/stride,((int)b.size()-1)/stride));
-    return juce::jlimit(0.f,1.f,(score/(float)n)*(.84f+.16f*countRatio));
+    float phraseStarts=0.f;
+    for(int bar=0;bar<4;++bar)
+        if(std::abs(av.summary(3+bar)-bv.summary(3+bar))<=1)phraseStarts+=.02f;
+    const float countRatio=(float)juce::jmin(av.notes,bv.notes)/(float)juce::jmax(1,juce::jmax(av.notes,bv.notes));
+    return juce::jlimit(0.f,1.f,((score/(float)n)+phraseStarts)*(.84f+.16f*countRatio));
 }
 
 std::vector<int> lanePatternFingerprint(const sonara::SongArrangement& song,const juce::String& laneName)

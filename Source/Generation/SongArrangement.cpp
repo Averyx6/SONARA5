@@ -437,33 +437,103 @@ std::vector<int> SongArrangement::getMelodyFingerprint() const
     for(const auto& lane:lanes)if(lane.name=="LEAD"){lead=&lane;break;}
     if(lead==nullptr||lead->notes.empty())return fp;
 
-    constexpr int stride=7;
-    const int limit=juce::jmin(128,(int)lead->notes.size());
-    fp.reserve((size_t)(limit*stride+1));
-    const int tonic=((rootMidi%12)+12)%12;
-    int previousScaleRelative=0;
-    double previousBeat=lead->notes.front().beat;
-    for(int i=0;i<limit;++i)
+    // v2.3 fingerprints the musical hook in section-local time. The old flat
+    // first-128-notes comparison could miss a recycled chorus whenever a shorter
+    // intro shifted note indices, or call a relocated hook "new" because its
+    // absolute beat changed. Prefer CHORUS, then DROP, and compare one four-bar
+    // phrase independent of where it occurs in the arrangement.
+    const ArrangementSection* hook=nullptr;
+    for(const auto& section:sections)if(section.name=="CHORUS"){hook=&section;break;}
+    if(hook==nullptr)
+        for(const auto& section:sections)if(section.name.contains("DROP")){hook=&section;break;}
+
+    const double phraseStart=hook!=nullptr?hook->startBar*beatsPerBar:lead->notes.front().beat;
+    const double phraseEnd=hook!=nullptr
+        ?juce::jmin((double)(hook->startBar+hook->bars)*beatsPerBar,phraseStart+16.0)
+        :phraseStart+16.0;
+
+    std::vector<const ArrangementNote*> phrase;
+    phrase.reserve(32);
+    for(const auto& note:lead->notes)
+        if(note.beat>=phraseStart-.001&&note.beat<phraseEnd-.001)
+            phrase.push_back(&note);
+    if(phrase.empty())return fp;
+    if(phrase.size()>64)phrase.resize(64);
+
+    const int* scale=nullptr;
+    static constexpr int minorScale[7]={0,2,3,5,7,8,10};
+    static constexpr int majorScale[7]={0,2,4,5,7,9,11};
+    scale=minor?minorScale:majorScale;
+    auto degreeFor=[&](int midi)
     {
-        const auto& note=lead->notes[(size_t)i];
-        const int scaleRelative=(((note.note-tonic)%12)+12)%12;
-        int interval=i==0?0:scaleRelative-previousScaleRelative;
-        // Compare melodic motion in a canonical key-relative register. Absolute
-        // octave folding at MIDI safety boundaries must not make a transposed
-        // copy look novel; pitch class, contour and rhythm remain identical.
-        while(interval>6)interval-=12;
-        while(interval<-6)interval+=12;
-        fp.push_back(scaleRelative);
-        fp.push_back(interval+18);
+        const int pc=((midi-rootMidi)%12+12)%12;
+        for(int degree=0;degree<7;++degree)if(scale[degree]==pc)return degree;
+        return 7+pc; // defensive marker for a non-scale pitch
+    };
+    auto chordRoleFor=[&](const ArrangementNote& note)
+    {
+        const auto* event=harmonyAtBeat(note.beat);
+        if(event==nullptr)return 4;
+        const auto tones=chordTonesFor(*event);
+        const int pc=((note.note%12)+12)%12;
+        for(int role=0;role<4;++role)
+            if(((tones[(size_t)role]%12)+12)%12==pc)return role;
+        return 4; // controlled non-chord tone
+    };
+
+    fp.reserve(2+phrase.size()*melodyFingerprintStride+melodyFingerprintSummarySize);
+    fp.push_back(melodyFingerprintVersion);
+    fp.push_back((int)phrase.size());
+
+    int previousNote=phrase.front()->note;
+    double previousBeat=phrase.front()->beat;
+    int repeatedRun=0,repeatedTransitions=0,minNote=127,maxNote=0;
+    bool usedDegree[16]{};
+    std::array<int,4> firstOnsets{32,32,32,32};
+    int cadenceDegree=degreeFor(phrase.back()->note);
+    int cadenceChordRole=chordRoleFor(*phrase.back());
+
+    for(size_t i=0;i<phrase.size();++i)
+    {
+        const auto& note=*phrase[i];
+        const int degree=degreeFor(note.note);
+        int interval=i==0?0:juce::jlimit(-24,24,note.note-previousNote);
+        const double relativeBeat=juce::jmax(0.0,note.beat-phraseStart);
+        const int onset=juce::jlimit(0,127,(int)std::llround(relativeBeat*8.0));
+        const int bar=juce::jlimit(0,3,(int)std::floor(relativeBeat/beatsPerBar));
+        const int onsetInBar=onset-bar*32;
+        firstOnsets[(size_t)bar]=juce::jmin(firstOnsets[(size_t)bar],onsetInBar);
+
+        repeatedRun=(i>0&&note.note==previousNote)?repeatedRun+1:0;
+        if(repeatedRun>0)++repeatedTransitions;
+        int cadence=0;
+        if(relativeBeat>=15.0)cadence=2;
+        else if(std::fmod(relativeBeat,8.0)>=7.0)cadence=1;
+
+        fp.push_back(degree);
+        fp.push_back(interval+24);
         fp.push_back(interval>0?2:(interval<0?0:1));
-        fp.push_back(0);
-        fp.push_back((int)std::llround(std::fmod(juce::jmax(0.0,note.beat),16.0)*4.0));
-        fp.push_back(i==0?0:juce::jlimit(0,64,(int)std::llround((note.beat-previousBeat)*8.0)));
+        fp.push_back(chordRoleFor(note));
+        fp.push_back(onset);
+        fp.push_back(i==0?0:juce::jlimit(0,96,(int)std::llround((note.beat-previousBeat)*8.0)));
         fp.push_back(juce::jlimit(1,32,(int)std::llround(note.length*8.0)));
-        previousScaleRelative=scaleRelative;
-        previousBeat=note.beat;
+        fp.push_back(bar);
+        fp.push_back(juce::jlimit(0,3,repeatedRun));
+        fp.push_back(cadence);
+        fp.push_back(juce::jlimit(0,7,(note.note-rootMidi+24)/12));
+
+        if(degree>=0&&degree<16)usedDegree[degree]=true;
+        minNote=juce::jmin(minNote,note.note);maxNote=juce::jmax(maxNote,note.note);
+        previousNote=note.note;previousBeat=note.beat;
     }
-    fp.push_back((int)lead->notes.size());
+
+    int uniqueDegrees=0;for(bool used:usedDegree)if(used)++uniqueDegrees;
+    fp.push_back(maxNote-minNote);
+    fp.push_back(uniqueDegrees);
+    fp.push_back(repeatedTransitions);
+    for(const int onset:firstOnsets)fp.push_back(onset);
+    fp.push_back(cadenceDegree);
+    fp.push_back(cadenceChordRole);
     return fp;
 }
 

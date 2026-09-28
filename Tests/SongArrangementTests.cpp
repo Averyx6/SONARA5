@@ -684,6 +684,37 @@ int main()
     if(fMinor.getMelodyFingerprint()!=cMinor.getMelodyFingerprint())
     {std::cerr<<"Key transposition changed normalized melody identity\n";return 32;}
 
+    // v2.3: a hook moved by a shorter intro/build is still the same perceptual
+    // melody. Novelty must not be fabricated from absolute timeline position or
+    // from different numbers of earlier teaser notes.
+    sonara::SongArrangement normalArrival,earlyArrival;
+    normalArrival.generateComposition(
+        "emotional progressive house 128 BPM F minor strong hook",
+        128.0,0x230023ULL);
+    earlyArrival.generateComposition(
+        "emotional progressive house 128 BPM F minor strong hook early drop",
+        128.0,0x230023ULL);
+    if(normalArrival.getStructureFingerprint()==earlyArrival.getStructureFingerprint())
+    {std::cerr<<"v2.3 novelty relocation fixture did not move the hook\n";return 87;}
+    auto withoutChordContext=[](std::vector<int> fp)
+    {
+        if(fp.size()<2||fp[0]!=sonara::SongArrangement::melodyFingerprintVersion)return fp;
+        const int notes=fp[1];
+        for(int i=0;i<notes;++i)
+            fp[(size_t)(2+i*sonara::SongArrangement::melodyFingerprintStride+3)]=0;
+        const int summary=2+notes*sonara::SongArrangement::melodyFingerprintStride;
+        fp[(size_t)(summary+8)]=0;
+        return fp;
+    };
+    if(withoutChordContext(normalArrival.getMelodyFingerprint())
+       !=withoutChordContext(earlyArrival.getMelodyFingerprint()))
+    {std::cerr<<"v2.3 perceptual fingerprint treated a relocated hook as new\n";return 88;}
+    const auto richFingerprint=normalArrival.getMelodyFingerprint();
+    if(richFingerprint.size()<2
+       ||richFingerprint[0]!=sonara::SongArrangement::melodyFingerprintVersion
+       ||richFingerprint[1]<6)
+    {std::cerr<<"v2.3 rich hook fingerprint is missing phrase data\n";return 89;}
+
     // Same key/BPM/genre: variation must come from composition, not transposition.
     std::set<uint64_t> fixedHarmony,fixedMelody,fixedBass,fixedDrums,fixedPluck;
     for(uint64_t i=0;i<10;++i)
