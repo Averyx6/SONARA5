@@ -103,3 +103,8 @@ Do not call v2 ready because it compiles. It is ready only when:
 4. Artifact ZIP is downloadable.
 5. Build log identifies the exact commit and says tests passed.
 6. The final report lists implemented features, fixed root causes, any unavoidable MIDI limitation, and the verified commit.
+
+## Current release target
+Branch: `v2.0-release`
+Version: `2.0.0`
+All code and regression work must be validated from the branch HEAD, never from an older queued workflow run.
