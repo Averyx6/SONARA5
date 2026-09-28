@@ -1763,6 +1763,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             const bool strong=positions[i]<.08||std::abs(std::fmod(positions[i],1.0))<.08;
             const bool phraseEndingNote=barInPhrase==phraseBars-1&&i==count-1;
             const bool motifEndingNote=motifBar==1&&i==count-1;
+            const bool minimumHookDensity=(chorus||drop||finalHook)&&count<=2;
 
             float restChance=plan.restAmount;
             if(chorus)restChance=juce::jmax(.10f,restChance*.70f);
@@ -1773,7 +1774,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             if(architecture==3)restChance*=.55f; // already sparse by construction
             // A motif/phrase ending may never disappear because of a random
             // rest. It carries the cadence and is essential to question/answer form.
-            if(!strong&&!motifEndingNote&&!phraseEndingNote
+            if(!strong&&!minimumHookDensity&&!motifEndingNote&&!phraseEndingNote
                &&random01(motifDecisionSeed,0x2100+salt)<restChance)continue;
 
             int degree=startDegree;
