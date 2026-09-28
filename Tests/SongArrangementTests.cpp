@@ -471,9 +471,17 @@ int main()
     if(maxDistinctOnsetsPerBar(*rpBass)>2)
     {std::cerr<<"v1.7 BASS exceeded two support onsets per bar\n";return 72;}
 
+    const sonara::ArrangementSection* rpChorusForGap=nullptr;
+    for(const auto& s:rolePure.getSections())if(s.name=="CHORUS"){rpChorusForGap=&s;break;}
     for(const auto& n:rpChords->notes)
-        if(n.length<3.20)
-        {std::cerr<<"v1.7 CHORDS contains short/retrigger-style notes\n";return 73;}
+    {
+        const int bar=(int)std::floor(n.beat/4.0);
+        const bool intentionalPreDropGap=rpChorusForGap
+            && bar==rpChorusForGap->startBar+rpChorusForGap->bars-1;
+        const double minimumLength=intentionalPreDropGap?2.90:3.20;
+        if(n.length<minimumLength)
+        {std::cerr<<"v2 CHORDS contains short/retrigger-style notes outside the pre-drop gap\n";return 73;}
+    }
 
     // Pitched support lanes must live in the same octave family as the lead.
     // Bass/Sub are intentionally excluded because they own the low end.
