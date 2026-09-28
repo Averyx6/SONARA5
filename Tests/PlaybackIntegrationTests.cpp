@@ -330,6 +330,52 @@ int main()
         }
     }
 
+    // v2.1 drum-only regeneration must preserve the current song architecture
+    // and every non-drum lane while still producing genuinely fresh drums.
+    {
+        SonaraAudioProcessor drumEditor;
+        drumEditor.prepareToPlay(48000.0,512);
+        drumEditor.generateTrack(prompt);
+        auto drumBefore=drumEditor.arrangementSnapshot();
+        if(!drumBefore)return fail("drum-only test missing base arrangement");
+
+        const int barsBefore=drumBefore->getBars();
+        const auto sectionsBefore=drumBefore->getSections();
+        std::vector<uint64_t> nonDrumHashes;
+        std::vector<uint64_t> drumHashes;
+        for(size_t i=0;i<drumBefore->getLanes().size();++i)
+        {
+            const auto h=laneHash(drumBefore->getLanes()[i]);
+            if(i<4)drumHashes.push_back(h);
+            else nonDrumHashes.push_back(h);
+        }
+
+        drumEditor.regenerateDrums("punchier festival drums with tighter hats and stronger transitions");
+        auto drumAfter=drumEditor.arrangementSnapshot();
+        if(!drumAfter)return fail("drum-only regeneration returned no arrangement");
+        if(drumAfter->getBars()!=barsBefore)return fail("GENERATE DRUMS changed song length");
+        if(drumAfter->getSections().size()!=sectionsBefore.size())
+            return fail("GENERATE DRUMS changed section count");
+        for(size_t i=0;i<sectionsBefore.size();++i)
+        {
+            const auto& a=sectionsBefore[i];
+            const auto& b=drumAfter->getSections()[i];
+            if(a.name!=b.name||a.startBar!=b.startBar||a.bars!=b.bars)
+                return fail("GENERATE DRUMS changed existing song structure");
+        }
+
+        if(drumAfter->getLanes().size()<4+nonDrumHashes.size())
+            return fail("GENERATE DRUMS removed arrangement lanes");
+        for(size_t i=0;i<nonDrumHashes.size();++i)
+            if(laneHash(drumAfter->getLanes()[i+4])!=nonDrumHashes[i])
+                return fail("GENERATE DRUMS changed a non-drum lane or SoundDNA");
+
+        bool freshDrums=false;
+        for(size_t i=0;i<drumHashes.size()&&i<4;++i)
+            freshDrums|=laneHash(drumAfter->getLanes()[i])!=drumHashes[i];
+        if(!freshDrums)return fail("GENERATE DRUMS did not create fresh drums");
+    }
+
     // TEST I: RANDOMIZE EVERYTHING materially changes multiple musical systems.
     SonaraAudioProcessor randomizer;
     randomizer.prepareToPlay(48000.0,512);
