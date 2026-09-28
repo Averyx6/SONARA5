@@ -403,9 +403,10 @@ float melodyQualityScore(const sonara::SongArrangement& song)
     if(lead==nullptr||lead->notes.size()<20)return 0.f;
 
     int hugeLeaps=0,repeatedRun=1,maxRepeated=1,isolatedOutliers=0;
-    int minNote=127,maxNote=0;
+    int minNote=127,maxNote=0,lowRegisterNotes=0,maxNotesPerBar=0;
     double totalLength=0.0;
     std::array<bool,33> gapKinds{};
+    std::vector<int> notesPerBar((size_t)juce::jmax(1,song.getBars()),0);
     int gapVariety=0;
 
     for(size_t i=0;i<lead->notes.size();++i)
@@ -413,6 +414,13 @@ float melodyQualityScore(const sonara::SongArrangement& song)
         const auto& n=lead->notes[i];
         minNote=juce::jmin(minNote,n.note);
         maxNote=juce::jmax(maxNote,n.note);
+        if(n.note<58)++lowRegisterNotes;
+        const int bar=juce::jlimit(0,juce::jmax(0,song.getBars()-1),(int)std::floor(n.beat/4.0));
+        if(juce::isPositiveAndBelow(bar,(int)notesPerBar.size()))
+        {
+            const int count=++notesPerBar[(size_t)bar];
+            maxNotesPerBar=juce::jmax(maxNotesPerBar,count);
+        }
         totalLength+=n.length;
 
         if(i>0)
@@ -444,13 +452,17 @@ float melodyQualityScore(const sonara::SongArrangement& song)
     const float avgLength=(float)(totalLength/(double)lead->notes.size());
     const float lengthScore=juce::jlimit(0.f,1.f,1.f-std::abs(avgLength-.38f)/.75f);
     const float density=(float)lead->notes.size()/(float)juce::jmax(1,song.getBars());
-    const float densityScore=juce::jlimit(0.f,1.f,1.f-std::abs(density-2.55f)/3.2f);
+    const float densityScore=juce::jlimit(0.f,1.f,1.f-std::abs(density-1.85f)/2.5f);
     const float outlierRatio=isolatedOutliers/(float)juce::jmax<size_t>(1,lead->notes.size());
     const float outlierScore=juce::jlimit(0.f,1.f,1.f-outlierRatio*12.f);
+    const float barClarity=maxNotesPerBar<=3?1.f:(maxNotesPerBar==4?.72f:(maxNotesPerBar==5?.28f:0.f));
+    const float lowRegisterScore=lowRegisterNotes==0?1.f:
+        juce::jlimit(0.f,1.f,1.f-lowRegisterNotes/(float)juce::jmax<size_t>(1,lead->notes.size())*10.f);
 
     return juce::jlimit(0.f,1.f,
-        rangeScore*.14f+leapScore*.18f+repeatScore*.15f+
-        rhythmScore*.14f+lengthScore*.09f+densityScore*.12f+outlierScore*.18f);
+        rangeScore*.10f+leapScore*.16f+repeatScore*.13f+
+        rhythmScore*.10f+lengthScore*.08f+densityScore*.10f+
+        outlierScore*.14f+barClarity*.11f+lowRegisterScore*.08f);
 }
 
 juce::ValueTree makeLaneMixTree(const SonaraAudioProcessor& p)
@@ -782,6 +794,7 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
         const float melodyQuality=melodyQualityScore(*candidate);
         const float harmonyQuality=harmonyQualityScore(*candidate);
         const float productionQuality=productionQualityScore(*candidate);
+        const bool melodyClear=melodyQuality>=.68f;
         const float quality=melodyQuality*.42f+harmonyQuality*.20f+productionQuality*.38f;
         const float promptMatch=promptCompositionMatch(prompt,*candidate);
         const float novelty=1.f-wholeSim;
@@ -793,7 +806,7 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
         // fallback could publish a high-quality but familiar hook after the strict
         // gate missed; that is how repeated "same song" generations slipped out.
         const bool noveltySafe=melodySim<.55f&&harmonySim<.86f&&wholeSim<.64f;
-        if(!fingerprint.empty()&&!harmony.empty()&&noveltySafe
+        if(!fingerprint.empty()&&!harmony.empty()&&noveltySafe&&melodyClear
            &&quality>=.66f&&promptMatch>=.64f&&combined>bestCombined)
         {
             bestCombined=combined;
@@ -817,7 +830,7 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
         // Harmony and melody both have hard identity gates. This prevents a tiny
         // lead reroll from hiding a recycled chord/root skeleton.
         if(!fingerprint.empty()&&!harmony.empty()&&melodySim<.55f&&harmonySim<.86f
-           &&wholeSim<.64f&&quality>=.76f&&promptMatch>=.68f)
+           &&wholeSim<.64f&&melodyQuality>=.72f&&quality>=.75f&&promptMatch>=.68f)
         {
             made=std::move(candidate);
             acceptedFingerprint=std::move(fingerprint);
@@ -835,9 +848,10 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
             break;
         }
 
-        generationStatus=(quality<.76f?"Rejecting weak song structure":
+        generationStatus=(melodyQuality<.72f?"Rejecting complicated or weak melody":
+                          (quality<.75f?"Rejecting weak song structure":
                           (harmonySim>=.86f?"Rejecting recycled harmony":
-                          (melodySim>=.55f?"Rejecting recycled hook":"Rejecting familiar whole song")))
+                          (melodySim>=.55f?"Rejecting recycled hook":"Rejecting familiar whole song"))))
                        +juce::String(" • trying composition ")
                        +juce::String(attempt+2)+"/"+juce::String(maxAttempts);
     }
