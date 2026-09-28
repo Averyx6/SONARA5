@@ -1002,20 +1002,21 @@ void SonaraAudioProcessor::regenerateDrums(const juce::String& prompt)
                         ^ (++generationCounter * 0xa24baed4963ee407ULL)
                         ^ 0x4452554d535f4f4eULL;
 
-    auto fresh = std::make_shared<sonara::SongArrangement>();
-    fresh->generate(prompt + " drums only tight punchy fills transitions", previewBpm, seed);
-
     auto current = arrangementSnapshot();
-    auto updated = current
-        ? std::make_shared<sonara::SongArrangement>(*current)
-        : std::make_shared<sonara::SongArrangement>(*fresh);
+    std::shared_ptr<sonara::SongArrangement> updated;
+    if(current)
+    {
+        updated=std::make_shared<sonara::SongArrangement>(*current);
+        updated->regenerateDrumsOnly(prompt+" drums only tight punchy fills transitions",seed);
+    }
+    else
+    {
+        updated=std::make_shared<sonara::SongArrangement>();
+        updated->generate(prompt+" drums only tight punchy fills transitions",previewBpm,seed);
+    }
 
-    auto& dst = updated->editLanes();
-    const auto& src = fresh->getLanes();
-    const int drumLanes = juce::jmin(4, juce::jmin((int)dst.size(), (int)src.size()));
-    for (int i = 0; i < drumLanes; ++i)
-        dst[(size_t)i] = src[(size_t)i];
-    if(dst.size()>=4) drumSynth.configureKit(dst[0].sound,dst[1].sound,dst[2].sound,dst[3].sound);
+    auto& dst=updated->editLanes();
+    if(dst.size()>=4)drumSynth.configureKit(dst[0].sound,dst[1].sound,dst[2].sound,dst[3].sound);
 
     std::atomic_store_explicit(&arrangement,
         std::shared_ptr<const sonara::SongArrangement>(updated),
