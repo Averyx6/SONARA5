@@ -23,7 +23,7 @@ private:
 
     class ExternalDragButton final : public juce::TextButton {
     public:
-        enum class Kind { previewMidi, fullMidi, laneMidi, referenceMidi, fullMixAudio, laneAudio, stemsAudio };
+        enum class Kind { previewMidi, fullMidi, laneMidi, leadMidi, referenceMidi, fullMixAudio, laneAudio, leadAudio, stemsAudio };
         ExternalDragButton(SonaraAudioProcessorEditor& o, const juce::String& text, Kind k)
             : juce::TextButton(text), owner(o), kind(k) {}
         void mouseDrag(const juce::MouseEvent& e) override;
@@ -83,7 +83,7 @@ private:
     juce::TextButton applyLaneSound{"APPLY SELECTED SOUND"}, autoLaneSound{"AUTO FIT SELECTED"};
     juce::TextButton undo{"UNDO"}, redo{"REDO"}, variation1{"V1"}, variation2{"V2"}, variation3{"V3"}, variation4{"V4"};
     juce::TextButton captureA{"CAPTURE A"}, captureB{"CAPTURE B"}, recallA{"A"}, recallB{"B"};
-    juce::TextButton connect{"CYANORYX • BRIDGE READY"}, previewSound{"PREVIEW SOUND"}, playSong{"PLAY SONG"}, stop{"STOP"};
+    juce::TextButton connect{"CYANORYX • BRIDGE READY"}, previewSound{"PREVIEW SOUND"}, playSong{"PLAY SONG"}, playDrop{"PLAY DROP"}, stop{"STOP"};
 
     juce::TextButton loadReference{"LOAD AUDIO"}, importMidi{"IMPORT MIDI"}, resound{"RESOUND"}, rebuildReference{"REBUILD TRACK"};
     juce::TextButton saveSoundButton{"SAVE SOUND"}, loadSoundButton{"LOAD SOUND"}, saveProjectButton{"SAVE PROJECT"}, loadProjectButton{"LOAD PROJECT"};
@@ -92,9 +92,11 @@ private:
     ExternalDragButton dragPreviewMidi{*this,"SOUND MIDI • USE ON SONARA",ExternalDragButton::Kind::previewMidi};
     ExternalDragButton dragFullMidi{*this,"MULTITRACK MIDI • SEPARATE LANES",ExternalDragButton::Kind::fullMidi};
     ExternalDragButton dragLaneMidi{*this,"PIANO ROLL • SELECTED MIDI",ExternalDragButton::Kind::laneMidi};
+    ExternalDragButton dragLeadMidi{*this,"LEAD MIDI • PIANO ROLL",ExternalDragButton::Kind::leadMidi};
     ExternalDragButton dragReferenceMidi{*this,"DRAG REF MIDI",ExternalDragButton::Kind::referenceMidi};
     ExternalDragButton dragFullAudio{*this,"EXACT PREVIEW WAV",ExternalDragButton::Kind::fullMixAudio};
     ExternalDragButton dragLaneAudio{*this,"EXACT LANE WAV • SONARA SOUND",ExternalDragButton::Kind::laneAudio};
+    ExternalDragButton dragLeadAudio{*this,"LEAD WAV • SONARA SOUND",ExternalDragButton::Kind::leadAudio};
     ExternalDragButton dragStems{*this,"DRAG STEMS",ExternalDragButton::Kind::stemsAudio};
 
     juce::TextButton tabInstrument{"INSTRUMENT"},tabSong{"SONG"},tabDrums{"DRUMS"},tabFx{"FX & MIX"},tabReference{"REFERENCE"},tabMidi{"MIDI"},tabExport{"EXPORT"};
