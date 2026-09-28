@@ -73,6 +73,7 @@ Novelty is a constraint, not the creative target. Prefer a strong song that is s
 - Keep SUB mono/low-passed and BASS narrow enough to avoid low-end smear.
 
 ## FL Studio drag features
+- PLAY CHORUS button: jump directly to the first CHORUS for fast hook comparison.
 - PLAY DROP button: jump directly to the first DROP for audition.
 - LEAD MIDI: always exports only LEAD notes, regardless of current lane selection.
 - LEAD WAV: always renders LEAD with its SONARA SoundDNA.
