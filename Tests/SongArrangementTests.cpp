@@ -549,6 +549,49 @@ int main()
     if(!dropAnchor)
     {std::cerr<<"v1.8 DROP is missing a downbeat melody anchor\n";return 81;}
 
+    // v2.2 phrase engine: the planned motif budget must reach the rendered
+    // melody, and a four-bar hook must be recognizable A/A' rather than four
+    // unrelated bars or an exact two-bar copy repeated forever.
+    sonara::SongArrangement phraseEngine;
+    phraseEngine.generateComposition(
+        "progressive house 128 BPM F minor, strong hook, short hook, simple melody, no random notes",
+        128.0,0x220022ULL);
+    const auto* phraseLead=findLane(phraseEngine,"LEAD");
+    const sonara::ArrangementSection* phraseChorus=nullptr;
+    for(const auto& section:phraseEngine.getSections())
+        if(section.name=="CHORUS"){phraseChorus=&section;break;}
+    if(!phraseLead||!phraseChorus||phraseChorus->bars<4)
+    {std::cerr<<"v2.2 phrase-engine fixture is incomplete\n";return 82;}
+
+    std::array<std::vector<int>,4> phraseRhythm;
+    std::array<std::vector<int>,4> phrasePitch;
+    for(int phraseBar=0;phraseBar<4;++phraseBar)
+    {
+        const double begin=(phraseChorus->startBar+phraseBar)*4.0;
+        for(const auto& n:phraseLead->notes)
+            if(n.beat>=begin&&n.beat<begin+4.0)
+            {
+                phraseRhythm[(size_t)phraseBar].push_back((int)std::llround((n.beat-begin)*8.0));
+                phrasePitch[(size_t)phraseBar].push_back(n.note);
+            }
+        if(phraseRhythm[(size_t)phraseBar].size()<2||phraseRhythm[(size_t)phraseBar].size()>3)
+        {std::cerr<<"v2.2 short hook ignored its two-to-three note bar budget\n";return 83;}
+    }
+
+    const bool answerRhythmRelated=phraseRhythm[1].size()==phraseRhythm[3].size()
+        &&!phraseRhythm[1].empty()&&phraseRhythm[1].front()==phraseRhythm[3].front();
+    if(phraseRhythm[0]!=phraseRhythm[2]||!answerRhythmRelated)
+    {std::cerr<<"v2.2 A/A' phrase lost its stable two-bar rhythm identity\n";return 84;}
+    if(phrasePitch[0]==phrasePitch[2]&&phrasePitch[1]==phrasePitch[3])
+    {std::cerr<<"v2.2 four-bar phrase is still an exact two-bar pitch clone\n";return 85;}
+
+    const double phraseEnd=(phraseChorus->startBar+4)*4.0;
+    bool cadencePresent=false;
+    for(const auto& n:phraseLead->notes)
+        if(n.beat>=phraseEnd-1.0&&n.beat<phraseEnd){cadencePresent=true;break;}
+    if(!cadencePresent)
+    {std::cerr<<"v2.2 four-bar phrase lost its answer cadence to a random rest\n";return 86;}
+
     auto midi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-arrangement-test",".mid");
     if(!a.writeMidiFile(midi)||!midi.existsAsFile()||midi.getSize()<512){std::cerr<<"MIDI export failed\n";return 7;}
     midi.deleteFile();

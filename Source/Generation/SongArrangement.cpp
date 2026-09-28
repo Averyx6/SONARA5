@@ -548,8 +548,18 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     if(p.contains("syncopated"))plan.syncopation=juce::jmax(plan.syncopation,.70f);
     if(p.contains("repetitive"))plan.development=juce::jmin(plan.development,.38f);
     if(p.contains("evolving"))plan.development=juce::jmax(plan.development,.78f);
-    if(p.contains("short hook")){plan.phraseBars=4;plan.motifLength=juce::jmin(plan.motifLength,6);}
-    if(p.contains("long melody")){plan.phraseBars=8;plan.motifLength=juce::jmax(plan.motifLength,7);}
+    if(p.contains("short hook"))
+    {
+        plan.phraseBars=4;
+        // motifLength is a real two-bar note budget, not descriptive metadata.
+        // A short hook therefore means two concise notes per bar.
+        plan.motifLength=juce::jlimit(3,4,plan.motifLength);
+    }
+    if(p.contains("long melody"))
+    {
+        plan.phraseBars=8;
+        plan.motifLength=juce::jmax(plan.motifLength,7);
+    }
     if(p.contains("drum and bass")||p.contains("dnb")){plan.density=juce::jmax(plan.density,.78f);plan.syncopation=juce::jmax(plan.syncopation,.66f);}
     if(p.contains("tech house")){plan.density=juce::jmin(plan.density,.58f);plan.restAmount=juce::jmax(plan.restAmount,.24f);plan.octaveRange=1;}
     if(p.contains("cinematic")){plan.phraseBars=8;plan.restAmount=juce::jmax(plan.restAmount,.22f);plan.development=juce::jmax(plan.development,.72f);}
@@ -1684,6 +1694,19 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         else count=juce::jmin(count,3);
         if(mainstreamEdm&&p.contains("simple melody"))count=juce::jmin(count,2);
 
+        // v2.2: make the planned motif length control the rendered hook.  The
+        // old engine calculated motifLength but then forced every mainstream
+        // chorus/drop bar to three notes, so "short hook" and seed-to-seed motif
+        // decisions did not affect the audible hook density.  Distribute a
+        // four-to-six note motif across its two bars while retaining the normal
+        // two-to-three meaningful notes per-bar range.
+        if(mainstreamEdm&&(chorus||drop||finalHook))
+        {
+            const int motifBudget=juce::jlimit(4,6,plan.motifLength);
+            const int thisBarBudget=motifBar==0?(motifBudget+1)/2:motifBudget/2;
+            count=juce::jlimit(2,3,juce::jmin(count,thisBarBudget));
+        }
+
         double positions[8]{};
         for(int i=0;i<count;++i)positions[i]=rhythmPos[family][i];
 
@@ -1719,6 +1742,12 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         // Every mainstream hook begins on the downbeat. A clear first note makes
         // CHORUS -> DROP transitions readable instead of sounding like one endless loop.
         if(mainstreamEdm&&(chorus||drop||finalHook)&&count>0)positions[0]=0.0;
+        // Reserve a clear late-bar cadence slot at the end of each four-bar
+        // statement. Without this, a two-note short hook could "resolve" near
+        // beat two and leave the phrase ending musically undefined.
+        if(mainstreamEdm&&(chorus||drop||finalHook)
+           &&barInPhrase==phraseBars-1&&count>0)
+            positions[count-1]=3.25;
 
         const uint64_t motifDecisionSeed=mix64(motifSeed
             ^ ((uint64_t)motifBar+1ULL)*0x517cc1b727220a95ULL);
@@ -1732,6 +1761,8 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             // the same hook, not a re-roll.
             const uint64_t salt=(uint64_t)motifBar*256ULL+(uint64_t)i;
             const bool strong=positions[i]<.08||std::abs(std::fmod(positions[i],1.0))<.08;
+            const bool phraseEndingNote=barInPhrase==phraseBars-1&&i==count-1;
+            const bool motifEndingNote=motifBar==1&&i==count-1;
 
             float restChance=plan.restAmount;
             if(chorus)restChance=juce::jmax(.10f,restChance*.70f);
@@ -1740,7 +1771,10 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             if(breakdown)restChance=juce::jmax(restChance,.30f);
             if(tech)restChance=juce::jmax(restChance,.24f);
             if(architecture==3)restChance*=.55f; // already sparse by construction
-            if(!strong&&random01(motifDecisionSeed,0x2100+salt)<restChance)continue;
+            // A motif/phrase ending may never disappear because of a random
+            // rest. It carries the cadence and is essential to question/answer form.
+            if(!strong&&!motifEndingNote&&!phraseEndingNote
+               &&random01(motifDecisionSeed,0x2100+salt)<restChance)continue;
 
             int degree=startDegree;
             int octaveExtra=0;
@@ -1840,7 +1874,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             // anchors strongly prefer chord tones; ordinary beats are usually free
             // scale tones, allowing 2nd/4th/6th/7th tension before resolution.
             const auto localHarmony=chordInfoAtBeat(bar*beatsPerBar+positions[i]);
-            const bool phraseEnding=(barInPhrase==phraseBars-1&&i==count-1);
+            const bool phraseEnding=phraseEndingNote;
             const bool barAnchor=positions[i]<.08;
             const bool hookSection=chorus||drop||finalHook;
             const float chordToneChance=hookSection
@@ -1876,6 +1910,18 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                &&architecture!=1&&architecture!=2&&!mainstreamEdm
                &&random01(phraseSeed,0x2350+salt)<plan.development*.55f)
                 degree+=random01(phraseSeed,0x2360+salt)>.5f?2:-1;
+
+            // Four-bar mainstream hooks use an explicit A/A' phrase. Bars one
+            // and two establish the two-bar motif; bars three and four keep its
+            // rhythm but develop one interior tone before the final cadence.
+            // This creates recognizable repetition without an ABAB copy loop.
+            if(mainstreamEdm&&developmentBar&&!phraseEnding
+               &&((barInPhrase==2&&i==juce::jmax(0,count-2))
+                  ||(barInPhrase==3&&i==0)))
+            {
+                const int answerDirection=random01(motifSeed,0x2370)>.5f?1:-1;
+                degree+=answerDirection;
+            }
 
             if(phraseEnding)
             {
