@@ -460,8 +460,8 @@ int main()
     for(int i=0;i<leadTrack->getNumEvents();++i)
     {
         const auto message=leadTrack->getEventPointer(i)->message;
-        if(message.isNoteOn()&&message.getNoteNumber()<58)
-            return fail("dedicated LEAD MIDI contains unwanted low support/melody notes");
+        if(message.isNoteOn()&&message.getNoteNumber()<52)
+            return fail("dedicated LEAD MIDI contains low support-lane notes");
     }
 
     randomizer.startDropPreview();
