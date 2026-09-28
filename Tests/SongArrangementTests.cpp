@@ -338,21 +338,24 @@ int main()
     if(isolatedPitchSpikes!=0)
     {std::cerr<<"v1.5 lead still contains isolated random high/low notes\n";return 54;}
 
-    // The first four bars of CHORUS and DROP are now one deliberate song hook,
-    // not two separately-randomized interpretations.
-    auto hookCells=[&](const sonara::ArrangementSection& section)
+    // v2: CHORUS and DROP must share a recognizable identity without being one
+    // endless four-bar clone. The DROP is a tighter driving variation built from
+    // the chorus opening cell.
+    auto hookCells=[&](const sonara::ArrangementSection& section,double beats)
     {
         std::vector<std::pair<int,int>> cells;
-        const double begin=section.startBar*4.0,end=begin+16.0;
+        const double begin=section.startBar*4.0,end=begin+beats;
         for(const auto& n:firstLead->notes)
             if(n.beat>=begin&&n.beat<end)
                 cells.push_back({(int)std::llround((n.beat-begin)*8.0),n.note});
         return cells;
     };
-    const auto chorusCells=hookCells(*chorusSection);
-    const auto dropCells=hookCells(*dropSection);
-    if(chorusCells.size()<6||chorusCells!=dropCells)
-    {std::cerr<<"v1.5 chorus/drop do not preserve one exact four-bar hook skeleton\n";return 55;}
+    const auto chorusOpening=hookCells(*chorusSection,8.0);
+    const auto dropOpening=hookCells(*dropSection,8.0);
+    const auto chorusFull=hookCells(*chorusSection,16.0);
+    const auto dropFull=hookCells(*dropSection,16.0);
+    if(chorusOpening.size()<4||chorusOpening!=dropOpening||chorusFull==dropFull)
+    {std::cerr<<"v2 chorus/drop identity is either lost or still an exact clone\n";return 55;}
 
     // Explicit songwriter controls must affect real generation.
     sonara::SongArrangement directed;
