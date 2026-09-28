@@ -35,6 +35,7 @@ public:
 
     void generate(const juce::String& prompt, double bpm, uint64_t seed);
     void generateComposition(const juce::String& prompt, double bpm, uint64_t seed);
+    void regenerateDrumsOnly(const juce::String& drumPrompt, uint64_t seed);
     void finalizeSoundPalette();
     void clear();
     bool writeMidiFile(const juce::File& destination) const;
