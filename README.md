@@ -14,6 +14,7 @@ v2.0 is the melody clarity, drop identity, preview fidelity and FL workflow rele
 - Full-mix WAV export follows the same section balance/master gain decisions as preview.
 - After generation, LEAD SoundDNA is loaded into the live SONARA instrument so editable FL Piano Roll MIDI on a SONARA channel uses the generated lead patch.
 - Project save/load preserves the selected lane and restores the matching live SoundDNA.
+- New PLAY CHORUS transport jumps directly to the first chorus for fast hook comparison.
 - New PLAY DROP transport jumps directly to the first DROP.
 - New LEAD MIDI drag always exports only the main LEAD notes, never BASS/SUB/support notes.
 - New LEAD WAV drag always renders the LEAD SoundDNA as audio.
