@@ -1746,7 +1746,7 @@ bool SonaraAudioProcessor::importPatchFromCyanoryx(const juce::String& payload)
 
 void SonaraAudioProcessor::getStateInformation(juce::MemoryBlock& dest)
 {
-    juce::ValueTree state("SONARA_STATE"); state.setProperty("schema",5,nullptr); state.setProperty("generationCounter",juce::String(generationCounter),nullptr); state.setProperty("bpm",previewBpm,nullptr);
+    juce::ValueTree state("SONARA_STATE"); state.setProperty("schema",6,nullptr); state.setProperty("generationCounter",juce::String(generationCounter),nullptr); state.setProperty("bpm",previewBpm,nullptr); state.setProperty("selectedLane",selectedLane.load(),nullptr);
     state.addChild(engine.patch().toValueTree(),-1,nullptr); state.addChild(locks.toValueTree(),-1,nullptr); state.addChild(makeLaneMixTree(*this),-1,nullptr); if(auto a=arrangementSnapshot()) state.addChild(a->toValueTree(),-1,nullptr);
     if(auto xml=state.createXml())copyXmlToBinary(*xml,dest);
 }
@@ -1765,7 +1765,7 @@ void SonaraAudioProcessor::setStateInformation(const void* data,int bytes)
         applyLaneMixTree(*this,state.getChildWithName("LANE_MIX"));
         generationCounter=(uint64_t)juce::jmax<juce::int64>(1,state.getProperty("generationCounter","1").toString().getLargeIntValue());
         previewBpm=juce::jlimit(60.0,200.0,(double)state.getProperty("bpm",128.0));
-        auto arr=state.getChildWithName("SONARA_ARRANGEMENT");if(arr.isValid()){auto made=std::make_shared<sonara::SongArrangement>(sonara::SongArrangement::fromValueTree(arr));const auto& lanes=made->getLanes();for(int i=0;i<musicalLaneCount;++i){const int laneIndex=firstMusicalLane+i;if(juce::isPositiveAndBelow(laneIndex,(int)lanes.size()))songEngines[(size_t)i].setPatch(lanes[(size_t)laneIndex].sound);}std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(made),std::memory_order_release);}
+        auto arr=state.getChildWithName("SONARA_ARRANGEMENT");if(arr.isValid()){auto made=std::make_shared<sonara::SongArrangement>(sonara::SongArrangement::fromValueTree(arr));const auto& lanes=made->getLanes();for(int i=0;i<musicalLaneCount;++i){const int laneIndex=firstMusicalLane+i;if(juce::isPositiveAndBelow(laneIndex,(int)lanes.size()))songEngines[(size_t)i].setPatch(lanes[(size_t)laneIndex].sound);}std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(made),std::memory_order_release);setSelectedLane(juce::jlimit(0,11,(int)state.getProperty("selectedLane",9)));}
         patchHistory.clear();patchHistory.push_back(engine.patch());historyIndex=0;generationProgress.store(1.f);generationStatus="Session restored";
     }
 }
