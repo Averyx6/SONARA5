@@ -1032,6 +1032,20 @@ void SonaraAudioProcessor::startSongPreview()
     startSongPreviewAtBar(0);
 }
 
+void SonaraAudioProcessor::startChorusPreview()
+{
+    auto a=arrangementSnapshot();
+    if(!a){generationStatus="Generate a full track first";return;}
+    for(const auto& section:a->getSections())
+        if(section.name=="CHORUS")
+        {
+            startSongPreviewAtBar(section.startBar);
+            generationStatus="CHORUS PREVIEW • bar "+juce::String(section.startBar+1);
+            return;
+        }
+    generationStatus="No CHORUS section in this arrangement";
+}
+
 void SonaraAudioProcessor::startDropPreview()
 {
     auto a=arrangementSnapshot();
