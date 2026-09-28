@@ -720,6 +720,61 @@ void SongArrangement::generateComposition(const juce::String& prompt, double bpm
     melodyId=computeMelodyId();
 }
 
+void SongArrangement::regenerateDrumsOnly(const juce::String& drumPrompt, uint64_t seed)
+{
+    if(lanes.size()<4||sections.empty()||bars<=0)return;
+
+    const auto preservedLanes=lanes;
+    const auto originalPrompt=sourcePrompt;
+    const auto originalPlan=plan;
+    const auto originalDomains=domains;
+
+    // Keep the current song architecture/harmony/melody intact. Only the drum
+    // generation domains and drum-specific plan fields are refreshed.
+    const auto extra=drumPrompt.trim();
+    sourcePrompt=originalPrompt+(extra.isNotEmpty()?juce::String(", ")+extra:juce::String());
+    domains.drums=mix64(seed^0x4452554d5f4e4557ULL);
+    domains.soundPalette=mix64(seed^0x4452554d5f534e44ULL);
+    plan.drumGroove=(int)(random01(domains.drums,0x1002)*6.f)%6;
+    plan.hatMode=(int)(random01(domains.drums,0x1003)*4.f)%4;
+
+    const auto p=sourcePrompt.toLowerCase();
+    const bool energetic=p.contains("energetic")||p.contains("powerful")
+        ||p.contains("festival")||p.contains("hard")||p.contains("edm");
+
+    lanes.clear();
+    addDrums(domains.drums,energetic);
+
+    // Defensive fallback: never damage an existing arrangement if drum
+    // generation fails to produce the four expected drum lanes.
+    if(lanes.size()<4)
+    {
+        lanes=preservedLanes;
+        sourcePrompt=originalPrompt;
+        plan=originalPlan;
+        domains=originalDomains;
+        return;
+    }
+
+    for(size_t i=4;i<preservedLanes.size();++i)
+        lanes.push_back(preservedLanes[i]);
+
+    // Generate a genuinely new drum kit while keeping every non-drum SoundDNA
+    // patch exactly as it was before the drum-only operation.
+    finalizeSoundPalette();
+    for(size_t i=4;i<lanes.size()&&i<preservedLanes.size();++i)
+        lanes[i].sound=preservedLanes[i].sound;
+
+    const int newGroove=plan.drumGroove;
+    const int newHatMode=plan.hatMode;
+    sourcePrompt=originalPrompt;
+    plan=originalPlan;
+    plan.drumGroove=newGroove;
+    plan.hatMode=newHatMode;
+    domains=originalDomains;
+}
+
+
 void SongArrangement::finalizeSoundPalette()
 {
     if(lanes.empty())return;
