@@ -328,12 +328,12 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     songPrompt.setTextToShowWhenEmpty("Describe the whole song: genre, key, BPM, energy, drop, instruments...",dim);
     laneSoundPrompt.setTextToShowWhenEmpty("Describe ONLY the selected lane sound: e.g. warm supersaw lead, clean pluck, donk bass...",dim);
 
-    std::array<juce::Button*,44> buttons {&generateSound,&generateTrack,&generateDrums,&randomizeEverythingButton,&surpriseMe,&similar,&mutate,&randomize,&undo,&redo,
-        &variation1,&variation2,&variation3,&variation4,&captureA,&captureB,&recallA,&recallB,&connect,&previewSound,&playSong,&playDrop,&stop,
+    std::array<juce::Button*,45> buttons {&generateSound,&generateTrack,&generateDrums,&randomizeEverythingButton,&surpriseMe,&similar,&mutate,&randomize,&undo,&redo,
+        &variation1,&variation2,&variation3,&variation4,&captureA,&captureB,&recallA,&recallB,&connect,&previewSound,&playSong,&playChorus,&playDrop,&stop,
         &dragPreviewMidi,&dragFullMidi,&dragLaneMidi,&dragLeadMidi,&dragReferenceMidi,&dragFullAudio,&dragLaneAudio,&dragLeadAudio,&dragStems,
         &loadReference,&importMidi,&resound,&rebuildReference,&saveSoundButton,&loadSoundButton,&saveProjectButton,&loadProjectButton,&exportMixButton,&exportStemsButton,
         &applyLaneSound,&autoLaneSound};
-    for(auto* b:buttons){addAndMakeVisible(*b);styleButton(*b,b==&generateSound||b==&generateTrack||b==&generateDrums||b==&randomizeEverythingButton||b==&surpriseMe||b==&playSong||b==&playDrop||b==&resound||b==&rebuildReference||b==&exportMixButton||b==&exportStemsButton);}
+    for(auto* b:buttons){addAndMakeVisible(*b);styleButton(*b,b==&generateSound||b==&generateTrack||b==&generateDrums||b==&randomizeEverythingButton||b==&surpriseMe||b==&playSong||b==&playChorus||b==&playDrop||b==&resound||b==&rebuildReference||b==&exportMixButton||b==&exportStemsButton);}
     dragLaneMidi.setTooltip("Selected lane notes for FL Piano Roll. Drop onto a SONARA channel to use that lane's SoundDNA; other instruments will sound different.");
     dragLeadMidi.setTooltip("Always exports only the generated LEAD notes for FL Piano Roll. No BASS, SUB, CHORDS, PAD or drum notes are included.");
     dragFullMidi.setTooltip("Multitrack arrangement MIDI. Import as separate lanes/tracks; do not merge this into one Piano Roll or BASS/SUB notes will appear under the lead.");
@@ -449,6 +449,7 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
         else if(p.songPosition01()>0.0&&p.songPosition01()<.9999)p.resumeSongPreview();
         else p.startSongPreview();
     };
+    playChorus.onClick=[this]{p.startChorusPreview();};
     playDrop.onClick=[this]{p.startDropPreview();};
     stop.onClick=[this]{p.stopPreview();p.stopSongPreview();};bpm.onValueChange=[this]{p.setPreviewBpm(bpm.getValue());};
     connect.onClick=[this]{const auto packet=p.exportProjectForCyanoryx();juce::SystemClipboard::copyTextToClipboard(packet);showStatus(packet.isNotEmpty()?"Cyanoryx protocol v4 bundle copied":"Cyanoryx bundle unavailable");};
@@ -593,6 +594,7 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
 
     previewSound.setVisible(instrumentTab||referenceTab);
     playSong.setVisible(songTab||drumsTab||mixTab||referenceTab||midiTab||exportTab);
+    playChorus.setVisible(songTab||drumsTab||mixTab||midiTab||exportTab);
     playDrop.setVisible(songTab||drumsTab||mixTab||midiTab||exportTab);
     stop.setVisible(true);
 
@@ -897,10 +899,11 @@ void SonaraAudioProcessorEditor::resized()
     }
 
     previewSound.setBounds(cx,bottomControlsY,112,34);
-    playSong.setBounds(cx+120,bottomControlsY,102,34);
-    playDrop.setBounds(cx+230,bottomControlsY,102,34);
-    stop.setBounds(cx+340,bottomControlsY,66,34);
-    bpm.setBounds(cx+414,bottomControlsY,juce::jmax(120,cw-414),34);
+    playSong.setBounds(cx+120,bottomControlsY,96,34);
+    playChorus.setBounds(cx+222,bottomControlsY,106,34);
+    playDrop.setBounds(cx+334,bottomControlsY,94,34);
+    stop.setBounds(cx+434,bottomControlsY,62,34);
+    bpm.setBounds(cx+502,bottomControlsY,juce::jmax(120,cw-502),34);
     playbackBar.setBounds(cx,h-46,cw,15);
     statusLine.setBounds(cx,h-28,cw,18);
 
