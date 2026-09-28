@@ -427,6 +427,9 @@ int main()
         return fail("lane mixer state did not survive plugin state round-trip");
     if(!restored.arrangementSnapshot()||restored.arrangementSnapshot()->getLanes().size()!=12)
         return fail("song arrangement did not survive plugin state round-trip");
+    if(restored.getSelectedLane()!=subIndex
+       ||restored.currentPatch().seed!=restored.arrangementSnapshot()->getLanes()[(size_t)subIndex].sound.seed)
+        return fail("selected lane / live SoundDNA did not survive plugin state round-trip");
 
     auto projectFile=juce::File::getSpecialLocation(juce::File::tempDirectory)
         .getNonexistentChildFile("sonara-project-roundtrip",".sonara");
@@ -437,11 +440,36 @@ int main()
     const auto projectMix=projectLoaded.getLaneMix(subIndex);
     if(std::abs(projectMix.level-.73f)>.001f||!projectLoaded.arrangementSnapshot())
         return fail("project round-trip lost mixer or arrangement");
+    if(projectLoaded.getSelectedLane()!=subIndex
+       ||projectLoaded.currentPatch().seed!=projectLoaded.arrangementSnapshot()->getLanes()[(size_t)subIndex].sound.seed)
+        return fail("project round-trip lost selected lane SoundDNA");
     projectFile.deleteFile();
 
     auto subMidi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-playback-sub",".mid");
     if(!randomizer.writeSelectedLaneMidiFile(subMidi)||subMidi.getSize()<64)return fail("selected SUB MIDI export failed");
-    fullMidi.deleteFile();subMidi.deleteFile();
+
+    auto leadMidi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-playback-lead",".mid");
+    if(!randomizer.writeLeadMidiFile(leadMidi)||leadMidi.getSize()<64||leadMidi.getSize()>=fullMidi.getSize())
+        return fail("dedicated LEAD MIDI export failed or still contains the full arrangement");
+    juce::FileInputStream leadStream(leadMidi);
+    juce::MidiFile leadFile;
+    if(!leadStream.openedOk()||!leadFile.readFrom(leadStream)||leadFile.getNumTracks()!=1)
+        return fail("dedicated LEAD MIDI could not be parsed as one track");
+    const auto* leadTrack=leadFile.getTrack(0);
+    if(!leadTrack)return fail("dedicated LEAD MIDI track missing");
+    for(int i=0;i<leadTrack->getNumEvents();++i)
+    {
+        const auto message=leadTrack->getEventPointer(i)->message;
+        if(message.isNoteOn()&&message.getNoteNumber()<58)
+            return fail("dedicated LEAD MIDI contains unwanted low support/melody notes");
+    }
+
+    randomizer.startDropPreview();
+    if(!randomizer.isSongPlaying()||randomizer.currentSectionName()!="DROP")
+        return fail("PLAY DROP did not jump to the first DROP section");
+    randomizer.stopSongPreview();
+
+    fullMidi.deleteFile();subMidi.deleteFile();leadMidi.deleteFile();
 
     // Shortened offline export exercises the real full-mix/stem renderers without a long CI file.
     auto shortTree=surprised->toValueTree();
