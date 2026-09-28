@@ -39,6 +39,7 @@ public:
     void regenerateDrums(const juce::String& prompt);
     void startSongPreview();
     void startSongPreviewAtBar(int bar);
+    void startDropPreview();
     void pauseSongPreview();
     void resumeSongPreview();
     void stopSongPreview();
@@ -49,6 +50,7 @@ public:
     std::shared_ptr<const sonara::SongArrangement> arrangementSnapshot() const noexcept { return std::atomic_load_explicit(&arrangement,std::memory_order_acquire); }
     bool writeArrangementMidiFile(const juce::File&) const;
     bool writeSelectedLaneMidiFile(const juce::File&) const;
+    bool writeLeadMidiFile(const juce::File&) const;
     void setSelectedLane(int i);
     int getSelectedLane() const noexcept { return selectedLane.load(); }
 
@@ -69,6 +71,7 @@ public:
     bool loadProject(const juce::File&);
     bool exportFullMix(const juce::File&);
     bool exportSelectedLaneAudio(const juce::File&);
+    bool exportLeadAudio(const juce::File&);
     bool exportAllStems(const juce::File& directory);
 
     void setPreviewBpm(double bpm) noexcept { previewBpm=juce::jlimit(60.0,200.0,bpm); }
