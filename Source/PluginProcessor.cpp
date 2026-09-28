@@ -1129,8 +1129,10 @@ double SonaraAudioProcessor::songPosition01() const noexcept
 int SonaraAudioProcessor::currentSongBar() const noexcept
 {
     auto a=arrangementSnapshot();if(!a)return 0;
-    return juce::jlimit(0,juce::jmax(0,a->getBars()-1),
-        (int)std::floor(songPosition01()*a->getBars()));
+    const double spb=previewSampleRate*60.0/a->getBpm();
+    const double beat=spb>0.0?(double)songSample.load()/spb:0.0;
+    const int exactBar=(int)std::floor(beat/sonara::SongArrangement::beatsPerBar+1.0e-9);
+    return juce::jlimit(0,juce::jmax(0,a->getBars()-1),exactBar);
 }
 
 juce::String SonaraAudioProcessor::currentSectionName() const
