@@ -1,21 +1,34 @@
-# SONARA v1.7
+# SONARA v2.0
 
-SONARA is a Windows x64 JUCE VST3 + Standalone AI music-creation instrument for FL Studio.
+SONARA is a Windows x64 JUCE VST3 + Standalone AI music-production instrument for FL Studio.
 
-v1.7 is the song-clarity pass. It focuses on making all pitched instruments behave like one arrangement instead of separate generators.
+v2.0 is the melody clarity, drop identity, preview fidelity and FL workflow release.
 
-For mainstream EDM, progressive house, melodic house, pop, trance, festival and future-rave prompts, CHORDS is now one sustained triad per bar rather than a stream of short retriggers. PLUCK is limited to two predictable chord-tone onsets per bar. SUB uses one root onset per bar and BASS uses at most one or two root/fifth support notes. PAD is slow upper harmony only. These support lanes no longer create extra melodic information.
+## What v2.0 changes
 
-A shared register map is applied after the lead is generated. LEAD establishes the musical center per bar; CHORDS, PLUCK, PAD and optional COUNTER are octave-folded around that same center while preserving pitch class and chord shape. BASS and SUB remain intentionally lower. This fixes the visual/audio problem where each instrument lived in unrelated octaves even when the notes were technically in key.
+- Mainstream EDM melodies are simpler and easier to read: tighter register, lower note density, fewer random passing tones, no random verse octave-down behavior, and a hard clarity gate that rejects note soup.
+- Song sections have clearer jobs. CHORUS states the hook, DROP uses a tighter driving variation of that identity, BREAKDOWN releases energy, and FINAL HOOK restores/develops the fuller phrase.
+- A full-beat pre-drop breathing gap and beat-one drop anchor make the drop boundary obvious.
+- Drop drums are louder than build/breakdown drums without changing the core SoundDNA.
+- Preview output is louder while remaining soft-limited and finite.
+- Full-mix WAV export follows the same section balance/master gain decisions as preview.
+- After generation, LEAD SoundDNA is loaded into the live SONARA instrument so editable FL Piano Roll MIDI on a SONARA channel uses the generated lead patch.
+- Project save/load preserves the selected lane and restores the matching live SoundDNA.
+- New PLAY DROP transport jumps directly to the first DROP.
+- New LEAD MIDI drag always exports only the main LEAD notes, never BASS/SUB/support notes.
+- New LEAD WAV drag always renders the LEAD SoundDNA as audio.
+- Selected-lane MIDI/WAV, multitrack MIDI, exact preview WAV, rendered stems, reference RESOUND/REBUILD, SoundDNA mutation, lane mixing and Cyanoryx interchange remain available.
 
-The v1.5/v1.6 songwriter behavior remains: one cleaned four-bar hook is reused through CHORUS -> DROP -> FINAL HOOK, isolated pitch spikes are repaired, mainstream counter melody is opt-in, prompt directions control structure and space, and support-note density is constrained.
+## Important MIDI behavior
 
-Preview and full-mix WAV export now use the same production behavior: matching lane gains, section-aware energy, kick-driven ducking, FX sends, reverb level, drum balance and master shaping. The music level is raised, the lead is more forward, and the drum kit is mixed lower so it no longer masks the melody. Full-mix export is regression-tested for healthy RMS/peak.
+Standard MIDI stores notes, timing, velocity and metadata; it does not contain SONARA's custom synth audio. Use LEAD MIDI / selected-lane MIDI on a SONARA channel when you want editable notes with the matching SoundDNA loaded. Use LEAD WAV, selected-lane WAV, full-mix WAV or stems when you need the rendered SONARA sound preserved exactly.
 
-v1.6 multi-instance CPU optimizations are preserved: idle instances sleep, live polyphony is bounded, runtime eco mode engages with multiple SONARA instances, low-CPU engines skip unnecessary post-processing, and the five-instance regression remains in the test suite.
+## v2 quality rules
 
-MIDI exports are still notes-only because standard MIDI cannot contain a VST patch. Selecting a musical lane loads its SoundDNA into SONARA's live synth engine so editable FL Piano Roll MIDI can play the selected SONARA sound when placed on a SONARA channel. LANE WAV • SONARA SOUND remains the sound-preserving drag path.
+SONARA rejects candidates that recycle the previous song, create isolated melody spikes, put mainstream lead notes in the wrong low register, overload hook bars, lose section contrast, miss the pre-drop gap, or fail to produce a clear drop arrival. Novelty is treated as a constraint, not the goal: a strong musical song that is genuinely different is preferred over random complexity.
+
+See `SONARA_V2_MASTER_PROMPT.md` for the complete release specification and regression requirements.
 
 ## Windows build
 
-Run `BUILD_SONARA.bat` from a Visual Studio 2022 developer environment, or use the GitHub Actions workflow. A release is considered verified only after the Windows VST3 + Standalone targets compile, all regression/acceptance tests pass, packaging succeeds, and the workflow publishes `DIST/SONARA-Windows-x64-VST3.zip`.
+Run `BUILD_SONARA.bat` from a Visual Studio 2022 developer environment, or use the GitHub Actions workflow. A release is considered verified only after Windows VST3 + Standalone compilation, every regression test, VST3 packaging and artifact upload succeed. The packaged artifact is `DIST/SONARA-Windows-x64-VST3.zip`.
