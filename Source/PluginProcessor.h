@@ -39,6 +39,7 @@ public:
     void regenerateDrums(const juce::String& prompt);
     void startSongPreview();
     void startSongPreviewAtBar(int bar);
+    void startChorusPreview();
     void startDropPreview();
     void pauseSongPreview();
     void resumeSongPreview();
