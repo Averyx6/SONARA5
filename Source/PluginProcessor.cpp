@@ -1032,6 +1032,20 @@ void SonaraAudioProcessor::startSongPreview()
     startSongPreviewAtBar(0);
 }
 
+void SonaraAudioProcessor::startDropPreview()
+{
+    auto a=arrangementSnapshot();
+    if(!a){generationStatus="Generate a full track first";return;}
+    for(const auto& section:a->getSections())
+        if(section.name=="DROP")
+        {
+            startSongPreviewAtBar(section.startBar);
+            generationStatus="DROP PREVIEW • bar "+juce::String(section.startBar+1);
+            return;
+        }
+    generationStatus="No DROP section in this arrangement";
+}
+
 void SonaraAudioProcessor::startSongPreviewAtBar(int bar)
 {
     auto a=arrangementSnapshot();
@@ -1427,6 +1441,30 @@ bool SonaraAudioProcessor::writeSelectedLaneMidiFile(const juce::File& destinati
 }
 
 
+bool SonaraAudioProcessor::writeLeadMidiFile(const juce::File& destination) const
+{
+    auto a=arrangementSnapshot(); if(!a)return false;
+    const auto& lanes=a->getLanes();
+    const auto it=std::find_if(lanes.begin(),lanes.end(),[](const auto& lane){return lane.name=="LEAD";});
+    if(it==lanes.end()||it->notes.empty())return false;
+    const auto& lane=*it;
+
+    juce::MidiFile mf; mf.setTicksPerQuarterNote(960); juce::MidiMessageSequence seq;
+    auto tempo=juce::MidiMessage::tempoMetaEvent((int)std::llround(60000000.0/a->getBpm()));
+    tempo.setTimeStamp(0);seq.addEvent(tempo);
+    auto name=juce::MidiMessage::textMetaEvent(3,"LEAD");name.setTimeStamp(0);seq.addEvent(name);
+    for(const auto& n:lane.notes)
+    {
+        auto on=juce::MidiMessage::noteOn(1,n.note,(juce::uint8)n.velocity);
+        auto off=juce::MidiMessage::noteOff(1,n.note);
+        on.setTimeStamp(n.beat*960.0);off.setTimeStamp((n.beat+n.length)*960.0);
+        seq.addEvent(on);seq.addEvent(off);
+    }
+    seq.updateMatchedPairs();mf.addTrack(seq);destination.deleteFile();juce::FileOutputStream out(destination);
+    return out.openedOk()&&mf.writeTo(out);
+}
+
+
 bool SonaraAudioProcessor::analyseReferenceFile(const juce::File& file)
 {
     stopPreview(); stopSongPreview(); generationProgress.store(.05f); generationStatus="Analyzing reference audio";
@@ -1552,6 +1590,20 @@ bool SonaraAudioProcessor::exportFullMix(const juce::File& file)
 bool SonaraAudioProcessor::exportSelectedLaneAudio(const juce::File& file)
 {
     auto a=arrangementSnapshot();if(!a)return false;const bool ok=audioExporter.renderSelectedLane(*a,selectedLane.load(),file,44100.0,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;});generationProgress.store(ok?1.f:0.f);generationStatus=ok?"Selected lane WAV ready • "+file.getFullPathName():"Lane export failed";return ok;
+}
+
+bool SonaraAudioProcessor::exportLeadAudio(const juce::File& file)
+{
+    auto a=arrangementSnapshot();if(!a)return false;
+    const auto& lanes=a->getLanes();
+    int leadIndex=-1;
+    for(int i=0;i<(int)lanes.size();++i)if(lanes[(size_t)i].name=="LEAD"){leadIndex=i;break;}
+    if(leadIndex<0)return false;
+    const bool ok=audioExporter.renderSelectedLane(*a,leadIndex,file,44100.0,
+        [this](float x,const juce::String& status){generationProgress.store(x);generationStatus=status;});
+    generationProgress.store(ok?1.f:0.f);
+    generationStatus=ok?"LEAD WAV ready • "+file.getFullPathName():"LEAD WAV export failed";
+    return ok;
 }
 
 bool SonaraAudioProcessor::exportAllStems(const juce::File& directory)
