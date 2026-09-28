@@ -464,6 +464,9 @@ int main()
             return fail("dedicated LEAD MIDI contains low support-lane notes");
     }
 
+    randomizer.startChorusPreview();
+    if(!randomizer.isSongPlaying()||randomizer.currentSectionName()!="CHORUS")
+        return fail("PLAY CHORUS did not jump to the first CHORUS section");
     randomizer.startDropPreview();
     if(!randomizer.isSongPlaying()||randomizer.currentSectionName()!="DROP")
         return fail("PLAY DROP did not jump to the first DROP section");
