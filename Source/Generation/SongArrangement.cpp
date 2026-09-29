@@ -798,6 +798,9 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     if(p.contains("warm chords")||p.contains("sustained chords"))plan.chordTexture=0;
     plan.padPolicy=producerTech?3:(producerFestival?1:(producerCinematic?2:0));
     plan.counterPolicy=producerTech?3:((producerProgressive&&plan.emotionProfile==1)?0:1);
+    if(p.contains("counter melody")||p.contains("secondary lead")
+       ||p.contains("call and response")||p.contains("answer melody"))plan.counterPolicy=2;
+    if(p.contains("no counter")||p.contains("main melody only")||p.contains("single lead"))plan.counterPolicy=3;
 
     const bool lowEnergy=p.contains("low energy")||p.contains("calm")
         ||p.contains("gentle")||p.contains("chill")||p.contains("restrained");
@@ -2050,11 +2053,8 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
     const bool tropical=p.contains("tropical");
     const bool mainstreamEdm=progressive||pop||trance||p.contains("festival")||p.contains("mainstage")
         ||p.contains("future rave")||(p.contains("edm")&&!tech&&!dnb);
-    const bool requestCounter=p.contains("counter melody")||p.contains("secondary lead")
-        ||p.contains("call and response")||p.contains("answer melody");
     const bool disableCounter=p.contains("no counter")||p.contains("no counter melody")
-        ||p.contains("main melody only")||p.contains("single lead")
-        ||(mainstreamEdm&&!requestCounter);
+        ||p.contains("main melody only")||p.contains("single lead");
 
     int architecture=plan.melodyArchetype%12;
     if(mainstreamEdm)
