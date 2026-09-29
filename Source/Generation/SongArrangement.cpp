@@ -1619,20 +1619,24 @@ void SongArrangement::addHarmony(uint64_t seed)
 
             const double chordLen=preDropGap?2.95:3.82;
             const int baseVel=juce::jlimit(48,104,58+(int)(section->energy*25.f));
-            addNote(chords,tones[0],beat,chordLen,baseVel);
-            addNote(chords,tones[1],beat,chordLen,juce::jmax(42,baseVel-4));
-            // Low-energy sections intentionally thin the chord stack; this is
-            // density, not merely a quieter copy of the exact same voicing.
-            if(section->energy>=.38f||bar%2==0)
+            // Chord density changes by attack rate, never by deleting one voice
+            // from a triad. The latter creates an isolated/non-chord-looking MIDI
+            // event and breaks the lane's harmonic role in the piano roll.
+            const bool chordAttack=section->energy>=.38f||bar%2==0;
+            if(chordAttack)
+            {
+                addNote(chords,tones[0],beat,chordLen,baseVel);
+                addNote(chords,tones[1],beat,chordLen,juce::jmax(42,baseVel-4));
                 addNote(chords,tones[2],beat,chordLen,juce::jmax(40,baseVel-6));
 
-            // Extensions are opt-in in mainstream song mode; default CHORDS is a
-            // visible triad, not four/five unrelated notes across octaves.
-            const bool wantsColour=productionPrompt.contains("7th chord")
-                ||productionPrompt.contains("extended chord")||productionPrompt.contains("jazz chord");
-            if(wantsColour&&h->extension>0)
-                addNote(chords,foldNear(tones[3],55,76,tones[2]+3),beat,chordLen,
-                        juce::jmax(36,baseVel-11));
+                // Extensions are opt-in in mainstream song mode; default CHORDS
+                // is a visible triad, not unrelated notes across octaves.
+                const bool wantsColour=productionPrompt.contains("7th chord")
+                    ||productionPrompt.contains("extended chord")||productionPrompt.contains("jazz chord");
+                if(wantsColour&&h->extension>0)
+                    addNote(chords,foldNear(tones[3],55,76,tones[2]+3),beat,chordLen,
+                            juce::jmax(36,baseVel-11));
+            }
 
             if(intro||verse||breakdown||(!drop&&section->energy<.48f))
             {
