@@ -130,6 +130,7 @@ private:
     std::array<juce::MidiBuffer,musicalLaneCount> songMidi;
     std::array<std::array<float,2>,musicalLaneCount> laneHpX{},laneHpY{};
     std::array<std::array<float,2>,musicalLaneCount> laneLpState{};
+    std::array<std::array<float,2>,musicalLaneCount> laneToneState{};
     std::array<float,2> masterHpX{},masterHpY{};
     std::vector<float> songDuckEnvelope;
     float songDuckState=0.f;

@@ -241,6 +241,20 @@ int main()
             if(p.currentSongBar()<bar)return fail("section seek playhead moved backwards");
         }
 
+        if(sr==48000.0)
+        {
+            float dropPeak=0.f,breakPeak=0.f;
+            double dropEnergy=0.0,breakEnergy=0.0;
+            p.startSongPreviewAtBar(dropBar);
+            if(renderSeconds(p,sr,.75,blockSize,dropPeak,dropEnergy)<0.0)
+                return fail("v2.9 drop energy render failed");
+            p.startSongPreviewAtBar(breakBar);
+            if(renderSeconds(p,sr,.75,blockSize,breakPeak,breakEnergy)<0.0)
+                return fail("v2.9 breakdown energy render failed");
+            if(dropEnergy<=breakEnergy*1.35)
+                return fail("v2.9 stored energy curve is not audible in preview");
+        }
+
         p.startSongPreviewAtBar(dropBar);
         {
             float pausePeak=0.f;double pauseEnergy=0.0;

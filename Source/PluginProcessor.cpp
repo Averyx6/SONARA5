@@ -638,6 +638,7 @@ void SonaraAudioProcessor::prepareToPlay(double sr, int bs)
     for (auto& x : laneHpX) x.fill(0.f);
     for (auto& y : laneHpY) y.fill(0.f);
     for (auto& x : laneLpState) x.fill(0.f);
+    for (auto& x : laneToneState) x.fill(0.f);
     masterHpX.fill(0.f); masterHpY.fill(0.f);
 }
 
@@ -1171,6 +1172,7 @@ void SonaraAudioProcessor::startSongPreviewAtBar(int bar)
     for(auto& x:laneHpX)x.fill(0.f);
     for(auto& y:laneHpY)y.fill(0.f);
     for(auto& x:laneLpState)x.fill(0.f);
+    for(auto& x:laneToneState)x.fill(0.f);
     masterHpX.fill(0.f);masterHpY.fill(0.f);
     if(songFxBus.getNumSamples()>0)songFxBus.clear();
     songFadeRemaining.store(128,std::memory_order_release);
@@ -1207,7 +1209,7 @@ void SonaraAudioProcessor::resumeSongPreview()
     if(lanes.size()>=4)drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
     drumSynth.reset();songReverb.reset();songDuckState=0.f;
     for(auto& e:songEngines)e.allNotesOff();
-    for(auto& x:laneHpX)x.fill(0.f);for(auto& y:laneHpY)y.fill(0.f);for(auto& x:laneLpState)x.fill(0.f);
+    for(auto& x:laneHpX)x.fill(0.f);for(auto& y:laneHpY)y.fill(0.f);for(auto& x:laneLpState)x.fill(0.f);for(auto& x:laneToneState)x.fill(0.f);
     masterHpX.fill(0.f);masterHpY.fill(0.f);
     songFadeRemaining.store(128,std::memory_order_release);
     songPlaying.store(true,std::memory_order_release);
@@ -1221,6 +1223,7 @@ void SonaraAudioProcessor::stopSongPreview()
     for(auto& x:laneHpX)x.fill(0.f);
     for(auto& y:laneHpY)y.fill(0.f);
     for(auto& x:laneLpState)x.fill(0.f);
+    for(auto& x:laneToneState)x.fill(0.f);
     masterHpX.fill(0.f);masterHpY.fill(0.f);
     songFadeRemaining.store(0,std::memory_order_release);
 }
@@ -1317,13 +1320,15 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
     const double blockBeat=(double)start/spb;
     const int blockBar=juce::jlimit(0,juce::jmax(0,a->getBars()-1),(int)std::floor(blockBeat/4.0));
     juce::String blockSection;
+    float sectionEnergy=.5f;
     for(const auto& s:a->getSections())
-        if(blockBar>=s.startBar&&blockBar<s.startBar+s.bars){blockSection=s.name;break;}
+        if(blockBar>=s.startBar&&blockBar<s.startBar+s.bars)
+        {blockSection=s.name;sectionEnergy=juce::jlimit(0.f,1.f,s.energy);break;}
     const bool mixIntro=blockSection=="INTRO";
     const bool mixVerse=blockSection=="VERSE";
     const bool mixBuild=blockSection.contains("BUILD");
     const bool mixChorus=blockSection=="CHORUS";
-    const bool mixDrop=blockSection=="DROP";
+    const bool mixDrop=blockSection.contains("DROP");
     const bool mixBreakdown=blockSection=="BREAKDOWN";
     const bool mixFinal=blockSection=="FINAL HOOK";
 
@@ -1427,12 +1432,31 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
             laneLpState[(size_t)i][1]=state;
         }
 
+        // The stored curve is audible: calmer sections are darker, while high
+        // energy opens the musical/FX lanes. One state per lane/channel keeps
+        // this allocation-free and makes fast section seeks click-safe.
+        if(i>=2)
+        {
+            const float toneHz=4800.f+14800.f*sectionEnergy;
+            const float toneRc=1.f/(juce::MathConstants<float>::twoPi*toneHz);
+            const float toneA=dt/(toneRc+dt);
+            for(int ch=0;ch<scratch.getNumChannels()&&ch<2;++ch)
+            {
+                auto* d=scratch.getWritePointer(ch);
+                float state=laneToneState[(size_t)i][(size_t)ch];
+                for(int s=0;s<renderSamples;++s){state+=toneA*(d[s]-state);d[s]=state;}
+                laneToneState[(size_t)i][(size_t)ch]=state;
+            }
+        }
+
         if(scratch.getNumChannels()>=2)
         {
             auto* l=scratch.getWritePointer(0);
             auto* r=scratch.getWritePointer(1);
             const float requestedWidth=juce::jlimit(0.f,1.5f,mix.width);
-            const float width=i==1?0.f:(i==0?juce::jmin(.25f,requestedWidth):requestedWidth);
+            const float energyWidth=.70f+.34f*sectionEnergy;
+            const float width=i==1?0.f:(i==0?juce::jmin(.25f,requestedWidth)
+                :requestedWidth*energyWidth);
             const float pan=juce::jlimit(-1.f,1.f,mix.pan);
             const float panL=pan>0.f?1.f-pan:1.f;
             const float panR=pan<0.f?1.f+pan:1.f;
@@ -1474,8 +1498,10 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
         else if(i==6) // COUNTER
             sectionGain=(mixDrop||mixFinal)?.72f:.42f;
 
-        const float mixedGain=laneGain[i]*sectionGain*mix.level;
-        const float sendGain=fxSend[i]*mix.fxSend;
+        const float energyGain=.84f+.20f*sectionEnergy;
+        const float mixedGain=laneGain[i]*sectionGain*energyGain*mix.level;
+        const float energySpace=.88f+.24f*(1.f-sectionEnergy);
+        const float sendGain=fxSend[i]*mix.fxSend*energySpace;
         for(int ch=0;ch<out.getNumChannels();++ch)
         {
             out.addFrom(ch,0,scratch,ch,0,renderSamples,mixedGain);
@@ -1488,8 +1514,9 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
     drumSynth.render(songDrumBus,drumTriggers.data(),drumCount);
     // Section-level drum contrast makes the DROP obvious even when it reuses
     // the song's hook identity. Builds pull back; drops/final hooks hit harder.
-    const float drumSectionGain=mixIntro?.46f:(mixVerse?.60f:(mixBuild?.64f:
-        (mixChorus?.68f:(mixDrop?.84f:(mixBreakdown?.48f:(mixFinal?.86f:.70f))))));
+    const float drumSectionGain=(mixIntro?.46f:(mixVerse?.60f:(mixBuild?.64f:
+        (mixChorus?.68f:(mixDrop?.84f:(mixBreakdown?.48f:(mixFinal?.86f:.70f)))))))
+        *(.84f+.20f*sectionEnergy);
     for(int ch=0;ch<out.getNumChannels();++ch)
         out.addFrom(ch,0,songDrumBus,ch,0,renderSamples,drumSectionGain);
 

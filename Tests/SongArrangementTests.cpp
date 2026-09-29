@@ -1132,6 +1132,70 @@ int main()
     if(chorusRoll>=7||adaptiveRoll<7)
     {std::cerr<<"v2.8 transition tension did not follow the actual DROP boundary\n";return 130;}
 
+    // v2.9: one persisted numeric curve must drive real arrangement decisions.
+    // Prompt energy widens/softens that curve, but both variants retain a clear
+    // drop-to-breakdown contrast instead of globally turning everything up/down.
+    sonara::SongArrangement lowEnergyPlan,highEnergyPlan;
+    lowEnergyPlan.generateComposition(
+        "progressive house 128 BPM C minor low energy calm restrained",128.0,0x290029ULL);
+    highEnergyPlan.generateComposition(
+        "progressive house 128 BPM C minor high energy energetic powerful",128.0,0x290029ULL);
+    const auto* lowEnergyDrop=sectionNamed(lowEnergyPlan,"DROP");
+    const auto* lowEnergyBreak=sectionNamed(lowEnergyPlan,"BREAKDOWN");
+    const auto* highEnergyDrop=sectionNamed(highEnergyPlan,"DROP");
+    const auto* highEnergyBreak=sectionNamed(highEnergyPlan,"BREAKDOWN");
+    if(!lowEnergyDrop||!lowEnergyBreak||!highEnergyDrop||!highEnergyBreak
+       ||lowEnergyDrop->energy-lowEnergyBreak->energy<.45f
+       ||highEnergyDrop->energy-highEnergyBreak->energy<.60f
+       ||highEnergyDrop->energy<lowEnergyDrop->energy+.10f)
+    {std::cerr<<"v2.9 prompt-aware energy curve is flat or non-functional\n";return 131;}
+
+    const auto* lowHats=findLane(lowEnergyPlan,"HATS");
+    const auto* highHats=findLane(highEnergyPlan,"HATS");
+    const auto* lowChords=findLane(lowEnergyPlan,"CHORDS");
+    const auto* highChords=findLane(highEnergyPlan,"CHORDS");
+    const auto* lowBass=findLane(lowEnergyPlan,"BASS");
+    const auto* highBass=findLane(highEnergyPlan,"BASS");
+    const auto* lowVerse=sectionNamed(lowEnergyPlan,"VERSE");
+    const auto* highVerse=sectionNamed(highEnergyPlan,"VERSE");
+    if(!lowHats||!highHats||!lowChords||!highChords||!lowBass||!highBass
+       ||!lowVerse||!highVerse
+       ||averageLaneNotes(*highHats,*highEnergyDrop)
+            <=averageLaneNotes(*lowHats,*lowEnergyDrop)+1.0
+       ||averageLaneNotes(*highChords,*highVerse)
+            <=averageLaneNotes(*lowChords,*lowVerse)
+       ||averageLaneNotes(*highBass,*highEnergyDrop)
+            <=averageLaneNotes(*highBass,*highEnergyBreak)+1.0)
+    {std::cerr<<"v2.9 energy targets do not control lane density/presence\n";return 132;}
+
+    auto transitionPeak=[](const sonara::SongArrangement& song,
+                           const sonara::ArrangementSection& arrival)
+    {
+        const auto* fx=findLane(song,"FX / TRANSITIONS");
+        if(!fx)return 0;
+        const double boundary=arrival.startBar*4.0;
+        int peak=0;
+        for(const auto& note:fx->notes)
+            if(note.beat>=boundary-2.01&&note.beat<boundary-.50
+               &&note.note>=74&&note.note<=81)peak=juce::jmax(peak,note.velocity);
+        return peak;
+    };
+    if(transitionPeak(highEnergyPlan,*highEnergyDrop)
+       <=transitionPeak(lowEnergyPlan,*lowEnergyDrop)+3)
+    {std::cerr<<"v2.9 transition strength ignored the shared energy plan\n";return 133;}
+
+    const auto energyTree=highEnergyPlan.toValueTree();
+    const auto energyDna=energyTree.getChildWithName("COMPOSITION_DNA");
+    const auto restoredEnergy=sonara::SongArrangement::fromValueTree(energyTree);
+    const auto restoredEnergyDna=restoredEnergy.toValueTree().getChildWithName("COMPOSITION_DNA");
+    if(!energyDna.hasProperty("energyContrast")||!energyDna.hasProperty("energyBias")
+       ||!energyDna.hasProperty("transitionIntensity")
+       ||energyDna.getProperty("energyContrast")!=restoredEnergyDna.getProperty("energyContrast")
+       ||energyDna.getProperty("energyBias")!=restoredEnergyDna.getProperty("energyBias")
+       ||energyDna.getProperty("transitionIntensity")!=restoredEnergyDna.getProperty("transitionIntensity")
+       ||restoredEnergy.getStructureFingerprint()!=highEnergyPlan.getStructureFingerprint())
+    {std::cerr<<"v2.9 energy plan/curve did not survive persistence\n";return 134;}
+
     // Same key/BPM/genre: variation must come from composition, not transposition.
     std::set<uint64_t> fixedHarmony,fixedMelody,fixedBass,fixedDrums,fixedPluck;
     for(uint64_t i=0;i<10;++i)

@@ -738,6 +738,30 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     plan.syncopation=.12f+.58f*random01(domains.melody,0x1013);
     plan.restAmount=.08f+.30f*random01(domains.melody,0x1014);
     plan.development=.30f+.62f*random01(domains.melody,0x1015);
+    // v2.9 energy is planned before any lane renders. A little seed variation
+    // keeps songs from sharing an identical contour, while explicit intent can
+    // widen or soften the complete curve without flattening section roles.
+    plan.energyContrast=.94f+.12f*random01(domains.structure,0x1016);
+    plan.energyBias=-.015f+.03f*random01(domains.structure,0x1017);
+    plan.transitionIntensity=.92f+.16f*random01(domains.fx,0x1018);
+
+    const bool lowEnergy=p.contains("low energy")||p.contains("calm")
+        ||p.contains("gentle")||p.contains("chill")||p.contains("restrained");
+    const bool highEnergy=p.contains("high energy")||p.contains("energetic")
+        ||p.contains("powerful")||p.contains("aggressive")||p.contains("huge")
+        ||p.contains("massive")||p.contains("festival")||p.contains("mainstage");
+    if(lowEnergy)
+    {
+        plan.energyContrast=juce::jmin(plan.energyContrast,.82f);
+        plan.energyBias=juce::jmin(plan.energyBias,-.055f);
+        plan.transitionIntensity=juce::jmin(plan.transitionIntensity,.78f);
+    }
+    if(highEnergy)
+    {
+        plan.energyContrast=juce::jmax(plan.energyContrast,1.10f);
+        plan.energyBias=juce::jmax(plan.energyBias,.035f);
+        plan.transitionIntensity=juce::jmax(plan.transitionIntensity,1.12f);
+    }
 
     if(p.contains("minimal")){plan.density*=.62f;plan.restAmount=juce::jmax(plan.restAmount,.30f);}
     if(p.contains("complex")){plan.density=juce::jmin(1.f,plan.density+.18f);plan.development=juce::jmax(plan.development,.72f);}
@@ -971,18 +995,19 @@ void SongArrangement::buildSections(uint64_t seed)
         }
     }
 
-    auto energyFor=[](const juce::String& name)
+    auto energyFor=[&](const juce::String& name)
     {
-        if(name.contains("INTRO"))return .18f;
-        if(name.contains("BREAKDOWN"))return .30f;
-        if(name.contains("VERSE"))return .40f;
-        if(name.contains("BUILD 2"))return .84f;
-        if(name.contains("BUILD"))return .68f;
-        if(name.contains("CHORUS"))return .80f;
-        if(name.contains("FINAL"))return 1.00f;
-        if(name.contains("DROP 2"))return 1.00f;
-        if(name.contains("DROP"))return .98f;
-        return .50f;
+        float base=.50f;
+        if(name.contains("INTRO"))base=.18f;
+        else if(name.contains("BREAKDOWN"))base=.30f;
+        else if(name.contains("VERSE"))base=.40f;
+        else if(name.contains("BUILD 2"))base=.84f;
+        else if(name.contains("BUILD"))base=.68f;
+        else if(name.contains("CHORUS"))base=.80f;
+        else if(name.contains("FINAL"))base=1.00f;
+        else if(name.contains("DROP 2"))base=1.00f;
+        else if(name.contains("DROP"))base=.98f;
+        return juce::jlimit(.08f,1.f,.5f+(base-.5f)*plan.energyContrast+plan.energyBias);
     };
 
     sections.clear();
@@ -1296,6 +1321,7 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
         const double b=bar*beatsPerBar;
         const uint64_t bs=(uint64_t)bar*97ULL;
 
+        const int energyVelocity=(int)std::llround((energy-.5f)*18.f);
         if(!breakdown && (!intro || bar-section->startBar>=juce::jmax(1,section->bars/2)))
         {
             if(dnb)
@@ -1312,7 +1338,8 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
                     if((!intro || q==0 || q==2 || bar-section->startBar>=section->bars-2)
                        && !(preDropGap&&q==3))
                         addNote(kick,36,b+q,.11,
-                                drop?123:(chorus?116:(build?111:105+(q==0?5:0))));
+                                juce::jlimit(48,127,
+                                    (drop?123:(chorus?116:(build?111:105+(q==0?5:0))))+energyVelocity));
                 if(!preDropGap&&(drop||build||chorus) && ((bar+groove)%4==3))
                     addNote(kick,36,b+3.5,.08,88+(int)(random01(seed,1020+bs)*20.f));
                 if(drop && !tech && groove%3==2 && bar%2==0)
@@ -1369,12 +1396,15 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
         else if(drop)hatSteps=(trance||festival||hatMode>=2)?16:8;
         else if(chorus)hatSteps=8;
         else if(intro)hatSteps=localBar>=juce::jmax(1,section->bars-2)?8:4;
-        else if(energetic)hatSteps=8;
+        else if(energy>=.58f||energetic)hatSteps=8;
+        if(drop&&energy<.86f)hatSteps=juce::jmin(hatSteps,8);
+        if(energy>=.88f&&!intro&&!breakdown)hatSteps=juce::jmax(hatSteps,12);
         for(int h=0;h<hatSteps;++h)
         {
             const int quarter=juce::jmax(1,hatSteps/4);
             const bool strong=(h%quarter==0);
             float skip=breakdown?.58f:(intro?.28f:(drop?.05f:(chorus?.09f:(build?.12f:.18f))));
+            skip=juce::jlimit(.02f,.76f,skip+(.5f-energy)*.36f);
             if(!strong && random01(seed,1300+bs+h)<skip) continue;
             double beat=b+h*(4.0/hatSteps);
             if(h%2==1) beat+=swing*(hatMode==1?1.0:.55);
@@ -1382,7 +1412,8 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             bool open=(drop||chorus) && ((h+groove)%8==3 || (hatMode>=2 && h%8==7));
             if(house&&hatSteps==8)open=(h%2==1)&&((h+bar+groove)%4==1);
             const int sectionLift=drop?10:(chorus?6:(build?4:(breakdown?-8:0)));
-            const int vel=juce::jlimit(30,114,44+sectionLift+(strong?15:0)+(int)(random01(seed,1400+bs+h)*28.f));
+            const int vel=juce::jlimit(30,118,44+sectionLift+energyVelocity
+                +(strong?15:0)+(int)(random01(seed,1400+bs+h)*28.f));
             addNote(hats,open?46:42,beat,.045+(open?.10:0.0),vel);
         }
 
@@ -1396,7 +1427,7 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
                         (sectionName.contains("FINAL")||sectionName.contains("HOOK"))?121:114);
         }
 
-        if(drop||chorus)
+        if((drop||chorus)&&energy>=.60f)
         {
             if(house)
             {
@@ -1590,7 +1621,10 @@ void SongArrangement::addHarmony(uint64_t seed)
             const int baseVel=juce::jlimit(48,104,58+(int)(section->energy*25.f));
             addNote(chords,tones[0],beat,chordLen,baseVel);
             addNote(chords,tones[1],beat,chordLen,juce::jmax(42,baseVel-4));
-            addNote(chords,tones[2],beat,chordLen,juce::jmax(40,baseVel-6));
+            // Low-energy sections intentionally thin the chord stack; this is
+            // density, not merely a quieter copy of the exact same voicing.
+            if(section->energy>=.38f||bar%2==0)
+                addNote(chords,tones[2],beat,chordLen,juce::jmax(40,baseVel-6));
 
             // Extensions are opt-in in mainstream song mode; default CHORDS is a
             // visible triad, not four/five unrelated notes across octaves.
@@ -1600,7 +1634,7 @@ void SongArrangement::addHarmony(uint64_t seed)
                 addNote(chords,foldNear(tones[3],55,76,tones[2]+3),beat,chordLen,
                         juce::jmax(36,baseVel-11));
 
-            if(intro||verse||breakdown)
+            if(intro||verse||breakdown||(!drop&&section->energy<.48f))
             {
                 // PAD is two slow upper voices, same harmony, same bar.
                 const int padA=foldNear(tones[1],57,74,64);
@@ -1647,6 +1681,8 @@ void SongArrangement::addHarmony(uint64_t seed)
             repeats=(chordMode==0?1:(chordMode==1?2:(chordMode==2?4:2)));
         else if(build)
             repeats=chordMode>=3?2:1;
+        if(energy<.38f)repeats=1;
+        else if(energy>.86f&&chordMode>=2)repeats=juce::jmax(repeats,2);
         if(mainstreamSong)
         {
             // One harmonic event = one visible chord block. Rhythm belongs to
@@ -1762,6 +1798,8 @@ void SongArrangement::addHarmony(uint64_t seed)
             if(breakdown)count=(localBar%2==0)?juce::jmin(count,1):0;
             if(intro)count=juce::jmin(count,2);
             if(sparseLowEnd)count=juce::jmin(count,2);
+            if(energy<.34f)count=juce::jmin(count,1);
+            else if(energy<.52f)count=juce::jmin(count,juce::jmax(1,patternSize-2));
 
             for(int i=0;i<count;++i)
             {
@@ -1810,9 +1848,10 @@ void SongArrangement::addHarmony(uint64_t seed)
             int subCount=1;
             double positions[2]={0.16,2.16};
             if((dnbBass||techBass)&&(drop||chorus||finalHook))subCount=2;
-            if(breakdown)subCount=(localBar%2==0)?1:0;
+            if(breakdown)subCount=(localBar%2==0&&energy>=.24f)?1:0;
             if(build&&localBar<section->bars/2)subCount=0;
             if(sparseLowEnd||mainstreamSong||houseBass)subCount=juce::jmin(subCount,1);
+            if(energy<.20f)subCount=0;
 
             for(int i=0;i<subCount;++i)
             {
@@ -1994,11 +2033,12 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         // v1.3 section roles: the main melody is deliberately absent in places.
         // Silence is part of the arrangement, so the chorus/drop hook feels like
         // an arrival instead of one continuous intro loop.
-        bool active=true;
-        if(intro)active=localBar>=juce::jmax(0,section->bars-2);       // 2-bar teaser only
-        else if(verse)active=(localBar%4!=2);                          // 3-bar phrase + one breathing bar
-        else if(build)active=localBar>=juce::jmax(1,section->bars/2);  // melody enters only in second half
-        else if(breakdown)active=(localBar%4==0||localBar%4==2);       // sparse replies
+        bool active=energy>=.17f;
+        if(intro)active=active&&localBar>=juce::jmax(0,section->bars-2); // 2-bar teaser only
+        else if(verse)active=active&&(localBar%4!=2);                    // 3-bar phrase + one breathing bar
+        else if(build)active=active&&localBar>=juce::jmax(1,section->bars/2); // second half
+        else if(breakdown)active=active&&energy>=.26f
+            &&(localBar%4==0||localBar%4==2);                            // sparse replies
         if(!active)continue;
 
         const int phraseBars=(chorus||drop||finalHook)?4:juce::jmax(2,plan.phraseBars);
@@ -2702,6 +2742,8 @@ void SongArrangement::addFx(uint64_t seed)
         const double boundary=s.startBar*beatsPerBar;
         const float previousEnergy=previous.energy;
         const float energyDelta=s.energy-previousEnergy;
+        const float transitionStrength=juce::jlimit(.55f,1.35f,
+            plan.transitionIntensity*(.72f+.38f*juce::jmax(s.energy,std::abs(energyDelta))));
         const bool dropArrival=s.name.contains("DROP")||s.name.contains("FINAL")
             ||s.name.contains("HOOK");
         const bool chorusArrival=s.name.contains("CHORUS");
@@ -2721,11 +2763,13 @@ void SongArrangement::addFx(uint64_t seed)
                 leadIn=festival?8.0:(style==0?4.0:style==1?6.0:style==2?3.0:5.0);
             if(minimal)leadIn=juce::jmin(leadIn,dropArrival?4.0:2.0);
             if(cinematic)leadIn=juce::jmin(8.0,leadIn+2.0);
+            leadIn=juce::jmin(8.0,leadIn*transitionStrength);
             leadIn=juce::jmin(leadIn,(double)previous.bars*beatsPerBar);
 
             const int riserNote=82+(int)(random01(seed,810+i)*8.f);
             const int riserVelocity=juce::jlimit(52,122,
-                58+(int)(s.energy*39.f)+(dropArrival?12:(chorusArrival?6:0))
+                52+(int)(s.energy*39.f)+(int)(transitionStrength*8.f)
+                +(dropArrival?12:(chorusArrival?6:0))
                 +(int)(random01(seed,820+i)*5.f));
             addNote(fx,riserNote,juce::jmax(0.0,boundary-leadIn),
                     juce::jmax(.35,leadIn-.10),riserVelocity);
@@ -2735,9 +2779,10 @@ void SongArrangement::addFx(uint64_t seed)
             if(majorArrival)
             {
                 const int tensionBase=74+(style%2);
-                addNote(fx,tensionBase,  juce::jmax(0.0,boundary-2.00),.24,66+(dropArrival?8:0));
-                addNote(fx,tensionBase+3,juce::jmax(0.0,boundary-1.25),.20,76+(dropArrival?9:0));
-                addNote(fx,tensionBase+6,juce::jmax(0.0,boundary-.75), .16,88+(dropArrival?10:0));
+                const int transitionLift=(int)std::llround((transitionStrength-1.f)*18.f);
+                addNote(fx,tensionBase,  juce::jmax(0.0,boundary-2.00),.24,juce::jlimit(48,122,66+(dropArrival?8:0)+transitionLift));
+                addNote(fx,tensionBase+3,juce::jmax(0.0,boundary-1.25),.20,juce::jlimit(48,124,76+(dropArrival?9:0)+transitionLift));
+                addNote(fx,tensionBase+6,juce::jmax(0.0,boundary-.75), .16,juce::jlimit(48,126,88+(dropArrival?10:0)+transitionLift));
 
                 // Reverse/suck ends before the boundary so the final instant is
                 // real air rather than an FX tail smeared over the downbeat.
@@ -2832,6 +2877,7 @@ juce::ValueTree SongArrangement::toValueTree() const
     songPlan.setProperty("bassMode",plan.bassMode,nullptr);songPlan.setProperty("chordMode",plan.chordMode,nullptr);songPlan.setProperty("arpMode",plan.arpMode,nullptr);
     songPlan.setProperty("melodyArchetype",plan.melodyArchetype,nullptr);songPlan.setProperty("rhythmFamily",plan.rhythmFamily,nullptr);songPlan.setProperty("startingDegree",plan.startingDegree,nullptr);
     songPlan.setProperty("cadenceStyle",plan.cadenceStyle,nullptr);songPlan.setProperty("motifLength",plan.motifLength,nullptr);songPlan.setProperty("phraseBars",plan.phraseBars,nullptr);songPlan.setProperty("octaveRange",plan.octaveRange,nullptr);
+    songPlan.setProperty("energyContrast",plan.energyContrast,nullptr);songPlan.setProperty("energyBias",plan.energyBias,nullptr);songPlan.setProperty("transitionIntensity",plan.transitionIntensity,nullptr);
     songPlan.setProperty("density",plan.density,nullptr);songPlan.setProperty("syncopation",plan.syncopation,nullptr);songPlan.setProperty("restAmount",plan.restAmount,nullptr);songPlan.setProperty("development",plan.development,nullptr);
     root.addChild(songPlan,-1,nullptr);
 
@@ -2879,6 +2925,7 @@ SongArrangement SongArrangement::fromValueTree(const juce::ValueTree& root)
         a.plan.bassMode=(int)composition.getProperty("bassMode",0);a.plan.chordMode=(int)composition.getProperty("chordMode",0);a.plan.arpMode=(int)composition.getProperty("arpMode",0);
         a.plan.melodyArchetype=(int)composition.getProperty("melodyArchetype",0);a.plan.rhythmFamily=(int)composition.getProperty("rhythmFamily",0);a.plan.startingDegree=(int)composition.getProperty("startingDegree",0);
         a.plan.cadenceStyle=(int)composition.getProperty("cadenceStyle",0);a.plan.motifLength=(int)composition.getProperty("motifLength",8);a.plan.phraseBars=(int)composition.getProperty("phraseBars",4);a.plan.octaveRange=(int)composition.getProperty("octaveRange",2);
+        a.plan.energyContrast=juce::jlimit(.5f,1.5f,(float)composition.getProperty("energyContrast",1.f));a.plan.energyBias=juce::jlimit(-.25f,.25f,(float)composition.getProperty("energyBias",0.f));a.plan.transitionIntensity=juce::jlimit(.4f,1.6f,(float)composition.getProperty("transitionIntensity",1.f));
         a.plan.density=(float)composition.getProperty("density",.65f);a.plan.syncopation=(float)composition.getProperty("syncopation",.35f);a.plan.restAmount=(float)composition.getProperty("restAmount",.18f);a.plan.development=(float)composition.getProperty("development",.55f);
     }
     auto harmony=root.getChildWithName("HARMONY_DNA");

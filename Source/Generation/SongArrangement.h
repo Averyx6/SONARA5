@@ -85,6 +85,9 @@ private:
         int motifLength=8;
         int phraseBars=4;
         int octaveRange=2;
+        float energyContrast=1.f;
+        float energyBias=0.f;
+        float transitionIntensity=1.f;
         float density=.65f;
         float syncopation=.35f;
         float restAmount=.18f;
