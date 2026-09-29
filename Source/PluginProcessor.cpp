@@ -239,6 +239,35 @@ float flatFingerprintSimilarity(const std::vector<int>& a,const std::vector<int>
     return juce::jlimit(0.f,1.f,((exact+.30f*near)/(float)n)*(.82f+.18f*countRatio));
 }
 
+float harmonyFingerprintSimilarity(const std::vector<int>& a,const std::vector<int>& b)
+{
+    if(a.size()<5||b.size()<5)return flatFingerprintSimilarity(a,b);
+    const int an=juce::jlimit(1,8,a[0]),bn=juce::jlimit(1,8,b[0]);
+    if((int)a.size()<2+an*3||(int)b.size()<2+bn*3)
+        return flatFingerprintSimilarity(a,b);
+
+    const int n=juce::jmin(an,bn);
+    float main=0.f,alternate=0.f,rhythm=0.f;
+    for(int i=0;i<n;++i)
+    {
+        const int ai=2+i*3,bi=2+i*3;
+        if(a[(size_t)ai]==b[(size_t)bi])main+=1.f;
+        if(a[(size_t)ai+1]==b[(size_t)bi+1])alternate+=1.f;
+        if(std::abs(a[(size_t)ai+2]-b[(size_t)bi+2])<=1)rhythm+=1.f;
+    }
+    main/=(float)n;alternate/=(float)n;rhythm/=(float)n;
+    const float countRatio=(float)n/(float)juce::jmax(an,bn);
+    const float cadence=a[1]==b[1]?1.f:0.f;
+
+    // Voicing, inversions and section timing may develop a progression, but they
+    // cannot disguise a recycled normalized root loop. Exact main degrees alone
+    // reach the hard .86 identity boundary; related harmony remains available via
+    // one controlled functional substitution.
+    const float progressionIdentity=(main*.86f+alternate*.05f+rhythm*.05f+cadence*.04f)
+                                    *(.84f+.16f*countRatio);
+    return juce::jlimit(0.f,1.f,juce::jmax(flatFingerprintSimilarity(a,b),progressionIdentity));
+}
+
 float harmonyQualityScore(const sonara::SongArrangement& song)
 {
     const auto progression=song.getProgressionFingerprint();
@@ -255,7 +284,10 @@ float harmonyQualityScore(const sonara::SongArrangement& song)
     const float variety=n<=2?1.f:juce::jlimit(0.f,1.f,(float)unique/(float)juce::jmin(n,5));
     const float repetition=1.f-(float)consecutiveRepeats/(float)juce::jmax(1,n-1);
     const bool tonalCentre=used[0];
-    return juce::jlimit(0.f,1.f,.42f*variety+.34f*repetition+.24f*(tonalCentre?1.f:.55f));
+    const int finalDegree=juce::jlimit(0,6,progression[(size_t)(2+(n-1)*3)]);
+    const bool functionalTurnaround=finalDegree==3||finalDegree==4||finalDegree==6;
+    return juce::jlimit(0.f,1.f,.35f*variety+.27f*repetition
+                        +.20f*(tonalCentre?1.f:.55f)+.18f*(functionalTurnaround?1.f:.35f));
 }
 
 
@@ -839,7 +871,10 @@ void SonaraAudioProcessor::generateTrack(const juce::String& prompt)
             rhythmSim=juce::jmax(rhythmSim,melodyRhythmSimilarity(historic,fingerprint));
         }
 
-        const float harmonySim=maxFlatSimilarity(harmony,previousHarmony,harmonyHistory);
+        float harmonySim=previousHarmony.empty()?0.f:
+            harmonyFingerprintSimilarity(previousHarmony,harmony);
+        for(const auto& historic:harmonyHistory)
+            harmonySim=juce::jmax(harmonySim,harmonyFingerprintSimilarity(historic,harmony));
         const float bassSim=maxFlatSimilarity(bass,previousBass,bassHistory);
         const float drumSim=maxFlatSimilarity(drums,previousDrums,drumHistory);
         const float pluckSim=maxFlatSimilarity(pluck,previousPluck,pluckHistory);

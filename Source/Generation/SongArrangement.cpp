@@ -3,6 +3,7 @@
 #include <cmath>
 #include <algorithm>
 #include <array>
+#include <initializer_list>
 
 namespace sonara {
 namespace {
@@ -92,8 +93,11 @@ std::array<int,4> SongArrangement::chordTonesFor(const HarmonyEvent& event) cons
     int third=root+(scaleSemitoneForDegree(d+2)-scaleSemitoneForDegree(d));
     const int fifth=root+(scaleSemitoneForDegree(d+4)-scaleSemitoneForDegree(d));
 
-    // A borrowed dominant in minor raises the third, providing real dominant tension.
+    // Harmonic-minor V and borrowed minor iv are the two mainstream-safe modal
+    // colours. Other borrowed qualities stay out until a later harmony system can
+    // represent their altered roots explicitly.
     if(event.borrowed&&minor&&d==4)third=root+4;
+    else if(event.borrowed&&!minor&&d==3)third=root+3;
 
     int fourth=root+(scaleSemitoneForDegree(d+6)-scaleSemitoneForDegree(d)); // diatonic seventh
     if(event.extension==2)fourth=root+14;      // add9
@@ -127,27 +131,13 @@ void SongArrangement::buildHarmonyPlan(uint64_t seed)
     const bool cinematic=p.contains("cinematic")||p.contains("film");
     const bool pop=p.contains("pop")||p.contains("radio");
     const bool progressive=p.contains("progressive")||p.contains("melodic house");
+    const bool futureRave=p.contains("future rave")||p.contains("mainstage")||p.contains("festival");
+    const bool electro=p.contains("electro house")||p.contains("big room");
+    const bool trance=p.contains("trance");
+    const bool dnb=p.contains("drum and bass")||p.contains("dnb");
     const bool dreamy=p.contains("dreamy");
     const bool aggressive=p.contains("aggressive")||p.contains("powerful")||p.contains("hard");
     const bool uplifting=p.contains("uplifting")||p.contains("bright");
-
-    // Progression length is a musical decision, not a fixed four-chord template.
-    if(tech)
-        harmonyPlan.progressionLength=random01(seed,0x3101)>.72f?3:2;
-    else if(cinematic)
-        harmonyPlan.progressionLength=random01(seed,0x3102)>.42f?8:6;
-    else if(progressive)
-    {
-        const float r=random01(seed,0x3103);
-        harmonyPlan.progressionLength=r<.18f?3:(r<.60f?4:(r<.83f?6:8));
-    }
-    else if(pop)
-        harmonyPlan.progressionLength=random01(seed,0x3104)>.78f?6:4;
-    else
-    {
-        static constexpr int lengths[5]={2,3,4,6,8};
-        harmonyPlan.progressionLength=lengths[(int)(random01(seed,0x3105)*5.f)%5];
-    }
 
     harmonyPlan.cadenceStyle=(int)(random01(seed,0x3110)*4.f)%4;
     harmonyPlan.rhythmMode=(int)(random01(seed,0x3111)*6.f)%6;
@@ -163,57 +153,166 @@ void SongArrangement::buildHarmonyPlan(uint64_t seed)
     if(dreamy){harmonyPlan.extensionProbability=juce::jmax(harmonyPlan.extensionProbability,.28f);harmonyPlan.suspensionProbability=juce::jmax(harmonyPlan.suspensionProbability,.24f);}
     if(aggressive){harmonyPlan.extensionProbability*=.45f;harmonyPlan.tension=juce::jmax(harmonyPlan.tension,.58f);}
     if(uplifting)harmonyPlan.cadenceStyle=0;
+    if(p.contains("simple chords")||p.contains("clean chords"))
+    {
+        harmonyPlan.extensionProbability=0.f;
+        harmonyPlan.suspensionProbability=0.f;
+        harmonyPlan.borrowedProbability=0.f;
+    }
+    if(p.contains("7th chord")||p.contains("extended chord"))
+        harmonyPlan.extensionProbability=juce::jmax(harmonyPlan.extensionProbability,.68f);
+    if(p.contains("suspended chord")||p.contains("sus chord"))
+        harmonyPlan.suspensionProbability=juce::jmax(harmonyPlan.suspensionProbability,.58f);
+    if(p.contains("borrowed chord")||p.contains("modal interchange"))
+        harmonyPlan.borrowedProbability=juce::jmax(harmonyPlan.borrowedProbability,.62f);
 
-    // Build progression from functional scale-degree families. This produces many
-    // normalized progressions rather than selecting one of eight fixed loops.
-    const int n=harmonyPlan.progressionLength;
+    // v2.4 starts from a genre-aware functional progression family. Variation is
+    // made with controlled substitutions below, not by drawing unrelated degrees
+    // from a bag. Scale-degree representation keeps every family key invariant.
     harmonyPlan.mainDegrees.fill(0);
     harmonyPlan.alternateDegrees.fill(0);
-
-    int first=0;
-    if(pop&&random01(seed,0x3120)>.78f)first=5;          // vi start in major/pop
-    if(minor&&random01(seed,0x3121)>.88f)first=5;       // VI opening
-    harmonyPlan.mainDegrees[0]=first;
-
-    for(int i=1;i<n;++i)
+    auto setProgression=[&](std::initializer_list<int> degrees)
     {
-        const bool final=i==n-1;
-        int candidates[7]={0,5,2,6,3,4,1};
-        int candidateCount=7;
+        harmonyPlan.progressionLength=juce::jlimit(2,8,(int)degrees.size());
+        int i=0;for(const int degree:degrees)
+            if(i<harmonyPlan.progressionLength)harmonyPlan.mainDegrees[(size_t)i++]=juce::jlimit(0,6,degree);
+    };
 
-        if(tech)
+    const int variant=(int)(random01(seed,0x3100)*8.f)%8;
+    if(tech)
+    {
+        switch(variant%4)
         {
-            int techPool[4]={0,5,6,3};
-            const int pick=(int)(random01(seed,0x3130+i)*4.f)%4;
-            harmonyPlan.mainDegrees[(size_t)i]=techPool[pick];
+            case 0:setProgression({0,5});break;
+            case 1:setProgression({0,6});break;
+            case 2:setProgression({0,3});break;
+            default:setProgression({0,5,6});break;
         }
-        else if(final)
+    }
+    else if(cinematic)
+    {
+        switch(variant%4)
         {
-            // End loops with dominant/leading/pre-dominant tension often enough
-            // to create a meaningful return to the first chord.
-            const float r=random01(seed,0x3140+i);
-            harmonyPlan.mainDegrees[(size_t)i]=r<.48f?4:(r<.82f?6:3);
+            case 0:setProgression({0,5,2,6,0,3});break;
+            case 1:setProgression({0,3,5,4,0,6,3,4});break;
+            case 2:setProgression({5,2,0,6,3,4});break;
+            default:setProgression({0,6,5,3,0,2,3,4});break;
         }
-        else
+    }
+    else if(dnb)
+    {
+        switch(variant%4)
         {
-            const int prev=harmonyPlan.mainDegrees[(size_t)i-1];
-            int pick=(int)(random01(seed,0x3150+i*17)*candidateCount)%candidateCount;
-            int d=candidates[pick];
-            if(d==prev)d=candidates[(pick+2+(i%3))%candidateCount];
-            if(i==1&&d==0)d=minor?5:3;
-            harmonyPlan.mainDegrees[(size_t)i]=d;
+            case 0:setProgression({0,5,3,6});break;
+            case 1:setProgression({0,3,6,5});break;
+            case 2:setProgression({5,0,4,3});break;
+            default:setProgression({0,6,3,4});break;
+        }
+    }
+    else if(trance)
+    {
+        switch(variant%4)
+        {
+            case 0:setProgression({0,5,3,4});break;
+            case 1:setProgression({5,3,0,4});break;
+            case 2:setProgression({0,3,5,4});break;
+            default:setProgression({0,5,2,3,0,6,5,4});break;
+        }
+    }
+    else if(futureRave||electro)
+    {
+        switch(variant%4)
+        {
+            case 0:setProgression({0,5,3,4});break;
+            case 1:setProgression({0,3,5,4});break;
+            case 2:setProgression({5,0,3,4});break;
+            default:setProgression({0,6,5,4});break;
+        }
+    }
+    else if(progressive)
+    {
+        switch(variant%6)
+        {
+            case 0:setProgression({0,5,2,6});break;
+            case 1:setProgression({0,3,5,4});break;
+            case 2:setProgression({5,3,0,4});break;
+            case 3:setProgression({0,6,5,3});break;
+            case 4:setProgression({0,2,5,4,0,3});break;
+            default:setProgression({0,5,3,6,0,2,3,4});break;
+        }
+    }
+    else if(pop)
+    {
+        switch(variant%5)
+        {
+            case 0:setProgression({0,4,5,3});break;
+            case 1:setProgression({5,3,0,4});break;
+            case 2:setProgression({0,5,3,4});break;
+            case 3:setProgression({0,3,4,5});break;
+            default:setProgression({5,3,0,4,5,4});break;
+        }
+    }
+    else
+    {
+        // Generic EDM still follows tonic -> departure -> predominant/dominant
+        // function, with enough seed variation to avoid a hidden fixed loop.
+        switch(variant%5)
+        {
+            case 0:setProgression({0,5,3,4});break;
+            case 1:setProgression({0,2,5,4});break;
+            case 2:setProgression({0,6,3,4});break;
+            case 3:setProgression({5,3,0,4});break;
+            default:setProgression({0,5,2,6,3,4});break;
         }
     }
 
-    // Alternate progression is related but not a rotation/copy.
+    const int n=harmonyPlan.progressionLength;
+
+    if(!tech&&n>1)
+    {
+        // Cadence style changes the loop's actual harmonic destination: dominant,
+        // leading-tone tension, plagal return, or dominant with a deceptive colour
+        // in the related chorus sequence.
+        const int ending=harmonyPlan.cadenceStyle==1?6:
+                         (harmonyPlan.cadenceStyle==2?3:4);
+        harmonyPlan.mainDegrees[(size_t)n-1]=ending;
+    }
+
+    // Give template families many identities without destroying their function.
+    // Only interior tonic/predominant substitutions are allowed; the turnaround
+    // is preserved so the loop still resolves intentionally.
+    if(n>=4&&random01(seed,0x3150)<.72f)
+    {
+        const int position=1+(int)(random01(seed,0x3151)*(float)(n-2))%(n-2);
+        const int d=harmonyPlan.mainDegrees[(size_t)position];
+        static constexpr int substitutes[7]={5,3,5,1,6,3,4};
+        static constexpr int secondChoice[7]={2,5,3,5,6,1,3};
+        int replacement=substitutes[d];
+        if(replacement==harmonyPlan.mainDegrees[(size_t)position-1]
+           ||replacement==harmonyPlan.mainDegrees[(size_t)position+1])
+            replacement=secondChoice[d];
+        if(replacement!=harmonyPlan.mainDegrees[(size_t)position-1]
+           &&replacement!=harmonyPlan.mainDegrees[(size_t)position+1])
+            harmonyPlan.mainDegrees[(size_t)position]=replacement;
+    }
+    if(n>=5&&random01(seed,0x3152)<harmonyPlan.passingProbability)
+    {
+        const int target=harmonyPlan.mainDegrees[(size_t)n-1];
+        harmonyPlan.mainDegrees[(size_t)n-2]=(target+(random01(seed,0x3153)<.5f?6:1))%7;
+    }
+
+    // Alternate progression remains recognisably related for chorus/final-hook
+    // development, but uses functional substitutes instead of random offsets.
     for(int i=0;i<n;++i)
     {
         int d=harmonyPlan.mainDegrees[(size_t)i];
         const float r=random01(seed,0x3200+i*23);
-        if(i==0&&r<.55f)d=0;
-        else if(r<.30f)d=(d+2)%7;
-        else if(r<.56f)d=(d+4)%7;
-        else if(r<.72f)d=(d+6)%7;
+        if(i==0)d=(r<.72f?0:d);
+        else if(i<n-1&&r<.42f)
+        {
+            static constexpr int substitutes[7]={5,3,5,1,6,3,4};
+            d=substitutes[d];
+        }
         harmonyPlan.alternateDegrees[(size_t)i]=d;
     }
     bool same=true;
@@ -245,6 +344,10 @@ void SongArrangement::buildHarmonyTimeline(uint64_t seed)
 {
     harmonyEvents.clear();
     const int n=juce::jmax(1,harmonyPlan.progressionLength);
+    const auto prompt=sourcePrompt.toLowerCase();
+    const bool explicitBorrowed=prompt.contains("borrowed chord")||prompt.contains("modal interchange");
+    const bool explicitExtended=prompt.contains("7th chord")||prompt.contains("extended chord");
+    bool placedBorrowedColour=false,placedExtendedColour=false;
 
     for(size_t si=0;si<sections.size();++si)
     {
@@ -293,13 +396,23 @@ void SongArrangement::buildHarmonyTimeline(uint64_t seed)
             event.inversion=harmonyPlan.inversions[(size_t)(step%8)];
             event.voicingStyle=harmonyPlan.voicingStyles[(size_t)(step%8)];
             event.sectionIndex=(int)si;
-            event.borrowed=minor&&event.scaleDegree==4&&random01(seed,0x4200+(uint64_t)harmonyEvents.size())<harmonyPlan.borrowedProbability;
+            const bool borrowedCandidate=(minor&&event.scaleDegree==4)
+                                      ||(!minor&&event.scaleDegree==3);
+            event.borrowed=borrowedCandidate
+                &&((explicitBorrowed&&!placedBorrowedColour)
+                   ||random01(seed,0x4200+(uint64_t)harmonyEvents.size())<harmonyPlan.borrowedProbability);
+            placedBorrowedColour|=event.borrowed;
 
             const float ext=random01(seed,0x4300+(uint64_t)harmonyEvents.size());
-            if(ext<harmonyPlan.suspensionProbability)
+            const int nextDegree=sequence[(size_t)((step+1)%n)];
+            const bool suspensionResolves=nextDegree==0||nextDegree==3||nextDegree==4;
+            if(explicitExtended&&!placedExtendedColour&&(chorus||breakdown))
+                event.extension=random01(seed,0x4301+(uint64_t)harmonyEvents.size())>.5f?1:2;
+            else if(suspensionResolves&&ext<harmonyPlan.suspensionProbability)
                 event.extension=random01(seed,0x4310+(uint64_t)harmonyEvents.size())>.5f?3:4;
             else if(ext<harmonyPlan.suspensionProbability+harmonyPlan.extensionProbability)
                 event.extension=random01(seed,0x4320+(uint64_t)harmonyEvents.size())>.5f?1:2;
+            placedExtendedColour|=event.extension==1||event.extension==2;
 
             harmonyEvents.push_back(event);
             beat+=length;
@@ -333,7 +446,7 @@ uint64_t SongArrangement::computeHarmonyId() const noexcept
         const uint64_t lenQ=(uint64_t)std::llround(e.length*4.0);
         h=mix64(h ^ (uint64_t)(e.scaleDegree+1)*0x9e3779b97f4a7c15ULL ^ beatQ ^ (lenQ<<8)
                   ^ ((uint64_t)e.inversion<<24) ^ ((uint64_t)e.voicingStyle<<28)
-                  ^ ((uint64_t)e.extension<<32));
+                  ^ ((uint64_t)e.extension<<32) ^ ((uint64_t)(e.borrowed?1:0)<<36));
     }
     return h;
 }
@@ -1260,6 +1373,7 @@ void SongArrangement::addHarmony(uint64_t seed)
         int fifth=root+(scaleSemitoneForDegree(d+4)-scaleSemitoneForDegree(d));
         int colour=root+(scaleSemitoneForDegree(d+6)-scaleSemitoneForDegree(d));
         if(event.borrowed&&minor&&d==4)third=root+4;
+        else if(event.borrowed&&!minor&&d==3)third=root+3;
         if(event.extension==2)colour=root+14;
         else if(event.extension==3)colour=root+2;
         else if(event.extension==4)third=root+5;

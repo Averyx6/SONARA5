@@ -51,6 +51,22 @@ uint64_t leadSkeletonHash(const sonara::SongArrangement& a)
     return h;
 }
 
+uint64_t normalizedProgressionHash(const sonara::SongArrangement& a)
+{
+    const auto fp=a.getProgressionFingerprint();
+    if(fp.size()<5)return 0;
+    const int n=juce::jlimit(1,8,fp[0]);
+    if((int)fp.size()<2+n*3)return 0;
+    uint64_t h=1469598103934665603ULL;
+    h^=(uint64_t)n;h*=1099511628211ULL;
+    for(int i=0;i<n;++i)
+    {
+        h^=(uint64_t)(fp[(size_t)(2+i*3)]+17);
+        h*=1099511628211ULL;
+    }
+    return h;
+}
+
 double renderSingleDrumNote(const sonara::SongArrangement& a,int midiNote)
 {
     if(a.getLanes().size()<4)return 0.0;
@@ -308,6 +324,7 @@ int main()
         composer.prepareToPlay(48000.0,512);
         std::set<uint64_t> skeletons;
         std::set<uint64_t> generationSeeds;
+        std::set<uint64_t> normalizedProgressions;
         for(int i=0;i<8;++i)
         {
             composer.generateTrack(prompt);
@@ -322,6 +339,9 @@ int main()
             const auto hash=leadSkeletonHash(*song);
             if(hash==0||!skeletons.insert(hash).second)
                 return fail("GENERATE TRACK recycled a previous melody skeleton");
+            const auto progressionHash=normalizedProgressionHash(*song);
+            if(progressionHash==0||!normalizedProgressions.insert(progressionHash).second)
+                return fail("GENERATE TRACK disguised a recycled root progression with new voicing");
             if(i>0&&composer.getMelodyNovelty()<.45f)
                 return fail("GENERATE TRACK accepted a melody with low novelty");
             if(i>0&&composer.getHarmonyNovelty()<.14f)

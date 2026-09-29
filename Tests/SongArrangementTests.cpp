@@ -715,6 +715,64 @@ int main()
        ||richFingerprint[1]<6)
     {std::cerr<<"v2.3 rich hook fingerprint is missing phrase data\n";return 89;}
 
+    // v2.4: genre changes harmonic grammar, not merely SoundDNA or voicing.
+    const juce::String harmonyPrompts[]={
+        "minimal tech house 126 BPM C minor clean chords",
+        "emotional progressive house 126 BPM C minor clean chords",
+        "uplifting trance 138 BPM C minor clean chords",
+        "dark drum and bass 174 BPM C minor clean chords",
+        "cinematic EDM 110 BPM C minor clean chords"
+    };
+    std::set<uint64_t> genreProgressions;
+    for(const auto& harmonyPrompt:harmonyPrompts)
+    {
+        sonara::SongArrangement song;
+        song.generateComposition(harmonyPrompt,126.0,0x240024ULL);
+        const auto fp=song.getProgressionFingerprint();
+        if(fp.size()<5){std::cerr<<"v2.4 genre harmony fingerprint missing\n";return 90;}
+        const int n=juce::jlimit(1,8,fp[0]);
+        uint64_t h=1469598103934665603ULL;
+        for(int i=0;i<n;++i){h^=(uint64_t)(fp[(size_t)(2+i*3)]+31);h*=1099511628211ULL;}
+        h^=(uint64_t)n;h*=1099511628211ULL;
+        genreProgressions.insert(h);
+        if(!harmonyPrompt.containsIgnoreCase("tech house"))
+        {
+            const int ending=fp[(size_t)(2+(n-1)*3)];
+            if(ending!=3&&ending!=4&&ending!=6)
+            {std::cerr<<"v2.4 progression lost its functional turnaround\n";return 91;}
+        }
+    }
+    if(genreProgressions.size()<4)
+    {std::cerr<<"v2.4 genre prompts still collapse to the same chord family\n";return 92;}
+
+    sonara::SongArrangement colouredHarmony;
+    colouredHarmony.generate(
+        "dreamy cinematic EDM 112 BPM C major extended chords borrowed chords",
+        112.0,0x24c010ULL);
+    const auto* colourChords=findLane(colouredHarmony,"CHORDS");
+    if(!colourChords){std::cerr<<"v2.4 coloured harmony missing CHORDS lane\n";return 93;}
+    std::map<int,std::set<int>> chordPitchClasses;
+    for(const auto& note:colourChords->notes)
+        chordPitchClasses[(int)std::llround(note.beat*16.0)].insert((note.note%12+12)%12);
+    bool hasExtension=false,hasBorrowedMinorIv=false;
+    for(const auto& [onset,pitches]:chordPitchClasses)
+    {
+        juce::ignoreUnused(onset);
+        hasExtension|=pitches.size()>=4;
+        hasBorrowedMinorIv|=pitches.count(5)>0&&pitches.count(8)>0&&pitches.count(0)>0;
+    }
+    if(!hasExtension)
+    {std::cerr<<"v2.4 explicit extended-chord request produced only triads\n";return 94;}
+    if(!hasBorrowedMinorIv)
+    {std::cerr<<"v2.4 explicit borrowed-chord request did not produce minor iv\n";return 95;}
+
+    sonara::SongArrangement cleanMajor,borrowedMajor;
+    cleanMajor.generateComposition("cinematic EDM 112 BPM C major clean chords",112.0,0x24b044ULL);
+    borrowedMajor.generateComposition(
+        "cinematic EDM 112 BPM C major clean chords borrowed chords",112.0,0x24b044ULL);
+    if(cleanMajor.getHarmonyId()==borrowedMajor.getHarmonyId())
+    {std::cerr<<"v2.4 borrowed quality was omitted from Harmony DNA identity\n";return 96;}
+
     // Same key/BPM/genre: variation must come from composition, not transposition.
     std::set<uint64_t> fixedHarmony,fixedMelody,fixedBass,fixedDrums,fixedPluck;
     for(uint64_t i=0;i<10;++i)
