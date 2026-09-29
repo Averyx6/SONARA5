@@ -28,6 +28,15 @@ if (-not (Test-Path $Ace)) {
     Invoke-WebRequest "https://github.com/ACE-Step/ACE-Step-1.5/archive/refs/heads/main.zip" -OutFile $zip
     Expand-Archive -Force $zip $Root
     Remove-Item $zip -Force
+    $Extracted = Join-Path $Root "ACE-Step-1.5-main"
+    if (Test-Path $Extracted) {
+        if (Test-Path $Ace) { Remove-Item -Recurse -Force $Ace }
+        Move-Item $Extracted $Ace
+    }
+}
+
+if (-not (Test-Path $Ace)) {
+    throw "ACE-Step folder was not found after download."
 }
 
 Set-Location $Ace
