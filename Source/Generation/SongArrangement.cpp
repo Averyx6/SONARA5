@@ -1161,12 +1161,18 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
 {
     ArrangementLane kick{"KICK",10,true}, snare{"SNARE / CLAP",10,true}, hats{"HATS",10,true}, perc{"PERCUSSION",10,true};
     const auto p = sourcePrompt.toLowerCase();
-    const bool house = p.contains("house") || p.contains("future rave") || p.contains("edm");
+    const bool trance = p.contains("trance");
+    const bool house = p.contains("house") || p.contains("future rave") || p.contains("edm") || trance;
+    const bool tech = p.contains("tech house") || p.contains("minimal house");
     const bool trap = p.contains("trap") || p.contains("hip hop");
     const bool dnb = p.contains("drum and bass") || p.contains("dnb");
     const bool festival = p.contains("festival") || p.contains("mainstage") || p.contains("big room");
-    const int groove = plan.drumGroove;
-    const int hatMode = plan.hatMode;
+    int groove = plan.drumGroove;
+    int hatMode = plan.hatMode;
+    if(p.contains("four on the floor")||p.contains("four-on-the-floor"))groove=0;
+    if(p.contains("half time")||p.contains("halftime"))groove=1;
+    if(p.contains("open hats"))hatMode=2;
+    if(p.contains("closed hats"))hatMode=0;
     const float swing = .012f + random01(seed,13) * .062f;
 
     for(int bar=0;bar<bars;++bar)
@@ -1182,6 +1188,9 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
         const bool chorus=sectionName.contains("CHORUS");
         const bool sectionStart=section && bar==section->startBar;
         const bool sectionEnd=section && bar==section->startBar+section->bars-1;
+        const int localBar=section?bar-section->startBar:0;
+        const bool fourBarBoundary=!sectionEnd&&((localBar+1)%4==0);
+        const bool eightBarBoundary=fourBarBoundary&&((localBar+1)%8==0);
         const bool preDropGap=chorus&&sectionEnd&&(house||festival);
         const double b=bar*beatsPerBar;
         const uint64_t bs=(uint64_t)bar*97ULL;
@@ -1191,9 +1200,10 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             if(dnb)
             {
                 addNote(kick,36,b,.09,drop?118:106);
-                addNote(kick,36,b+2.5,.08,104);
-                if(random01(seed,1000+bs)>.35f) addNote(kick,36,b+1.75,.07,92);
-                if(drop && random01(seed,1010+bs)>.50f) addNote(kick,36,b+3.25,.07,96);
+                addNote(kick,36,b+(groove%2==0?2.5:2.75),.08,drop?108:101);
+                if((drop||chorus)&&localBar%2==0)
+                    addNote(kick,36,b+(groove%2==0?1.75:1.5),.07,92);
+                if(drop&&localBar%4==3)addNote(kick,36,b+3.25,.07,96);
             }
             else if(house)
             {
@@ -1204,7 +1214,7 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
                                 drop?123:(chorus?116:(build?111:105+(q==0?5:0))));
                 if(!preDropGap&&(drop||build||chorus) && ((bar+groove)%4==3))
                     addNote(kick,36,b+3.5,.08,88+(int)(random01(seed,1020+bs)*20.f));
-                if(drop && groove%3==2 && bar%2==0)
+                if(drop && !tech && groove%3==2 && bar%2==0)
                     addNote(kick,36,b+1.75,.07,86);
             }
             else if(trap)
@@ -1224,7 +1234,15 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
 
         if(!intro && !breakdown)
         {
-            if(trap || dnb)
+            if(dnb)
+            {
+                const int backbeat=drop?119:(chorus?113:(build?108:102));
+                addNote(snare,38,b+1.0,.11,backbeat);
+                addNote(snare,38,b+3.0,.11,juce::jmin(127,backbeat+2));
+                if((drop||chorus)&&localBar%2==1)
+                    addNote(snare,39,b+2.75,.06,70+(int)(random01(seed,1200+bs)*14.f));
+            }
+            else if(trap)
             {
                 addNote(snare,38,b+2.0,.12,drop?114:104);
                 if((drop||chorus) && random01(seed,1200+bs)>.55f) addNote(snare,39,b+1.75,.07,72);
@@ -1243,19 +1261,27 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             }
         }
 
-        const int hatSteps = dnb ? 16 : (house ? ((drop||build||chorus)?8:4) : (drop ? (hatMode>=2?16:8) : ((build||chorus||energetic)?8:4)));
+        int hatSteps=4;
+        if(dnb)hatSteps=(breakdown?4:16);
+        else if(breakdown)hatSteps=4;
+        else if(build)hatSteps=localBar>=juce::jmax(1,section->bars/2)?16:8;
+        else if(drop)hatSteps=(trance||festival||hatMode>=2)?16:8;
+        else if(chorus)hatSteps=8;
+        else if(intro)hatSteps=localBar>=juce::jmax(1,section->bars-2)?8:4;
+        else if(energetic)hatSteps=8;
         for(int h=0;h<hatSteps;++h)
         {
             const int quarter=juce::jmax(1,hatSteps/4);
             const bool strong=(h%quarter==0);
-            float skip=breakdown?.48f:(drop?.08f:.16f);
+            float skip=breakdown?.58f:(intro?.28f:(drop?.05f:(chorus?.09f:(build?.12f:.18f))));
             if(!strong && random01(seed,1300+bs+h)<skip) continue;
             double beat=b+h*(4.0/hatSteps);
             if(h%2==1) beat+=swing*(hatMode==1?1.0:.55);
             if(preDropGap&&beat>=b+3.5)continue;
             bool open=(drop||chorus) && ((h+groove)%8==3 || (hatMode>=2 && h%8==7));
             if(house&&hatSteps==8)open=(h%2==1)&&((h+bar+groove)%4==1);
-            const int vel=juce::jlimit(32,108,46+(strong?15:0)+(int)(random01(seed,1400+bs+h)*32.f));
+            const int sectionLift=drop?10:(chorus?6:(build?4:(breakdown?-8:0)));
+            const int vel=juce::jlimit(30,114,44+sectionLift+(strong?15:0)+(int)(random01(seed,1400+bs+h)*28.f));
             addNote(hats,open?46:42,beat,.045+(open?.10:0.0),vel);
         }
 
@@ -1291,6 +1317,16 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             addNote(perc,39,b+2.5,.10,58+(int)(random01(seed,1520+bar)*18.f));
         }
 
+        // Musical phrase fills are tied to 4/8-bar boundaries. They stay short,
+        // avoid the protected pre-drop gap, and never appear in the middle of a
+        // breakdown where space is the production goal.
+        if(fourBarBoundary&&!breakdown&&!preDropGap)
+        {
+            if(eightBarBoundary)addNote(perc,45,b+3.00,.07,76+(drop?10:0));
+            addNote(perc,47,b+3.50,.06,82+(drop?9:0));
+            addNote(perc,50,b+3.75,.05,90+(drop?10:0));
+        }
+
         // BUILD -> CHORUS gets a restrained lift. The true festival-style drum
         // tension belongs at CHORUS -> DROP, where the listener expects the payoff.
         if(build && sectionEnd)
@@ -1318,6 +1354,15 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             addNote(perc,45,b+2.75,.07,88);
             addNote(perc,47,b+3.10,.065,98);
             addNote(perc,50,b+3.35,.055,108);
+        }
+
+        if(breakdown&&sectionEnd)
+        {
+            // The breakdown exits with a compact rising tom pickup into BUILD 2;
+            // previously this boundary was the only major arrival with no fill.
+            addNote(perc,45,b+2.75,.075,76);
+            addNote(perc,47,b+3.25,.065,88);
+            addNote(perc,50,b+3.625,.055,101);
         }
 
         if(sectionEnd&&!breakdown&&(build||chorus||drop)&&!preDropGap)

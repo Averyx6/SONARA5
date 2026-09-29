@@ -867,6 +867,91 @@ int main()
             if(note.beat>=gapBar&&note.beat<gapBar+4.0&&note.beat+note.length>gapBar+3.001)
             {std::cerr<<"v2.5 low-frequency tail fills the pre-drop breathing space\n";return 103;}
 
+    // v2.6: genre and section must change the actual drum grammar, not only the
+    // generated kit. In particular DnB must no longer share trap's half-time
+    // snare placement, and trance must use its high-motion drop hats.
+    sonara::SongArrangement houseDrums,tranceDrums,dnbDrums,trapDrums;
+    houseDrums.generateComposition(
+        "progressive house 128 BPM F minor closed hats",128.0,0x260026ULL);
+    tranceDrums.generateComposition(
+        "uplifting trance 138 BPM F minor open hats",138.0,0x260026ULL);
+    dnbDrums.generateComposition(
+        "drum and bass 174 BPM F minor breakbeat drums",174.0,0x260026ULL);
+    trapDrums.generateComposition(
+        "trap 140 BPM F minor half time drums",140.0,0x260026ULL);
+
+    const auto dnbSnareOnsets=firstBarOnsets(dnbDrums,"SNARE / CLAP");
+    const auto trapSnareOnsets=firstBarOnsets(trapDrums,"SNARE / CLAP");
+    if(dnbSnareOnsets.count(100)==0||dnbSnareOnsets.count(300)==0
+       ||dnbSnareOnsets.count(200)>0||trapSnareOnsets.count(200)==0
+       ||trapSnareOnsets.count(100)>0||trapSnareOnsets.count(300)>0)
+    {std::cerr<<"v2.6 DnB and trap still share the same backbeat grammar\n";return 105;}
+
+    const auto houseHatOnsets=firstBarOnsets(houseDrums,"HATS");
+    const auto tranceHatOnsets=firstBarOnsets(tranceDrums,"HATS");
+    if(houseHatOnsets.size()>8||tranceHatOnsets.size()<12
+       ||tranceHatOnsets.size()<=houseHatOnsets.size())
+    {std::cerr<<"v2.6 trance drop hats did not gain genre-specific motion\n";return 106;}
+
+    auto sectionNamed=[](const sonara::SongArrangement& song,const juce::String& name)
+        ->const sonara::ArrangementSection*
+    {
+        for(const auto& section:song.getSections())if(section.name==name)return &section;
+        return nullptr;
+    };
+    auto averageLaneNotes=[](const sonara::ArrangementLane& lane,const sonara::ArrangementSection& section)
+    {
+        int notes=0;
+        const double begin=section.startBar*4.0;
+        const double end=(section.startBar+section.bars)*4.0;
+        for(const auto& note:lane.notes)if(note.beat>=begin&&note.beat<end)++notes;
+        return notes/(double)juce::jmax(1,section.bars);
+    };
+    const auto* drumVerse=sectionNamed(houseDrums,"VERSE");
+    const auto* drumDrop=sectionNamed(houseDrums,"DROP");
+    const auto* drumBreak=sectionNamed(houseDrums,"BREAKDOWN");
+    const auto* houseKick=findLane(houseDrums,"KICK");
+    const auto* houseHats=findLane(houseDrums,"HATS");
+    const auto* housePerc=findLane(houseDrums,"PERCUSSION");
+    if(!drumVerse||!drumDrop||!drumBreak||!houseKick||!houseHats||!housePerc)
+    {std::cerr<<"v2.6 section-aware drum fixture missing\n";return 107;}
+
+    int verseKickMax=0,dropKickMaxV26=0;
+    for(const auto& note:houseKick->notes)
+    {
+        const int bar=(int)std::floor(note.beat/4.0);
+        if(bar>=drumVerse->startBar&&bar<drumVerse->startBar+drumVerse->bars)
+            verseKickMax=juce::jmax(verseKickMax,note.velocity);
+        if(bar>=drumDrop->startBar&&bar<drumDrop->startBar+drumDrop->bars)
+            dropKickMaxV26=juce::jmax(dropKickMaxV26,note.velocity);
+    }
+    if(!(averageLaneNotes(*houseKick,*drumDrop)>averageLaneNotes(*houseKick,*drumBreak)+3.0
+         &&averageLaneNotes(*houseHats,*drumDrop)>averageLaneNotes(*houseHats,*drumBreak)+2.0
+         &&dropKickMaxV26>verseKickMax))
+    {std::cerr<<"v2.6 drums do not create drop/breakdown section contrast\n";return 108;}
+
+    const double phraseFillBar=(drumDrop->startBar+3)*4.0;
+    bool hasFourBarFill=false;
+    for(const auto& note:housePerc->notes)
+        if(note.beat>=phraseFillBar+3.5&&note.beat<phraseFillBar+4.0
+           &&(note.note==47||note.note==50))hasFourBarFill=true;
+    if(!hasFourBarFill)
+    {std::cerr<<"v2.6 internal four-bar drum fill is missing\n";return 109;}
+
+    const double breakExit=(drumBreak->startBar+drumBreak->bars-1)*4.0;
+    std::set<int> breakdownExitToms;
+    for(const auto& note:housePerc->notes)
+        if(note.beat>=breakExit+2.7&&note.beat<breakExit+4.0)
+            breakdownExitToms.insert(note.note);
+    if(breakdownExitToms.count(45)==0||breakdownExitToms.count(47)==0||breakdownExitToms.count(50)==0)
+    {std::cerr<<"v2.6 breakdown exit has no rising transition fill\n";return 110;}
+
+    sonara::SongArrangement drumPromptEdit=houseDrums;
+    drumPromptEdit.regenerateDrumsOnly("half time trap drums",0x26feedULL);
+    const auto editedSnareOnsets=firstBarOnsets(drumPromptEdit,"SNARE / CLAP");
+    if(editedSnareOnsets.count(200)==0||editedSnareOnsets.count(100)>0||editedSnareOnsets.count(300)>0)
+    {std::cerr<<"v2.6 drum-only prompt did not control the regenerated groove\n";return 111;}
+
     // Same key/BPM/genre: variation must come from composition, not transposition.
     std::set<uint64_t> fixedHarmony,fixedMelody,fixedBass,fixedDrums,fixedPluck;
     for(uint64_t i=0;i<10;++i)
