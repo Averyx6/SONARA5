@@ -487,7 +487,8 @@ std::vector<int> SongArrangement::getMelodyFingerprint() const
 
     int previousNote=phrase.front()->note;
     double previousBeat=phrase.front()->beat;
-    int repeatedRun=0,repeatedTransitions=0,minNote=127,maxNote=0;
+    int repeatedRun=0,repeatedTransitions=0;
+    int canonicalHeight=0,minCanonicalHeight=0,maxCanonicalHeight=0;
     bool usedDegree[16]{};
     std::array<int,4> firstOnsets{32,32,32,32};
     int cadenceDegree=degreeFor(phrase.back()->note);
@@ -497,7 +498,15 @@ std::vector<int> SongArrangement::getMelodyFingerprint() const
     {
         const auto& note=*phrase[i];
         const int degree=degreeFor(note.note);
-        int interval=i==0?0:juce::jlimit(-24,24,note.note-previousNote);
+        // Octave repair near the playable-range boundaries must not turn a
+        // transposed copy into a new melody. Keep the signed pitch-class motion
+        // and reconstruct a canonical relative register from that motion.
+        int interval=i==0?0:(note.note-previousNote)%12;
+        while(interval>6)interval-=12;
+        while(interval<-6)interval+=12;
+        if(i>0)canonicalHeight+=interval;
+        minCanonicalHeight=juce::jmin(minCanonicalHeight,canonicalHeight);
+        maxCanonicalHeight=juce::jmax(maxCanonicalHeight,canonicalHeight);
         const double relativeBeat=juce::jmax(0.0,note.beat-phraseStart);
         const int onset=juce::jlimit(0,127,(int)std::llround(relativeBeat*8.0));
         const int bar=juce::jlimit(0,3,(int)std::floor(relativeBeat/beatsPerBar));
@@ -520,15 +529,14 @@ std::vector<int> SongArrangement::getMelodyFingerprint() const
         fp.push_back(bar);
         fp.push_back(juce::jlimit(0,3,repeatedRun));
         fp.push_back(cadence);
-        fp.push_back(juce::jlimit(0,7,(note.note-rootMidi+24)/12));
+        fp.push_back(juce::jlimit(0,6,canonicalHeight/12+3));
 
         if(degree>=0&&degree<16)usedDegree[degree]=true;
-        minNote=juce::jmin(minNote,note.note);maxNote=juce::jmax(maxNote,note.note);
         previousNote=note.note;previousBeat=note.beat;
     }
 
     int uniqueDegrees=0;for(bool used:usedDegree)if(used)++uniqueDegrees;
-    fp.push_back(maxNote-minNote);
+    fp.push_back(maxCanonicalHeight-minCanonicalHeight);
     fp.push_back(uniqueDegrees);
     fp.push_back(repeatedTransitions);
     for(const int onset:firstOnsets)fp.push_back(onset);

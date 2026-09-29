@@ -307,11 +307,14 @@ int main()
         SonaraAudioProcessor composer;
         composer.prepareToPlay(48000.0,512);
         std::set<uint64_t> skeletons;
+        std::set<uint64_t> generationSeeds;
         for(int i=0;i<8;++i)
         {
             composer.generateTrack(prompt);
             auto song=composer.arrangementSnapshot();
             if(!song)return fail("same-prompt generation returned no arrangement");
+            if(!generationSeeds.insert(composer.getSongGenerationSeed()).second)
+                return fail("GENERATE TRACK retained the previous song after novelty rejection");
             const auto* liveLead=laneNamed(*song,"LEAD");
             if(!liveLead)return fail("generated song missing LEAD for live SoundDNA sync");
             if(composer.getSelectedLane()!=9||composer.currentPatch().seed!=liveLead->sound.seed)

@@ -148,8 +148,10 @@ float fingerprintSimilarity(const std::vector<int>& a,const std::vector<int>& b)
 
     // Compare what a listener actually recognises: first two-bar hook, complete
     // four-bar rhythm, interval contour, chord-relative choices, phrase starts,
-    // repeated-note behaviour, range and cadence. A relocated or transposed hook
-    // remains the same identity; novelty must come from a new musical idea.
+    // repeated-note behaviour, range and cadence. Generic house rhythm or a
+    // common rise/fall contour is evidence, not identity on its own: rejecting on
+    // either in isolation can exhaust every candidate and leave the old song in
+    // place. Perceptual identity requires corroboration across musical dimensions.
     const float rhythmSkeleton=(onset*.34f+gap*.24f+length*.16f+phraseStarts*.26f)*(.82f+.18f*countRatio);
     const float contourSkeleton=(contour*.48f+interval*.36f+cadence*.16f)*(.84f+.16f*countRatio);
     const float pitchIdentity=(pitch*.52f+interval*.24f+chordRole*.24f)*(.82f+.18f*countRatio);
@@ -158,8 +160,11 @@ float fingerprintSimilarity(const std::vector<int>& a,const std::vector<int>& b)
                          +repeats*.04f+range*.03f+cadence*.04f)
                          *(.84f+.16f*countRatio);
 
-    return juce::jlimit(0.f,1.f,juce::jmax(juce::jmax(rhythmSkeleton,contourSkeleton),
-                    juce::jmax(juce::jmax(pitchIdentity,opening),combined)));
+    const float openingIdentity=opening*.44f+pitchIdentity*.19f+contourSkeleton*.17f
+                               +rhythmSkeleton*.14f+cadence*.06f;
+    const float phraseIdentity=pitchIdentity*.29f+contourSkeleton*.24f+rhythmSkeleton*.23f
+                              +opening*.14f+cadence*.06f+range*.04f;
+    return juce::jlimit(0.f,1.f,juce::jmax(combined,juce::jmax(openingIdentity,phraseIdentity)));
 }
 
 float melodyRhythmSimilarity(const std::vector<int>& a,const std::vector<int>& b)
