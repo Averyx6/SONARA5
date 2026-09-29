@@ -2,397 +2,306 @@ package com.averyx.songforge
 
 import android.app.Activity
 import android.content.ContentValues
-import android.content.Context
 import android.graphics.Color
-import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.provider.MediaStore
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
 import android.text.InputType
-import android.util.Base64
 import android.view.Gravity
 import android.view.View
 import android.widget.*
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.net.HttpURLConnection
 import java.net.URL
-import java.security.KeyStore
 import java.util.concurrent.Executors
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
-import javax.net.ssl.HttpsURLConnection
 
 class MainActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
-    private lateinit var apiKeyInput: EditText
+    private lateinit var engineInput: EditText
     private lateinit var promptInput: EditText
     private lateinit var lyricsInput: EditText
     private lateinit var status: TextView
     private lateinit var lengthLabel: TextView
+    private lateinit var autoLyrics: CheckBox
     private lateinit var instrumental: CheckBox
-    private lateinit var generateLyrics: Button
-    private lateinit var generateSong: Button
+    private lateinit var studioMode: CheckBox
+    private lateinit var generateButton: Button
     private lateinit var playButton: Button
+    private lateinit var nextButton: Button
     private lateinit var downloadButton: Button
-    private var activePlan: JSONObject? = null
-    private var latestFile: File? = null
+    private var durationSec = 150
+    private var versions = mutableListOf<File>()
+    private var versionIndex = 0
     private var player: MediaPlayer? = null
-    private var durationSec = 90
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = Color.rgb(9, 11, 16)
-        window.navigationBarColor = Color.rgb(9, 11, 16)
+        window.statusBarColor = Color.rgb(8,10,15)
+        window.navigationBarColor = Color.rgb(8,10,15)
         setContentView(buildUi())
-        apiKeyInput.setText(loadApiKey())
-        promptInput.setText("Emotional energetic progressive house with intimate male vocals, nostalgic verse, huge memorable chorus and a powerful melodic drop. 126 BPM, modern polished production.")
+        val prefs=getSharedPreferences("settings",MODE_PRIVATE)
+        engineInput.setText(prefs.getString("engine","http://127.0.0.1:8001"))
+        promptInput.setText("Emotional energetic progressive house with intimate male vocals, nostalgic verse, huge memorable chorus, powerful melodic drop, 126 BPM, polished modern mix.")
     }
 
     private fun buildUi(): View {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(9, 11, 16))
-        }
-        val scroll = ScrollView(this)
-        val body = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(20), dp(18), dp(28))
-        }
-        scroll.addView(body)
-        root.addView(scroll, LinearLayout.LayoutParams(-1, -1))
-        body.addView(text("SongForge AI", 28f, true))
-        body.addView(text("Real prompt → lyrics → Music v2.5 audio", 14f, false).apply { setTextColor(Color.rgb(170, 176, 190)) })
-        spacer(body, 16)
-        body.addView(text("ElevenLabs API key", 14f, true))
-        apiKeyInput = edit("xi-api-key", 1).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        body.addView(apiKeyInput)
-        body.addView(Button(this).apply {
-            text = "Save key securely"
-            setOnClickListener {
-                saveApiKey(apiKeyInput.text.toString().trim())
-                toast("API key saved in Android Keystore")
-            }
-        })
-        spacer(body, 16)
-        body.addView(text("Describe the song", 14f, true))
-        promptInput = edit("Describe genre, mood, vocals, structure and production...", 5)
+        val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(Color.rgb(8,10,15))}
+        val scroll=ScrollView(this)
+        val body=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(18),dp(18),dp(18),dp(28))}
+        scroll.addView(body); root.addView(scroll,LinearLayout.LayoutParams(-1,-1))
+        body.addView(label("SongForge Local",28f,true))
+        body.addView(label("No paid music API • ACE-Step 1.5 on your own hardware",13f,false).apply{setTextColor(Color.rgb(164,170,186))})
+        spacer(body,14)
+
+        body.addView(label("Local engine address",14f,true))
+        engineInput=edit("http://192.168.x.x:8001",1)
+        body.addView(engineInput)
+        body.addView(Button(this).apply{text="Test local engine";setOnClickListener{testEngine()}})
+        spacer(body,14)
+
+        body.addView(label("Describe the song",14f,true))
+        promptInput=edit("Genre, emotion, vocalist, arrangement, drop, instruments...",5)
         body.addView(promptInput)
-        spacer(body, 12)
-        lengthLabel = text("Length: 90 seconds", 14f, true)
-        body.addView(lengthLabel)
-        body.addView(SeekBar(this).apply {
-            max = 270
-            progress = 60
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
-                    durationSec = p + 30
-                    lengthLabel.text = "Length: $durationSec seconds"
-                }
-                override fun onStartTrackingTouch(s: SeekBar?) {}
-                override fun onStopTrackingTouch(s: SeekBar?) {}
+
+        spacer(body,10)
+        lengthLabel=label("Length: 150 seconds",14f,true); body.addView(lengthLabel)
+        body.addView(SeekBar(this).apply{
+            max=270; progress=120
+            setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{
+                override fun onProgressChanged(s:SeekBar?,p:Int,fromUser:Boolean){durationSec=p+30;lengthLabel.text="Length: "+durationSec+" seconds"}
+                override fun onStartTrackingTouch(s:SeekBar?){}
+                override fun onStopTrackingTouch(s:SeekBar?){}
             })
         })
-        instrumental = CheckBox(this).apply {
-            text = "Instrumental only"
-            setTextColor(Color.WHITE)
-        }
-        body.addView(instrumental)
-        spacer(body, 12)
-        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        generateLyrics = Button(this).apply { text = "Generate lyrics"; setOnClickListener { requestPlan() } }
-        generateSong = Button(this).apply { text = "Generate song"; setOnClickListener { requestSong() } }
-        actions.addView(generateLyrics, LinearLayout.LayoutParams(0, dp(54), 1f))
-        actions.addView(generateSong, LinearLayout.LayoutParams(0, dp(54), 1f).apply { marginStart = dp(8) })
-        body.addView(actions)
-        spacer(body, 12)
-        status = text("Ready", 14f, true)
-        body.addView(status)
-        spacer(body, 12)
-        body.addView(text("Lyrics / sections", 14f, true))
-        lyricsInput = edit("Generate lyrics first, then edit them here before creating the song.", 12)
+
+        autoLyrics=CheckBox(this).apply{text="Auto-write lyrics locally (needs ACE-Step LM, usually >6 GB VRAM)";setTextColor(Color.WHITE);isChecked=true}
+        instrumental=CheckBox(this).apply{text="Instrumental only";setTextColor(Color.WHITE)}
+        studioMode=CheckBox(this).apply{text="Studio mode — generate 2 different versions";setTextColor(Color.WHITE);isChecked=true}
+        body.addView(autoLyrics);body.addView(instrumental);body.addView(studioMode)
+
+        spacer(body,10)
+        body.addView(label("Lyrics (optional)",14f,true))
+        lyricsInput=edit("[Verse 1]\n...\n\n[Pre-Chorus]\n...\n\n[Chorus]\n...\n\n[Drop]\n",11)
         body.addView(lyricsInput)
-        spacer(body, 12)
-        val audioActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        playButton = Button(this).apply { text = "Play"; isEnabled = false; setOnClickListener { togglePlay() } }
-        downloadButton = Button(this).apply { text = "Download"; isEnabled = false; setOnClickListener { latestFile?.let { exportSong(it) } } }
-        audioActions.addView(playButton, LinearLayout.LayoutParams(0, dp(54), 1f))
-        audioActions.addView(downloadButton, LinearLayout.LayoutParams(0, dp(54), 1f).apply { marginStart = dp(8) })
-        body.addView(audioActions)
-        spacer(body, 12)
-        body.addView(text("Uses the official ElevenLabs Music v2.5 API. Music API access requires an eligible paid plan and uses your account credits.", 12f, false).apply {
-            setTextColor(Color.rgb(160, 165, 180))
-        })
+
+        spacer(body,10)
+        generateButton=Button(this).apply{text="GENERATE LOCAL SONG";setOnClickListener{generateSong()}}
+        body.addView(generateButton,LinearLayout.LayoutParams(-1,dp(58)))
+
+        spacer(body,10)
+        status=label("Ready — start the local engine first.",13f,true);body.addView(status)
+        spacer(body,10)
+
+        val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
+        playButton=Button(this).apply{text="Play";isEnabled=false;setOnClickListener{togglePlay()}}
+        nextButton=Button(this).apply{text="Version B";isEnabled=false;setOnClickListener{nextVersion()}}
+        downloadButton=Button(this).apply{text="Download";isEnabled=false;setOnClickListener{currentFile()?.let{exportSong(it)}}}
+        row.addView(playButton,LinearLayout.LayoutParams(0,dp(54),1f))
+        row.addView(nextButton,LinearLayout.LayoutParams(0,dp(54),1f).apply{marginStart=dp(6)})
+        row.addView(downloadButton,LinearLayout.LayoutParams(0,dp(54),1f).apply{marginStart=dp(6)})
+        body.addView(row)
+
+        spacer(body,12)
+        body.addView(label("Studio mode creates two different random-seed versions. Section tags such as [Verse], [Pre-Chorus], [Chorus], [Build], [Drop] and [Breakdown] help ACE-Step produce a real arrangement instead of one repeated loop.",12f,false).apply{setTextColor(Color.rgb(150,156,174))})
         return root
     }
 
-    private fun requestPlan() {
-        val key = apiKeyInput.text.toString().trim()
-        val prompt = promptInput.text.toString().trim()
-        if (key.isBlank()) return toast("Add your ElevenLabs API key first")
-        if (prompt.isBlank()) return toast("Describe the song first")
-        saveApiKey(key)
-        setBusy(true, "Writing lyrics and structure…")
-        worker.execute {
-            try {
-                val plan = createPlan(key, prompt, durationSec * 1000, instrumental.isChecked)
-                activePlan = plan
-                val lyrics = extractLyrics(plan)
-                runOnUiThread {
-                    lyricsInput.setText(lyrics)
-                    setBusy(false, "Plan ready — edit the lyrics or generate the song")
+    private fun testEngine(){
+        saveEngine()
+        setBusy(true,"Checking local engine…")
+        worker.execute{
+            try{
+                val json=getJson(base()+"/health",20_000)
+                val ok=json.optJSONObject("data")?.optString("status")=="ok" || json.optString("status")=="ok"
+                runOnUiThread{setBusy(false,if(ok)"Local ACE-Step engine connected ✓" else "Engine replied, but health response was unexpected")}
+            }catch(t:Throwable){runOnUiThread{setBusy(false,"Cannot reach engine: "+safe(t))}}
+        }
+    }
+
+    private fun generateSong(){
+        saveEngine()
+        val p=promptInput.text.toString().trim()
+        if(p.isBlank()) return toast("Describe the song first")
+        setBusy(true,"Submitting local song…")
+        versions.clear();versionIndex=0
+        worker.execute{
+            try{
+                val submit=postJson(base()+"/release_task",buildRequest(p),60_000)
+                val taskId=submit.optJSONObject("data")?.optString("task_id").orEmpty()
+                if(taskId.isBlank()) throw IllegalStateException(submit.optString("error","No task id returned"))
+                runOnUiThread{status.text="Generating locally… lower-VRAM hardware can take longer."}
+                val results=poll(taskId)
+                val downloaded=mutableListOf<File>()
+                var generatedLyrics=""
+                for(i in 0 until results.length()){
+                    val item=results.optJSONObject(i)?:continue
+                    if(generatedLyrics.isBlank()) generatedLyrics=item.optString("lyrics","")
+                    val rel=item.optString("file","")
+                    if(rel.isBlank()) continue
+                    downloaded.add(downloadAudio(rel,i))
                 }
-            } catch (t: Throwable) {
-                runOnUiThread { setBusy(false, "Error: " + safeMessage(t)) }
-            }
-        }
-    }
-
-    private fun requestSong() {
-        val key = apiKeyInput.text.toString().trim()
-        val prompt = promptInput.text.toString().trim()
-        if (key.isBlank()) return toast("Add your ElevenLabs API key first")
-        if (prompt.isBlank()) return toast("Describe the song first")
-        saveApiKey(key)
-        setBusy(true, "Preparing song…")
-        worker.execute {
-            try {
-                var plan = activePlan ?: createPlan(key, prompt, durationSec * 1000, instrumental.isChecked)
-                val edited = lyricsInput.text.toString().trim()
-                if (edited.isNotBlank() && !instrumental.isChecked) plan = applyEditedLyrics(plan, edited)
-                activePlan = plan
-                runOnUiThread { status.text = "Generating real audio with Music v2.5…" }
-                val file = compose(key, plan)
-                latestFile = file
-                rememberSong(file)
-                val duration = readDuration(file)
-                runOnUiThread {
-                    setBusy(false, "Ready — generated " + (duration / 1000) + "s • " + file.name)
-                    playButton.isEnabled = true
-                    downloadButton.isEnabled = true
-                    startPlayback(file)
+                if(downloaded.isEmpty()) throw IllegalStateException("Generation finished but no audio file was returned.")
+                versions=downloaded
+                runOnUiThread{
+                    if(generatedLyrics.isNotBlank() && (autoLyrics.isChecked || lyricsInput.text.toString().isBlank())) lyricsInput.setText(generatedLyrics)
+                    playButton.isEnabled=true;downloadButton.isEnabled=true;nextButton.isEnabled=versions.size>1
+                    val suffix=if(versions.size==1)"" else "s"
+                    setBusy(false,"Ready — "+versions.size+" local version"+suffix+" generated")
+                    startPlayback(versions[0])
                 }
-            } catch (t: Throwable) {
-                runOnUiThread { setBusy(false, "Error: " + safeMessage(t)) }
+            }catch(t:Throwable){runOnUiThread{setBusy(false,"Generation failed: "+safe(t))}}
+        }
+    }
+
+    private fun buildRequest(userPrompt:String):JSONObject{
+        val lyrics=lyricsInput.text.toString().trim()
+        val auto=autoLyrics.isChecked && lyrics.isBlank() && !instrumental.isChecked
+        val humanDirection="""
+Produce a complete convincing song, not an AI demo and not a repeated loop.
+Use a clear musical identity, a strong motif, natural phrase lengths, restrained repetition, evolving instrumentation,
+real transitions, clear section contrast, tension before payoff, and a memorable final chorus or drop.
+Vocals should sound emotionally intentional and rhythmically singable, not over-worded.
+Lyrics should use concrete natural language, consistent perspective, concise singable lines, a short memorable hook,
+and avoid generic AI cliches, random poetic filler, forced rhymes, neon/city-lights/shadows/echoes language unless specifically requested.
+The arrangement must evolve like a human-produced song and the mix should be balanced, punchy and dynamic.
+""".trimIndent()
+        val enhanced=(userPrompt+"\n"+humanDirection).take(3800)
+        val o=JSONObject()
+        if(auto){
+            o.put("sample_mode",true)
+            o.put("sample_query",enhanced)
+        }else{
+            o.put("prompt",enhanced)
+            o.put("lyrics",if(instrumental.isChecked)"[Instrumental]" else lyrics)
+            o.put("use_format",lyrics.isNotBlank() && !instrumental.isChecked)
+        }
+        o.put("thinking",!instrumental.isChecked)
+        o.put("vocal_language","en")
+        o.put("audio_duration",durationSec)
+        o.put("batch_size",if(studioMode.isChecked)2 else 1)
+        o.put("audio_format","mp3")
+        o.put("mp3_bitrate","192k")
+        o.put("mp3_sample_rate",48000)
+        o.put("model","acestep-v15-turbo")
+        o.put("inference_steps",8)
+        o.put("use_random_seed",true)
+        o.put("lm_temperature",0.82)
+        o.put("lm_cfg_scale",2.5)
+        o.put("lm_top_p",0.9)
+        o.put("lm_repetition_penalty",1.08)
+        return o
+    }
+
+    private fun poll(taskId:String):JSONArray{
+        val deadline=System.currentTimeMillis()+45*60*1000L
+        while(System.currentTimeMillis()<deadline){
+            val q=JSONObject().put("task_id_list",JSONArray().put(taskId))
+            val r=postJson(base()+"/query_result",q,30_000)
+            val item=r.optJSONArray("data")?.optJSONObject(0)
+            when(item?.optInt("status",0)){
+                1 -> return JSONArray(item.optString("result","[]"))
+                2 -> throw IllegalStateException("Local model reported a failed generation.")
             }
+            Thread.sleep(2500)
         }
+        throw IllegalStateException("Local generation timed out.")
     }
 
-    private fun createPlan(key: String, prompt: String, lengthMs: Int, noVocals: Boolean): JSONObject {
-        val enhanced = buildString {
-            append(prompt)
-            append("\n\nCreate a polished, commercially structured complete song with obvious section changes, evolving arrangement, memorable hooks and professional dynamics. ")
-            if (noVocals) append("Instrumental only. No lyrics and no sung vocals. ")
-            else append("Write natural, emotional, memorable, easy-to-sing lyrics with a strong repeated chorus hook. Avoid generic AI cliches, meaningless filler and forced rhymes. Use intelligible original vocals. ")
-            append("Do not repeat one loop for the whole track. Make verse, build, chorus/drop and breakdown clearly different.")
-        }
-        val body = JSONObject().put("prompt", enhanced).put("music_length_ms", lengthMs).put("model_id", "music_v2_5")
-        val bytes = postJson("https://api.elevenlabs.io/v1/music/plan", key, body.toString(), 120_000)
-        return JSONObject(bytes.toString(Charsets.UTF_8))
+    private fun downloadAudio(relative:String,index:Int):File{
+        val full=if(relative.startsWith("http://")||relative.startsWith("https://")) relative else base()+if(relative.startsWith("/"))relative else "/"+relative
+        val c=URL(full).openConnection() as HttpURLConnection
+        c.connectTimeout=30_000;c.readTimeout=180_000
+        val bytes=try{
+            val code=c.responseCode
+            if(code !in 200..299) throw IllegalStateException("Audio download failed ("+code+")")
+            c.inputStream.use{it.readBytes()}
+        }finally{c.disconnect()}
+        if(bytes.size<8000) throw IllegalStateException("Generated audio file was unexpectedly small.")
+        val dir=File(filesDir,"songs").apply{mkdirs()}
+        return File(dir,"local_"+System.currentTimeMillis()+"_"+(index+1)+".mp3").apply{writeBytes(bytes)}
     }
 
-    private fun compose(key: String, plan: JSONObject): File {
-        val body = JSONObject().put("composition_plan", plan).put("model_id", "music_v2_5").put("store_for_inpainting", true)
-        val bytes = postJson("https://api.elevenlabs.io/v1/music?output_format=mp3_48000_192", key, body.toString(), 720_000)
-        if (bytes.size < 16_000) throw IllegalStateException("The music service returned an unexpectedly small audio file.")
-        val dir = File(filesDir, "songs").apply { mkdirs() }
-        return File(dir, "song_" + System.currentTimeMillis() + ".mp3").apply { writeBytes(bytes) }
+    private fun getJson(url:String,timeout:Int):JSONObject{
+        val c=URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout=timeout;c.readTimeout=timeout
+        val txt=try{
+            val code=c.responseCode
+            val s=(if(code in 200..299)c.inputStream else c.errorStream)?.bufferedReader()?.use{it.readText()}?:""
+            if(code !in 200..299) throw IllegalStateException("HTTP "+code+": "+s.take(500))
+            s
+        }finally{c.disconnect()}
+        return JSONObject(txt)
     }
 
-    private fun postJson(url: String, key: String, json: String, readTimeout: Int): ByteArray {
-        val c = URL(url).openConnection() as HttpsURLConnection
-        try {
-            c.requestMethod = "POST"
-            c.setRequestProperty("xi-api-key", key)
-            c.setRequestProperty("Content-Type", "application/json")
-            c.setRequestProperty("Accept", "*/*")
-            c.connectTimeout = 30_000
-            c.readTimeout = readTimeout
-            c.doOutput = true
-            c.outputStream.use { it.write(json.toByteArray(Charsets.UTF_8)) }
-            val code = c.responseCode
-            val bytes = (if (code in 200..299) c.inputStream else c.errorStream)?.use { it.readBytes() } ?: ByteArray(0)
-            if (code !in 200..299) {
-                val msg = bytes.toString(Charsets.UTF_8).take(700)
-                throw IllegalStateException("ElevenLabs request failed (" + code + "): " + msg)
-            }
-            return bytes
-        } finally { c.disconnect() }
+    private fun postJson(url:String,body:JSONObject,timeout:Int):JSONObject{
+        val c=URL(url).openConnection() as HttpURLConnection
+        try{
+            c.requestMethod="POST";c.doOutput=true;c.connectTimeout=30_000;c.readTimeout=timeout
+            c.setRequestProperty("Content-Type","application/json")
+            c.outputStream.use{it.write(body.toString().toByteArray())}
+            val code=c.responseCode
+            val txt=(if(code in 200..299)c.inputStream else c.errorStream)?.bufferedReader()?.use{it.readText()}?:""
+            if(code !in 200..299) throw IllegalStateException("Local engine HTTP "+code+": "+txt.take(700))
+            val obj=JSONObject(txt)
+            if(obj.optInt("code",200)!=200) throw IllegalStateException(obj.optString("error","Local engine error"))
+            return obj
+        }finally{c.disconnect()}
     }
 
-    private fun extractLyrics(plan: JSONObject): String {
-        if (plan.has("chunks")) {
-            val chunks = plan.optJSONArray("chunks") ?: JSONArray()
-            val out = ArrayList<String>()
-            for (i in 0 until chunks.length()) {
-                val value = chunks.optJSONObject(i)?.optString("text").orEmpty().trim()
-                if (value.isNotBlank()) out.add(value)
-            }
-            return out.joinToString("\n\n")
-        }
-        if (plan.has("sections")) {
-            val sections = plan.optJSONArray("sections") ?: JSONArray()
-            val out = ArrayList<String>()
-            for (i in 0 until sections.length()) {
-                val s = sections.optJSONObject(i) ?: continue
-                val name = s.optString("section_name", "Section")
-                val lines = s.optJSONArray("lines") ?: JSONArray()
-                val txt = StringBuilder("[" + name + "]")
-                for (j in 0 until lines.length()) txt.append("\n").append(lines.optString(j))
-                out.add(txt.toString())
-            }
-            return out.joinToString("\n\n")
-        }
-        return ""
+    private fun nextVersion(){
+        if(versions.size<2)return
+        versionIndex=(versionIndex+1)%versions.size
+        val next=(('A'.code+((versionIndex+1)%versions.size)).toChar()).toString()
+        nextButton.text="Version "+next
+        startPlayback(versions[versionIndex])
+        status.text="Playing Version "+(('A'.code+versionIndex).toChar())
     }
 
-    private fun applyEditedLyrics(plan: JSONObject, edited: String): JSONObject {
-        val chunks = plan.optJSONArray("chunks") ?: return plan
-        val sections = splitSections(edited)
-        if (sections.isEmpty()) return plan
-        var cursor = 0
-        for (i in 0 until chunks.length()) {
-            val chunk = chunks.optJSONObject(i) ?: continue
-            if (cursor >= sections.size) break
-            val old = chunk.optString("text")
-            if (old.contains("[") || old.lines().size > 1) chunk.put("text", sections[cursor++])
-        }
-        return plan
+    private fun currentFile():File?=versions.getOrNull(versionIndex)
+    private fun togglePlay(){
+        val f=currentFile()?:return
+        val p=player
+        if(p==null)startPlayback(f)
+        else if(p.isPlaying){p.pause();playButton.text="Play"}
+        else{p.start();playButton.text="Pause"}
     }
-
-    private fun splitSections(text: String): List<String> {
-        val result = mutableListOf<StringBuilder>()
-        for (line in text.lines()) {
-            val t = line.trim()
-            if (t.startsWith("[") && t.contains("]")) result.add(StringBuilder(t))
-            else if (result.isNotEmpty()) result.last().append("\n").append(line)
-        }
-        return result.map { it.toString().trim() }.filter { it.isNotBlank() }
-    }
-
-    private fun togglePlay() {
-        val f = latestFile ?: return
-        val p = player
-        if (p == null) startPlayback(f)
-        else if (p.isPlaying) { p.pause(); playButton.text = "Play" }
-        else { p.start(); playButton.text = "Pause" }
-    }
-
-    private fun startPlayback(file: File) {
+    private fun startPlayback(file:File){
         player?.release()
-        player = MediaPlayer().apply {
+        player=MediaPlayer().apply{
             setDataSource(file.absolutePath)
-            setOnPreparedListener { it.start(); playButton.text = "Pause" }
-            setOnCompletionListener { playButton.text = "Play" }
+            setOnPreparedListener{it.start();playButton.text="Pause"}
+            setOnCompletionListener{playButton.text="Play"}
             prepareAsync()
         }
     }
-
-    private fun exportSong(file: File) {
-        try {
-            if (Build.VERSION.SDK_INT >= 29) {
-                val values = ContentValues().apply {
-                    put(MediaStore.Audio.Media.DISPLAY_NAME, file.name)
-                    put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
-                    put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/SongForgeAI")
-                }
-                val uri = contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values) ?: throw IllegalStateException("Could not create download")
-                contentResolver.openOutputStream(uri)?.use { out -> file.inputStream().use { input -> input.copyTo(out) } }
-                toast("Saved to Music/SongForgeAI")
-            } else {
-                val dir = getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: filesDir
-                val out = File(dir, file.name)
-                file.copyTo(out, overwrite = true)
-                toast("Saved to " + out.absolutePath)
+    private fun exportSong(file:File){
+        try{
+            val values=ContentValues().apply{
+                put(MediaStore.Audio.Media.DISPLAY_NAME,file.name)
+                put(MediaStore.Audio.Media.MIME_TYPE,"audio/mpeg")
+                if(Build.VERSION.SDK_INT>=29)put(MediaStore.Audio.Media.RELATIVE_PATH,"Music/SongForgeLocal")
             }
-        } catch (t: Throwable) { toast("Download failed: " + safeMessage(t)) }
+            val uri=contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,values)?:throw IllegalStateException("Could not create file")
+            contentResolver.openOutputStream(uri)?.use{out->file.inputStream().use{it.copyTo(out)}}
+            toast("Saved to Music/SongForgeLocal")
+        }catch(t:Throwable){toast("Download failed: "+safe(t))}
     }
 
-    private fun readDuration(file: File): Long {
-        val r = MediaMetadataRetriever()
-        return try {
-            r.setDataSource(file.absolutePath)
-            r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-        } finally { r.release() }
+    private fun saveEngine(){getSharedPreferences("settings",MODE_PRIVATE).edit().putString("engine",engineInput.text.toString().trim()).apply()}
+    private fun base():String=engineInput.text.toString().trim().trimEnd('/')
+    private fun setBusy(b:Boolean,msg:String){status.text=msg;generateButton.isEnabled=!b}
+    private fun safe(t:Throwable)=((t.message?:t.javaClass.simpleName)).take(800)
+    private fun toast(s:String)=Toast.makeText(this,s,Toast.LENGTH_LONG).show()
+    private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
+    private fun spacer(p:LinearLayout,h:Int){p.addView(Space(this),LinearLayout.LayoutParams(1,dp(h)))}
+    private fun label(v:String,s:Float,b:Boolean)=TextView(this).apply{text=v;textSize=s;setTextColor(Color.WHITE);if(b)setTypeface(typeface,android.graphics.Typeface.BOLD)}
+    private fun edit(h:String,min:Int)=EditText(this).apply{
+        hint=h;setHintTextColor(Color.rgb(110,116,132));setTextColor(Color.WHITE);setBackgroundColor(Color.rgb(23,27,36))
+        setPadding(dp(12),dp(10),dp(12),dp(10));setMinLines(min);gravity=Gravity.TOP
+        inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
     }
-
-    private fun rememberSong(file: File) {
-        val p = getSharedPreferences("library", Context.MODE_PRIVATE)
-        val paths = p.getStringSet("songs", emptySet())?.toMutableSet() ?: mutableSetOf()
-        paths.add(file.absolutePath)
-        p.edit().putStringSet("songs", paths).apply()
-    }
-
-    private fun setBusy(busy: Boolean, message: String) {
-        status.text = message
-        generateLyrics.isEnabled = !busy
-        generateSong.isEnabled = !busy
-    }
-
-    private fun saveApiKey(value: String) {
-        if (value.isBlank()) return
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey())
-        val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
-        getSharedPreferences("secure", Context.MODE_PRIVATE).edit()
-            .putString("ct", Base64.encodeToString(encrypted, Base64.NO_WRAP))
-            .putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP)).apply()
-    }
-
-    private fun loadApiKey(): String {
-        val p = getSharedPreferences("secure", Context.MODE_PRIVATE)
-        val ct = p.getString("ct", null) ?: return ""
-        val iv = p.getString("iv", null) ?: return ""
-        return try {
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)))
-            String(cipher.doFinal(Base64.decode(ct, Base64.NO_WRAP)), Charsets.UTF_8)
-        } catch (_: Throwable) { "" }
-    }
-
-    private fun secretKey(): SecretKey {
-        val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (ks.getKey("songforge-key", null) as? SecretKey)?.let { return it }
-        val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        gen.init(KeyGenParameterSpec.Builder("songforge-key", KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
-        return gen.generateKey()
-    }
-
-    private fun edit(hintText: String, minLines: Int): EditText = EditText(this).apply {
-        hint = hintText
-        setHintTextColor(Color.rgb(120, 126, 140))
-        setTextColor(Color.WHITE)
-        setBackgroundColor(Color.rgb(24, 28, 38))
-        setPadding(dp(12), dp(10), dp(12), dp(10))
-        setMinLines(minLines)
-        gravity = Gravity.TOP
-        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-    }
-
-    private fun text(value: String, size: Float, bold: Boolean): TextView = TextView(this).apply {
-        text = value
-        textSize = size
-        setTextColor(Color.WHITE)
-        if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
-    }
-
-    private fun spacer(parent: LinearLayout, h: Int) { parent.addView(Space(this), LinearLayout.LayoutParams(1, dp(h))) }
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-    private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
-    private fun safeMessage(t: Throwable): String = (t.message ?: t.javaClass.simpleName).take(900)
-
-    override fun onDestroy() {
-        super.onDestroy()
-        player?.release()
-        worker.shutdownNow()
-    }
+    override fun onDestroy(){super.onDestroy();player?.release();worker.shutdownNow()}
 }
