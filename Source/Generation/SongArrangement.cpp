@@ -1071,8 +1071,12 @@ void SongArrangement::finalizeSoundPalette()
             else soundPrompt += "bright thin pluck counter melody complementary ";
         }
         else if(lane.name=="FX / TRANSITIONS")
-            soundPrompt += festival?"festival riser uplifter impact transition airy noise ":
-                           "riser impact transition atmospheric texture ";
+            // The transition lane is the sustained/swept layer. Arrival impacts
+            // live in PERCUSSION, where note 57 has a dedicated rendered impact.
+            // Asking one SoundDNA patch for both "riser" and "impact" made the
+            // later impact rule overwrite the riser envelope/pitch behaviour.
+            soundPrompt += festival?"festival riser uplifter transition airy noise sweep reverse ":
+                           "riser uplifter transition atmospheric noise sweep reverse ";
         else soundPrompt += "clean atmospheric texture ";
         const float flavour = random01(domains.soundPalette, 0x9000ULL + static_cast<uint64_t>(i) * 0x9e37ULL);
         soundPrompt += flavour < .25f ? "warm soft spacious long release" :
@@ -1288,8 +1292,11 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
         if(sectionStart&&(drop||chorus))
         {
             addNote(perc,49,b,.18,drop?112:98); // crash
-            if(sectionName.contains("FINAL")||sectionName.contains("HOOK"))
-                addNote(perc,57,b,.22,118); // impact
+            // A DROP needs a real rendered impact, not merely a low note played
+            // through the airy FX patch. FINAL HOOK keeps the strongest accent.
+            if(drop)
+                addNote(perc,57,b,.22,
+                        (sectionName.contains("FINAL")||sectionName.contains("HOOK"))?121:114);
         }
 
         if(drop||chorus)
@@ -2577,53 +2584,101 @@ void SongArrangement::alignPitchedLanesToLead()
 void SongArrangement::addFx(uint64_t seed)
 {
     ArrangementLane fx{"FX / TRANSITIONS",8,false};
+    const auto prompt=sourcePrompt.toLowerCase();
+    const bool festival=prompt.contains("festival")||prompt.contains("mainstage")
+        ||prompt.contains("big room")||prompt.contains("powerful drop")
+        ||prompt.contains("massive drop");
+    const bool cinematic=prompt.contains("cinematic")||prompt.contains("film");
+    const bool minimal=prompt.contains("minimal")||prompt.contains("subtle transition")
+        ||prompt.contains("subtle fx");
     const int style=static_cast<int>(random01(seed,801)*4.f)%4;
-    for(size_t i=0;i<sections.size();++i)
+
+    // FX pitches are a semantic grammar as well as MIDI: 36-47 are arrival
+    // accents, 52-63 descend after releases, 66-73 mark atmosphere changes,
+    // 74-81 create filter-tension steps, 82-89 are sustained noise rises, and
+    // 92-97 are short reverse/suck cues. Every onset is tied to a boundary.
+    for(size_t i=1;i<sections.size();++i)
     {
         const auto& s=sections[i];
+        const auto& previous=sections[i-1];
         const double boundary=s.startBar*beatsPerBar;
-        const float previousEnergy=i>0?sections[i-1].energy:s.energy;
+        const float previousEnergy=previous.energy;
         const float energyDelta=s.energy-previousEnergy;
-        const bool lift=i>0&&energyDelta>.12f;
-        const bool release=i>0&&energyDelta<-.12f;
-        const bool majorArrival=s.name.contains("DROP")||s.name.contains("FINAL")||s.name.contains("CHORUS");
+        const bool dropArrival=s.name.contains("DROP")||s.name.contains("FINAL")
+            ||s.name.contains("HOOK");
+        const bool chorusArrival=s.name.contains("CHORUS");
+        const bool buildArrival=s.name.contains("BUILD");
+        const bool breakdownArrival=s.name.contains("BREAKDOWN");
+        const bool majorArrival=dropArrival||chorusArrival;
+        // Named musical roles decide whether a rise is useful. The previous
+        // energy-only rule put a full riser on INTRO -> VERSE simply because the
+        // numeric curve increased, even though that is normally a subtle change.
+        const bool lift=majorArrival||buildArrival;
+        const bool release=breakdownArrival||energyDelta<=-.12f;
 
-        if(s.startBar>0&&lift)
+        if(lift&&!release)
         {
-            const double leadIn=s.name.contains("DROP")||s.name.contains("FINAL")?
-                (style==0?4.0:style==1?8.0:style==2?2.0:6.0):
-                (style==0?2.0:style==1?4.0:1.0);
-            const int riserNote=81+(int)(random01(seed,810+i)*9.f);
-            addNote(fx,riserNote,juce::jmax(0.0,boundary-leadIn),juce::jmax(.35,leadIn-.08),
-                    juce::jlimit(58,122,66+(int)(s.energy*38.f)+(int)(random01(seed,820+i)*8.f)));
+            double leadIn=buildArrival?2.0:(chorusArrival?4.0:6.0);
+            if(dropArrival)
+                leadIn=festival?8.0:(style==0?4.0:style==1?6.0:style==2?3.0:5.0);
+            if(minimal)leadIn=juce::jmin(leadIn,dropArrival?4.0:2.0);
+            if(cinematic)leadIn=juce::jmin(8.0,leadIn+2.0);
+            leadIn=juce::jmin(leadIn,(double)previous.bars*beatsPerBar);
 
-            // Short pre-impact suck/air cue in the final half-beat.
+            const int riserNote=82+(int)(random01(seed,810+i)*8.f);
+            const int riserVelocity=juce::jlimit(52,122,
+                58+(int)(s.energy*39.f)+(dropArrival?12:(chorusArrival?6:0))
+                +(int)(random01(seed,820+i)*5.f));
+            addNote(fx,riserNote,juce::jmax(0.0,boundary-leadIn),
+                    juce::jmax(.35,leadIn-.10),riserVelocity);
+
+            // Three ascending, increasingly strong pulses make filter tension
+            // audible even though the whole transition lane shares one patch.
             if(majorArrival)
-                addNote(fx,92+(int)(random01(seed,825+i)*5.f),juce::jmax(0.0,boundary-.5),.38,
-                        juce::jlimit(60,112,72+(int)(s.energy*26.f)));
-        }
-        else if(s.startBar>0&&release)
-        {
-            // Downlifters only happen when the arrangement actually releases energy.
-            addNote(fx,55+(int)(random01(seed,830+i)*8.f),boundary,.75+random01(seed,831+i)*1.2,
-                    64+(int)(previousEnergy*25.f));
-        }
-        else if(s.startBar>0&&random01(seed,832+i)>.72f)
-        {
-            // Neutral section change gets a subtle marker, not a full riser every time.
-            addNote(fx,72+(int)(random01(seed,840+i)*8.f),boundary+.125,.30+random01(seed,850+i)*.45,
-                    58+(int)(s.energy*20.f));
-        }
+            {
+                const int tensionBase=74+(style%2);
+                addNote(fx,tensionBase,  juce::jmax(0.0,boundary-2.00),.24,66+(dropArrival?8:0));
+                addNote(fx,tensionBase+3,juce::jmax(0.0,boundary-1.25),.20,76+(dropArrival?9:0));
+                addNote(fx,tensionBase+6,juce::jmax(0.0,boundary-.75), .16,88+(dropArrival?10:0));
 
-        if(majorArrival)
+                // Reverse/suck ends before the boundary so the final instant is
+                // real air rather than an FX tail smeared over the downbeat.
+                addNote(fx,92+(int)(random01(seed,825+i)*6.f),
+                        juce::jmax(0.0,boundary-.50),.36,
+                        juce::jlimit(62,116,72+(int)(s.energy*28.f)+(dropArrival?8:0)));
+            }
+
+            // Short airy arrival accent. The physical crash/impact is rendered by
+            // PERCUSSION, keeping the swept lane free of low-frequency buildup.
+            if(majorArrival)
+                addNote(fx,dropArrival?43:47,boundary,.22+(dropArrival?.12:0.0),
+                        juce::jlimit(76,122,88+(int)(s.energy*26.f)));
+        }
+        else if(release)
         {
-            addNote(fx,48+(style%2)*12,boundary,.24+random01(seed,860+i)*.34,
-                    juce::jlimit(78,127,94+(int)(s.energy*28.f)));
-            if(s.name.contains("FINAL")||s.name.contains("DROP"))
-                addNote(fx,36,boundary+.5,.48+random01(seed,870+i)*.20,
-                        juce::jlimit(90,124,103+(int)(s.energy*18.f)));
+            // A short descending sequence makes the downlifter direction explicit,
+            // followed by a longer atmospheric bed for the new low-energy space.
+            const int top=61+(style%2);
+            addNote(fx,top,  boundary,.34,82+(int)(previousEnergy*24.f));
+            addNote(fx,top-4,boundary+.32,.42,74+(int)(previousEnergy*20.f));
+            addNote(fx,top-8,boundary+.72,.62,66+(int)(previousEnergy*17.f));
+            addNote(fx,66+(style%4),boundary+.05,cinematic?7.5:3.5,
+                    juce::jlimit(48,92,56+(int)(s.energy*42.f)));
+        }
+        else
+        {
+            // Neutral INTRO -> VERSE style changes receive one restrained marker;
+            // no random FX are scattered through the body of a section.
+            addNote(fx,68+(style%5),boundary+.08,.42,
+                    juce::jlimit(48,84,54+(int)(s.energy*30.f)));
         }
     }
+
+    std::sort(fx.notes.begin(),fx.notes.end(),[](const ArrangementNote& a,const ArrangementNote& b)
+    {
+        if(std::abs(a.beat-b.beat)>.0001)return a.beat<b.beat;
+        return a.note<b.note;
+    });
     lanes.push_back(std::move(fx));
 }
 

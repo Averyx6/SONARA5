@@ -952,6 +952,97 @@ int main()
     if(editedSnareOnsets.count(200)==0||editedSnareOnsets.count(100)>0||editedSnareOnsets.count(300)>0)
     {std::cerr<<"v2.6 drum-only prompt did not control the regenerated groove\n";return 111;}
 
+    // v2.7: FX must describe section transitions rather than appearing as
+    // unrelated decoration. Every major arrival gets a rise, ascending tension,
+    // reverse/suck and downbeat accent; a release gets a descending downlifter
+    // plus an atmosphere change. The final instant before a DROP remains clear.
+    const auto* transitionFx=findLane(houseDrums,"FX / TRANSITIONS");
+    if(!transitionFx||transitionFx->notes.empty())
+    {std::cerr<<"v2.7 transition lane is missing\n";return 112;}
+    for(size_t i=1;i<transitionFx->notes.size();++i)
+        if(transitionFx->notes[i].beat+1.0e-6<transitionFx->notes[i-1].beat)
+        {std::cerr<<"v2.7 transition events are not time ordered\n";return 113;}
+
+    auto hasFx=[](const sonara::ArrangementLane& lane,double begin,double end,
+                  int lowNote,int highNote)
+    {
+        for(const auto& note:lane.notes)
+            if(note.beat>=begin&&note.beat<end&&note.note>=lowNote&&note.note<=highNote)
+                return true;
+        return false;
+    };
+
+    for(const auto& section:houseDrums.getSections())
+    {
+        const bool major=section.name=="CHORUS"||section.name=="DROP"
+            ||section.name.contains("FINAL");
+        if(!major)continue;
+        const double boundary=section.startBar*4.0;
+        if(!hasFx(*transitionFx,boundary-8.01,boundary-.50,82,89)
+           ||!hasFx(*transitionFx,boundary-2.01,boundary-.50,74,81)
+           ||!hasFx(*transitionFx,boundary-.51,boundary-.10,92,97)
+           ||!hasFx(*transitionFx,boundary-.01,boundary+.40,36,47))
+        {std::cerr<<"v2.7 major arrival is missing its produced FX sequence\n";return 114;}
+
+        std::vector<const sonara::ArrangementNote*> tension;
+        for(const auto& note:transitionFx->notes)
+            if(note.beat>=boundary-2.01&&note.beat<boundary-.50
+               &&note.note>=74&&note.note<=81)tension.push_back(&note);
+        if(tension.size()!=3||tension[0]->note>=tension[1]->note
+           ||tension[1]->note>=tension[2]->note
+           ||tension[0]->velocity>=tension[1]->velocity
+           ||tension[1]->velocity>=tension[2]->velocity)
+        {std::cerr<<"v2.7 filter tension does not rise into the arrival\n";return 115;}
+
+        if(section.name=="DROP"||section.name.contains("FINAL"))
+            for(const auto& note:transitionFx->notes)
+                if(note.beat<boundary&&note.beat+note.length>boundary-.099)
+                {std::cerr<<"v2.7 FX tail fills the protected pre-drop air\n";return 116;}
+    }
+
+    const auto* transitionPerc=findLane(houseDrums,"PERCUSSION");
+    for(const auto& section:houseDrums.getSections())
+    {
+        if(section.name!="DROP"&&!section.name.contains("FINAL"))continue;
+        const double boundary=section.startBar*4.0;
+        if(!transitionPerc||!hasFx(*transitionPerc,boundary-.01,boundary+.01,49,49)
+           ||!hasFx(*transitionPerc,boundary-.01,boundary+.01,57,57))
+        {std::cerr<<"v2.7 DROP is missing its rendered crash/impact pair\n";return 117;}
+    }
+
+    const auto* transitionBreak=sectionNamed(houseDrums,"BREAKDOWN");
+    if(!transitionBreak)
+    {std::cerr<<"v2.7 release fixture is missing\n";return 118;}
+    const double releaseBoundary=transitionBreak->startBar*4.0;
+    std::vector<const sonara::ArrangementNote*> downlifter;
+    for(const auto& note:transitionFx->notes)
+        if(note.beat>=releaseBoundary&&note.beat<releaseBoundary+1.4
+           &&note.note>=52&&note.note<=63)downlifter.push_back(&note);
+    if(downlifter.size()!=3||downlifter[0]->note<=downlifter[1]->note
+       ||downlifter[1]->note<=downlifter[2]->note
+       ||!hasFx(*transitionFx,releaseBoundary,releaseBoundary+.20,66,73))
+    {std::cerr<<"v2.7 breakdown release lacks downlifter/atmosphere direction\n";return 119;}
+
+    for(const auto& note:transitionFx->notes)
+    {
+        bool boundaryDriven=false;
+        for(size_t i=1;i<houseDrums.getSections().size();++i)
+        {
+            const double boundary=houseDrums.getSections()[i].startBar*4.0;
+            if(note.beat>=boundary-8.01&&note.beat<=boundary+1.01)
+            {boundaryDriven=true;break;}
+        }
+        if(!boundaryDriven)
+        {std::cerr<<"v2.7 FX was scattered away from a section boundary\n";return 120;}
+    }
+
+    sonara::SongArrangement transitionPalette;
+    transitionPalette.generate("festival progressive house powerful drop",128.0,0x270027ULL);
+    const auto* paletteFx=findLane(transitionPalette,"FX / TRANSITIONS");
+    if(!paletteFx||!paletteFx->sound.name.containsIgnoreCase("riser")
+       ||paletteFx->sound.subLevel!=0.f||paletteFx->sound.attack<.15f)
+    {std::cerr<<"v2.7 impact rule still overwrites the swept FX SoundDNA\n";return 121;}
+
     // Same key/BPM/genre: variation must come from composition, not transposition.
     std::set<uint64_t> fixedHarmony,fixedMelody,fixedBass,fixedDrums,fixedPluck;
     for(uint64_t i=0;i<10;++i)
