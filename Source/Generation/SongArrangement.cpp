@@ -58,6 +58,173 @@ float SongArrangement::random01(uint64_t seed, uint64_t salt) noexcept
     return static_cast<float>(mix64(seed ^ salt) & 0x00ffffffULL) / 16777215.0f;
 }
 
+
+SongArrangement::PromptIntent SongArrangement::parsePromptIntent(const juce::String& raw, double fallbackBpm)
+{
+    PromptIntent result;
+    result.tempo=juce::jlimit(60.0,200.0,fallbackBpm);
+
+    auto normalized=raw.toLowerCase()
+        .replace(juce::String::fromUTF8("\xe2\x99\xaf"),"#")
+        .replace(juce::String::fromUTF8("\xe2\x99\xad"),"b");
+    juce::StringArray tokens;
+    tokens.addTokens(normalized," ,;:/\\t\\r\\n()[]{}","\"'");
+    tokens.trim();tokens.removeEmptyStrings();
+
+    auto phrase=[&](const juce::String& value){return normalized.contains(value);};
+    auto positive=[&](const juce::String& value)
+    {
+        if(!normalized.contains(value))return false;
+        return !normalized.contains("not "+value)
+            &&!normalized.contains("no "+value)
+            &&!normalized.contains("without "+value)
+            &&!normalized.contains("avoid "+value);
+    };
+
+    for(int i=0;i<tokens.size();++i)
+    {
+        const auto token=tokens[i].trim();
+        double value=0.0;
+        bool found=false;
+        if(token.endsWithIgnoreCase("bpm")&&token.length()>3)
+        {
+            value=token.dropLastCharacters(3).getDoubleValue();found=true;
+        }
+        else if(token.equalsIgnoreCase("bpm")&&i+1<tokens.size())
+        {
+            value=tokens[i+1].getDoubleValue();found=true;
+        }
+        else if(token.equalsIgnoreCase("tempo")&&i+1<tokens.size())
+        {
+            value=tokens[i+1].getDoubleValue();found=true;
+        }
+        else if(i+1<tokens.size()&&tokens[i+1].equalsIgnoreCase("bpm"))
+        {
+            value=token.getDoubleValue();found=true;
+        }
+        if(found&&value>=60.0&&value<=200.0)
+        {
+            result.tempo=value;result.hasExplicitTempo=true;break;
+        }
+    }
+
+    auto pitchClass=[](juce::String token)
+    {
+        token=token.trim().toLowerCase();
+        if(token.length()<1||token.length()>2)return -1;
+        const juce::juce_wchar letter=token[0];
+        int pc=letter=='c'?0:(letter=='d'?2:(letter=='e'?4:(letter=='f'?5:
+               (letter=='g'?7:(letter=='a'?9:(letter=='b'?11:-1))))));
+        if(pc<0)return -1;
+        if(token.length()==2)
+        {
+            if(token[1]=='#')pc=(pc+1)%12;
+            else if(token[1]=='b')pc=(pc+11)%12;
+            else return -1;
+        }
+        return pc;
+    };
+
+    for(int i=0;i<tokens.size();++i)
+    {
+        auto noteToken=tokens[i].trim().toLowerCase();
+        int mode=-1; // 0 major, 1 minor
+        if(noteToken.endsWith("maj")&&noteToken.length()>3)
+        {
+            noteToken=noteToken.dropLastCharacters(3);mode=0;
+        }
+        else if(noteToken.endsWith("min")&&noteToken.length()>3)
+        {
+            noteToken=noteToken.dropLastCharacters(3);mode=1;
+        }
+        else if(noteToken.endsWithChar('m')&&noteToken.length()>1)
+        {
+            const auto candidate=noteToken.dropLastCharacters(1);
+            if(pitchClass(candidate)>=0){noteToken=candidate;mode=1;}
+        }
+        if(i+1<tokens.size())
+        {
+            const auto next=tokens[i+1].toLowerCase();
+            if(next=="major"||next=="maj")mode=0;
+            else if(next=="minor"||next=="min")mode=1;
+        }
+        const int pc=pitchClass(noteToken);
+        if(pc>=0&&mode>=0)
+        {
+            result.rootMidi=48+pc;result.minor=mode==1;result.hasExplicitKey=true;break;
+        }
+    }
+
+    const bool festival=positive("festival")||positive("mainstage")||positive("big room")||positive("future rave");
+    const bool progressive=positive("progressive house")||positive("melodic house");
+    const bool tech=positive("tech house")||positive("minimal house");
+    const bool trance=positive("trance");
+    const bool dnb=positive("drum and bass")||positive("dnb");
+    const bool cinematic=positive("cinematic")||positive("film score")||positive("soundtrack");
+    const bool pop=positive("pop")||positive("radio");
+    result.genreFamily=progressive?1:(festival?2:(tech?3:(trance?4:(dnb?5:(cinematic?6:(pop?7:0))))));
+
+    if(positive("aggressive")||positive("hard"))result.emotionProfile=5;
+    else if(positive("dreamy")||positive("ethereal"))result.emotionProfile=4;
+    else if(positive("dark")||positive("moody"))result.emotionProfile=3;
+    else if(positive("uplifting")||positive("hopeful")||positive("happy"))result.emotionProfile=2;
+    else if(positive("emotional")||positive("warm")||positive("melancholic"))result.emotionProfile=1;
+
+    const bool sparse=positive("sparse")||positive("minimal")||positive("less busy")
+        ||positive("more space")||phrase("not too busy");
+    const bool dense=positive("dense")||positive("complex")||positive("busy melody")
+        ||positive("many layers")||positive("full arrangement");
+    result.densityDirection=sparse&&!dense?-1:(dense&&!sparse?1:0);
+
+    const bool restrained=positive("low energy")||positive("calm")||positive("gentle")
+        ||positive("chill")||positive("restrained");
+    const bool energetic=positive("high energy")||positive("energetic")||positive("powerful")
+        ||positive("aggressive")||positive("huge")||positive("massive")
+        ||festival;
+    result.energyDirection=restrained&&!energetic?-1:(energetic?1:0);
+
+    if(phrase("radio edit")||phrase("radio structure")||phrase("short song"))result.structureStyle=0;
+    else if(cinematic)result.structureStyle=3;
+    else if(progressive||trance)result.structureStyle=2;
+    else if(festival)result.structureStyle=1;
+    else if(pop||positive("house"))result.structureStyle=0;
+
+    for(int i=0;i+1<tokens.size();++i)
+        if(tokens[i+1].startsWithIgnoreCase("bar"))
+        {
+            const int value=tokens[i].getIntValue();
+            if(value>=48&&value<=160){result.targetBars=4*((value+2)/4);break;}
+        }
+
+    if(positive("rising motif")||positive("rising hook")||positive("rising melody"))result.hookShape=1;
+    else if(positive("falling motif")||positive("falling hook")||positive("falling melody"))result.hookShape=2;
+    else if(positive("arch melody")||positive("arched motif"))result.hookShape=3;
+    else if(positive("call and response")||positive("call / response"))result.hookShape=0;
+
+    constexpr unsigned noCounter=1u,noPad=2u,noArp=4u,noFx=8u,noHats=16u;
+    if(phrase("no counter")||phrase("without counter")||phrase("main melody only")||phrase("single lead"))result.exclusionMask|=noCounter;
+    if(phrase("no pad")||phrase("without pad"))result.exclusionMask|=noPad;
+    if(phrase("no arp")||phrase("no arpeggio")||phrase("without arp")||phrase("without arpeggio"))result.exclusionMask|=noArp;
+    if(phrase("no fx")||phrase("without fx")||phrase("no transition fx"))result.exclusionMask|=noFx;
+    if(phrase("no hats")||phrase("without hats"))result.exclusionMask|=noHats;
+
+    constexpr unsigned earlyDrop=1u,longBuild=2u,shortIntro=4u,longDrop=8u;
+    constexpr unsigned shortBreak=16u,longBreak=32u,bigChorus=64u;
+    constexpr unsigned strongDrop=128u,softDrop=256u,quietBreak=512u,intenseBreak=1024u;
+    if(phrase("early drop")||phrase("drop early"))result.sectionDirections|=earlyDrop;
+    if(phrase("long build")||phrase("extended build"))result.sectionDirections|=longBuild;
+    if(phrase("short intro")||phrase("minimal intro"))result.sectionDirections|=shortIntro;
+    if(phrase("long drop")||phrase("extended drop"))result.sectionDirections|=longDrop;
+    if(phrase("short breakdown"))result.sectionDirections|=shortBreak;
+    if(phrase("long breakdown")||phrase("extended breakdown"))result.sectionDirections|=longBreak;
+    if(phrase("big chorus")||phrase("long chorus"))result.sectionDirections|=bigChorus;
+    if(positive("powerful drop")||positive("huge drop")||positive("massive drop")||positive("explosive drop"))result.sectionDirections|=strongDrop;
+    if(positive("soft drop")||positive("restrained drop")||positive("gentle drop"))result.sectionDirections|=softDrop;
+    if(positive("quiet breakdown")||positive("calm breakdown")||positive("sparse breakdown"))result.sectionDirections|=quietBreak;
+    if(positive("intense breakdown")||positive("energetic breakdown"))result.sectionDirections|=intenseBreak;
+    return result;
+}
+
 void SongArrangement::buildSeedDomains(uint64_t master)
 {
     masterSeed=master;
@@ -480,6 +647,31 @@ juce::String SongArrangement::getMelodyArchetypeName() const
     return names[juce::jlimit(0,11,plan.melodyArchetype)];
 }
 
+
+juce::String SongArrangement::getPromptIntentSummary() const
+{
+    static constexpr const char* genres[]={"GENERAL","PROGRESSIVE","FESTIVAL","TECH HOUSE","TRANCE","DRUM & BASS","CINEMATIC","POP"};
+    static constexpr const char* emotions[]={"NEUTRAL","EMOTIONAL","UPLIFTING","DARK","DREAMY","AGGRESSIVE"};
+    static constexpr const char* densities[]={"SPARSE","NATURAL","DENSE"};
+    static constexpr const char* structures[]={"AUTO","RADIO","FESTIVAL","PROGRESSIVE","CINEMATIC"};
+    static constexpr const char* pitchNames[]={"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
+    juce::String exclusions="NONE";
+    juce::StringArray excluded;
+    if((promptIntent.exclusionMask&1u)!=0u)excluded.add("COUNTER");
+    if((promptIntent.exclusionMask&2u)!=0u)excluded.add("PAD");
+    if((promptIntent.exclusionMask&4u)!=0u)excluded.add("ARP");
+    if((promptIntent.exclusionMask&8u)!=0u)excluded.add("FX");
+    if((promptIntent.exclusionMask&16u)!=0u)excluded.add("HATS");
+    if(!excluded.isEmpty())exclusions=excluded.joinIntoString(",");
+    return "TEMPO: "+juce::String(promptIntent.tempo,1)
+        +" | KEY: "+pitchNames[((promptIntent.rootMidi%12)+12)%12]+" "+(promptIntent.minor?"MINOR":"MAJOR")
+        +" | GENRE: "+genres[juce::jlimit(0,7,promptIntent.genreFamily)]
+        +" | EMOTION: "+emotions[juce::jlimit(0,5,promptIntent.emotionProfile)]
+        +" | DENSITY: "+densities[juce::jlimit(0,2,promptIntent.densityDirection+1)]
+        +" | STRUCTURE: "+structures[juce::jlimit(0,4,promptIntent.structureStyle+1)]
+        +" | EXCLUDE: "+exclusions;
+}
+
 juce::String SongArrangement::getProducerPlanSummary() const
 {
     static constexpr const char* genres[]={"GENERAL","PROGRESSIVE","FESTIVAL","TECH HOUSE","TRANCE","DRUM & BASS","CINEMATIC","POP"};
@@ -700,21 +892,9 @@ void SongArrangement::clear()
 
 int SongArrangement::parseRootMidi(const juce::String& raw, bool& minorOut)
 {
-    const auto p = raw.toLowerCase();
-    minorOut = p.contains(" minor") || p.contains("minor ") || p.contains(" min") || p.contains("m ");
-    struct Key { const char* text; int pc; };
-    static constexpr Key keys[] = {
-        {"c#",1},{"db",1},{"d#",3},{"eb",3},{"f#",6},{"gb",6},{"g#",8},{"ab",8},{"a#",10},{"bb",10},
-        {"c",0},{"d",2},{"e",4},{"f",5},{"g",7},{"a",9},{"b",11}
-    };
-    for (const auto& k : keys)
-    {
-        if (p.contains(juce::String(k.text) + " minor") || p.contains(juce::String(k.text) + " major") ||
-            p.contains(juce::String(k.text) + " min") || p.contains(juce::String(k.text) + " maj"))
-            return 48 + k.pc; // C3 octave range, friendly for bass/chords
-    }
-    minorOut = !p.contains("major");
-    return 53; // F3
+    const auto parsed=parsePromptIntent(raw,128.0);
+    minorOut=parsed.minor;
+    return parsed.rootMidi;
 }
 
 void SongArrangement::buildSongPlan(uint64_t seed)
@@ -737,6 +917,7 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     if(festivalStructure)plan.structureStyle=1;
     if(progressiveStructure)plan.structureStyle=2;
     if(cinematicStructure)plan.structureStyle=3;
+    if(promptIntent.structureStyle>=0)plan.structureStyle=promptIntent.structureStyle;
     plan.drumGroove=(int)(random01(domains.drums,0x1002)*6.f)%6;
     plan.hatMode=(int)(random01(domains.drums,0x1003)*4.f)%4;
     plan.progressionIndex=0;
@@ -772,18 +953,15 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     const bool producerDnb=p.contains("drum and bass")||p.contains("dnb");
     const bool producerCinematic=p.contains("cinematic")||p.contains("film");
     const bool producerPop=p.contains("pop")||p.contains("radio");
-    plan.genreFamily=producerProgressive?1:(producerFestival?2:(producerTech?3:
-        (producerTrance?4:(producerDnb?5:(producerCinematic?6:(producerPop?7:0))))));
-    plan.emotionProfile=p.contains("aggressive")||p.contains("hard")?5:
-        (p.contains("dreamy")?4:(p.contains("dark")?3:(p.contains("uplifting")||p.contains("hopeful")?2:
-        (p.contains("emotional")||p.contains("warm")?1:0))));
+    plan.genreFamily=promptIntent.genreFamily;
+    plan.emotionProfile=promptIntent.emotionProfile;
     plan.hookShape=(int)(random01(domains.melody,0x1019)*4.f)%4;
-    const bool explicitRising=p.contains("rising motif")||p.contains("rising hook")||p.contains("rising melody");
-    const bool explicitFalling=p.contains("falling motif")||p.contains("falling hook")||p.contains("falling melody");
+    const bool explicitRising=promptIntent.hookShape==1;
+    const bool explicitFalling=promptIntent.hookShape==2;
     if(explicitRising){plan.hookShape=1;plan.melodyArchetype=9;}
     else if(explicitFalling){plan.hookShape=2;plan.melodyArchetype=8;}
-    else if(p.contains("call and response")||p.contains("call / response")){plan.hookShape=0;plan.melodyArchetype=0;}
-    else if(p.contains("arch melody")||p.contains("arched motif")){plan.hookShape=3;plan.melodyArchetype=3;}
+    else if(promptIntent.hookShape==0){plan.hookShape=0;plan.melodyArchetype=0;}
+    else if(promptIntent.hookShape==3){plan.hookShape=3;plan.melodyArchetype=3;}
     plan.hookStrength=.62f+.20f*random01(domains.melody,0x101a);
     if(p.contains("memorable")||p.contains("catchy")||p.contains("strong hook"))plan.hookStrength=juce::jmax(plan.hookStrength,.90f);
     if(p.contains("subtle hook"))plan.hookStrength=juce::jmin(plan.hookStrength,.58f);
@@ -800,13 +978,11 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     plan.counterPolicy=producerTech?3:((producerProgressive&&plan.emotionProfile==1)?0:1);
     if(p.contains("counter melody")||p.contains("secondary lead")
        ||p.contains("call and response")||p.contains("answer melody"))plan.counterPolicy=2;
-    if(p.contains("no counter")||p.contains("main melody only")||p.contains("single lead"))plan.counterPolicy=3;
+    if((promptIntent.exclusionMask&1u)!=0u)plan.counterPolicy=3;
+    if((promptIntent.exclusionMask&2u)!=0u)plan.padPolicy=3;
 
-    const bool lowEnergy=p.contains("low energy")||p.contains("calm")
-        ||p.contains("gentle")||p.contains("chill")||p.contains("restrained");
-    const bool highEnergy=p.contains("high energy")||p.contains("energetic")
-        ||p.contains("powerful")||p.contains("aggressive")||p.contains("huge")
-        ||p.contains("massive")||p.contains("festival")||p.contains("mainstage");
+    const bool lowEnergy=promptIntent.energyDirection<0;
+    const bool highEnergy=promptIntent.energyDirection>0;
     if(lowEnergy)
     {
         plan.energyContrast=juce::jmin(plan.energyContrast,.82f);
@@ -820,8 +996,8 @@ void SongArrangement::buildSongPlan(uint64_t seed)
         plan.transitionIntensity=juce::jmax(plan.transitionIntensity,1.12f);
     }
 
-    if(p.contains("minimal")){plan.density*=.62f;plan.restAmount=juce::jmax(plan.restAmount,.30f);}
-    if(p.contains("complex")){plan.density=juce::jmin(1.f,plan.density+.18f);plan.development=juce::jmax(plan.development,.72f);}
+    if(promptIntent.densityDirection<0){plan.density*=.62f;plan.restAmount=juce::jmax(plan.restAmount,.30f);}
+    if(promptIntent.densityDirection>0){plan.density=juce::jmin(1.f,plan.density+.18f);plan.development=juce::jmax(plan.development,.72f);}
     if(p.contains("simple")){plan.density=juce::jmin(plan.density,.62f);plan.development=juce::jmin(plan.development,.48f);}
     if(p.contains("emotional")){plan.octaveRange=juce::jmax(plan.octaveRange,2);plan.development=juce::jmax(plan.development,.66f);}
     if(p.contains("aggressive")||p.contains("powerful")){plan.density=juce::jmin(1.f,plan.density+.12f);plan.syncopation=juce::jmax(plan.syncopation,.46f);}
@@ -1011,7 +1187,7 @@ void SongArrangement::buildSections(uint64_t seed)
         setMin("BUILD",8);setMin("CHORUS",8);setMin("DROP",16);
         setMin("BUILD 2",8);setMin("FINAL HOOK",12);
     }
-    if(p.contains("early drop"))
+    if((promptIntent.sectionDirections&1u)!=0u)
     {
         const int dropIndex=firstContaining("DROP");
         for(int i=0;i<dropIndex;++i)
@@ -1023,35 +1199,34 @@ void SongArrangement::buildSections(uint64_t seed)
             lengths[(size_t)i]=juce::jmin(lengths[(size_t)i],4);
         }
     }
-    if(p.contains("long build")){setMin("BUILD",12);setMin("BUILD 2",8);}
+    if((promptIntent.sectionDirections&2u)!=0u){setMin("BUILD",12);setMin("BUILD 2",8);}
     if(p.contains("radio edit")||p.contains("short song"))
     {
         setMax("INTRO",4);setMax("VERSE",8);setMax("CHORUS",8);setMax("DROP",12);
         setMax("BREAKDOWN",8);setMax("FINAL HOOK",12);
     }
     if(p.contains("cinematic")){setMin("INTRO",8);setMin("BREAKDOWN",12);}
-    if(p.contains("short intro")||p.contains("minimal intro"))setMax("INTRO",4);
-    if(p.contains("big chorus")||p.contains("long chorus"))setMin("CHORUS",12);
-    if(p.contains("long drop")||p.contains("extended drop"))setMin("DROP",20);
-    if(p.contains("short breakdown"))setMax("BREAKDOWN",4);
-    if(p.contains("long breakdown"))setMin("BREAKDOWN",12);
+    if((promptIntent.sectionDirections&4u)!=0u)setMax("INTRO",4);
+    if((promptIntent.sectionDirections&64u)!=0u)setMin("CHORUS",12);
+    if((promptIntent.sectionDirections&8u)!=0u)setMin("DROP",20);
+    if((promptIntent.sectionDirections&16u)!=0u)setMax("BREAKDOWN",4);
+    if((promptIntent.sectionDirections&32u)!=0u)setMin("BREAKDOWN",12);
 
     // Explicit "N bars" sets the planned full-song duration. Round to a musical
     // four-bar grid, then distribute the difference across content sections.
-    int requestedBars=0;
-    juce::StringArray tokens;tokens.addTokens(p," ,;:/\t\r\n","");tokens.trim();tokens.removeEmptyStrings();
-    for(int i=0;i+1<tokens.size();++i)
-        if(tokens[i+1].startsWith("bar"))
-        {
-            const int value=tokens[i].getIntValue();
-            if(value>=48&&value<=160){requestedBars=4*((value+2)/4);break;}
-        }
+    const int requestedBars=promptIntent.targetBars;
     auto totalBars=[&](){int total=0;for(const int value:lengths)total+=value;return total;};
     if(requestedBars>0)
     {
         static constexpr int priority[8]={7,4,1,5,3,6,2,0};
         int cursor=0;
-        while(totalBars()<requestedBars){lengths[(size_t)priority[cursor++%8]]+=4;}
+        while(totalBars()<requestedBars)
+        {
+            const int i=priority[cursor++%8];
+            const bool protectedPreDrop=(promptIntent.sectionDirections&1u)!=0u
+                &&(names[(size_t)i]=="INTRO"||names[(size_t)i]=="VERSE"||names[(size_t)i]=="BUILD");
+            if(!protectedPreDrop)lengths[(size_t)i]+=4;
+        }
         cursor=0;
         while(totalBars()>requestedBars&&cursor<64)
         {
@@ -1072,6 +1247,10 @@ void SongArrangement::buildSections(uint64_t seed)
         else if(name.contains("FINAL"))base=1.00f;
         else if(name.contains("DROP 2"))base=1.00f;
         else if(name.contains("DROP"))base=.98f;
+        if(name.contains("DROP")&&(promptIntent.sectionDirections&128u)!=0u)base=1.00f;
+        if(name.contains("DROP")&&(promptIntent.sectionDirections&256u)!=0u)base=.70f;
+        if(name.contains("BREAKDOWN")&&(promptIntent.sectionDirections&512u)!=0u)base=.18f;
+        if(name.contains("BREAKDOWN")&&(promptIntent.sectionDirections&1024u)!=0u)base=.65f;
         return juce::jlimit(.08f,1.f,.5f+(base-.5f)*plan.energyContrast+plan.energyBias);
     };
 
@@ -1108,8 +1287,10 @@ void SongArrangement::generateComposition(const juce::String& prompt, double bpm
 {
     clear();
     sourcePrompt = prompt;
-    tempo = juce::jlimit(60.0, 200.0, bpmFromPrompt(prompt, bpm));
-    rootMidi = parseRootMidi(prompt, minor);
+    promptIntent=parsePromptIntent(prompt,bpm);
+    tempo=promptIntent.tempo;
+    rootMidi=promptIntent.rootMidi;
+    minor=promptIntent.minor;
     bars = defaultBars;
     buildSeedDomains(seed);
     buildSongPlan(domains.structure);
@@ -1124,6 +1305,18 @@ void SongArrangement::generateComposition(const juce::String& prompt, double bpm
     addMelody(domains.melody, energetic);
     alignPitchedLanesToLead();
     addFx(domains.fx);
+
+    // Exclusions are semantic hard constraints. Keep lane identities stable for
+    // export/UI routing, but publish no forbidden MIDI events.
+    for(auto& lane:lanes)
+    {
+        const bool excluded=(lane.name=="COUNTER"&&(promptIntent.exclusionMask&1u)!=0u)
+            ||(lane.name=="PAD"&&(promptIntent.exclusionMask&2u)!=0u)
+            ||(lane.name=="PLUCK"&&(promptIntent.exclusionMask&4u)!=0u)
+            ||(lane.name=="FX / TRANSITIONS"&&(promptIntent.exclusionMask&8u)!=0u)
+            ||(lane.name=="HATS"&&(promptIntent.exclusionMask&16u)!=0u);
+        if(excluded)lane.notes.clear();
+    }
 
     harmonyId=computeHarmonyId();
     melodyId=computeMelodyId();
@@ -3011,7 +3204,7 @@ SongArrangement SongArrangement::fromValueTree(const juce::ValueTree& root)
 {
     SongArrangement a;
     if(!root.isValid()||root.getType().toString()!="SONARA_ARRANGEMENT")return a;
-    a.sourcePrompt=root.getProperty("prompt","").toString();a.tempo=juce::jlimit(60.0,200.0,(double)root.getProperty("bpm",128.0));a.bars=juce::jlimit(1,512,(int)root.getProperty("bars",defaultBars));a.rootMidi=juce::jlimit(0,127,(int)root.getProperty("rootMidi",53));a.minor=(bool)root.getProperty("minor",true);a.sections.clear();a.lanes.clear();
+    a.sourcePrompt=root.getProperty("prompt","").toString();a.tempo=juce::jlimit(60.0,200.0,(double)root.getProperty("bpm",128.0));a.bars=juce::jlimit(1,512,(int)root.getProperty("bars",defaultBars));a.rootMidi=juce::jlimit(0,127,(int)root.getProperty("rootMidi",53));a.minor=(bool)root.getProperty("minor",true);a.promptIntent=parsePromptIntent(a.sourcePrompt,a.tempo);a.promptIntent.tempo=a.tempo;a.promptIntent.rootMidi=a.rootMidi;a.promptIntent.minor=a.minor;a.sections.clear();a.lanes.clear();
     a.masterSeed=(uint64_t)root.getProperty("songId","0").toString().getHexValue64();
     a.harmonyId=(uint64_t)root.getProperty("harmonyId","0").toString().getHexValue64();
     a.melodyId=(uint64_t)root.getProperty("melodyId","0").toString().getHexValue64();

@@ -61,6 +61,7 @@ public:
     juce::String getHarmonicRhythmSummary() const;
     juce::String getMelodyArchetypeName() const;
     juce::String getProducerPlanSummary() const;
+    juce::String getPromptIntentSummary() const;
     std::vector<int> getProgressionFingerprint() const;
     std::vector<int> getHarmonyFingerprint() const;
     std::vector<int> getMelodyFingerprint() const;
@@ -68,6 +69,23 @@ public:
     int getHarmonyProgressionLength() const noexcept { return harmonyPlan.progressionLength; }
 
 private:
+    struct PromptIntent {
+        double tempo=128.0;
+        int rootMidi=53;
+        bool minor=true;
+        bool hasExplicitKey=false;
+        bool hasExplicitTempo=false;
+        int genreFamily=0;
+        int emotionProfile=0;
+        int densityDirection=0; // -1 sparse, 0 natural, +1 dense
+        int energyDirection=0;  // -1 restrained, 0 natural, +1 energetic
+        int structureStyle=-1;  // auto, radio, festival, progressive, cinematic
+        int targetBars=0;
+        int hookShape=-1;
+        unsigned exclusionMask=0;
+        unsigned sectionDirections=0;
+    };
+
     struct SongPlan {
         int structureStyle=0;
         int structureVariant=0;
@@ -144,6 +162,7 @@ private:
     static uint64_t mix64(uint64_t x) noexcept;
     static float random01(uint64_t seed, uint64_t salt) noexcept;
     static int parseRootMidi(const juce::String& prompt, bool& minorOut);
+    static PromptIntent parsePromptIntent(const juce::String& prompt, double fallbackBpm);
     void buildSeedDomains(uint64_t master);
     void buildSongPlan(uint64_t seed);
     void buildSections(uint64_t seed);
@@ -162,6 +181,7 @@ private:
     void addFx(uint64_t seed);
 
     juce::String sourcePrompt;
+    PromptIntent promptIntent;
     double tempo = 128.0;
     int bars = defaultBars;
     int rootMidi = 53; // F3

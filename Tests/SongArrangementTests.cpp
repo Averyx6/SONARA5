@@ -1244,6 +1244,71 @@ int main()
     if(restoredProducer.getProducerPlanSummary()!=producerBrain.getProducerPlanSummary())
     {std::cerr<<"v3.0 restored producer summary changed\n";return 138;}
 
+
+    // v3.1: one semantic intent parser owns tempo/key, genre, emotion,
+    // density, structure, exclusions and section directions. This protects
+    // ordinary words such as "warm" from the former loose "m " minor test.
+    sonara::SongArrangement semanticIntent;
+    semanticIntent.generateComposition(
+        "warm uplifting pop, tempo 110, C major, sparse high energy, 76 bars, early drop, "
+        "no pads, without counter melody, no arpeggio, no FX",
+        128.0,0x310031ULL);
+    const auto semanticSummary=semanticIntent.getPromptIntentSummary();
+    if(std::abs(semanticIntent.getBpm()-110.0)>.01||semanticIntent.getRootMidi()!=48
+       ||semanticIntent.isMinor()||semanticIntent.getBars()!=76
+       ||!semanticSummary.contains("GENRE: POP")
+       ||!semanticSummary.contains("EMOTION: UPLIFTING")
+       ||!semanticSummary.contains("DENSITY: SPARSE"))
+    {std::cerr<<"v3.1 central prompt intent failed tempo/key/genre/emotion/density parsing\n";return 139;}
+
+    const auto* intentPad=findLane(semanticIntent,"PAD");
+    const auto* intentCounter=findLane(semanticIntent,"COUNTER");
+    const auto* intentArp=findLane(semanticIntent,"PLUCK");
+    const auto* intentFx=findLane(semanticIntent,"FX / TRANSITIONS");
+    if(!intentPad||!intentCounter||!intentArp||!intentFx
+       ||!intentPad->notes.empty()||!intentCounter->notes.empty()
+       ||!intentArp->notes.empty()||!intentFx->notes.empty()
+       ||!semanticSummary.contains("PAD")||!semanticSummary.contains("COUNTER")
+       ||!semanticSummary.contains("ARP")||!semanticSummary.contains("FX"))
+    {std::cerr<<"v3.1 prompt exclusions were ignored or removed lane routing\n";return 140;}
+
+    const sonara::ArrangementSection *intentIntro=nullptr,*intentVerse=nullptr,*intentBuild=nullptr;
+    for(const auto& section:semanticIntent.getSections())
+    {
+        if(section.name=="INTRO")intentIntro=&section;
+        else if(section.name=="VERSE")intentVerse=&section;
+        else if(section.name=="BUILD")intentBuild=&section;
+    }
+    if(!intentIntro||!intentVerse||!intentBuild
+       ||intentIntro->bars>4||intentVerse->bars>4||intentBuild->bars>4)
+    {std::cerr<<"v3.1 early-drop section direction was not executed\n";return 141;}
+
+    sonara::SongArrangement compactIntent,sectionIntent;
+    compactIntent.generateComposition(
+        "energetic drum and bass, 174bpm, D# minor, not dark, uplifting",
+        128.0,0x310032ULL);
+    if(std::abs(compactIntent.getBpm()-174.0)>.01||compactIntent.getRootMidi()!=51
+       ||!compactIntent.isMinor()
+       ||!compactIntent.getPromptIntentSummary().contains("EMOTION: UPLIFTING")
+       ||!compactIntent.getPromptIntentSummary().contains("GENRE: DRUM & BASS"))
+    {std::cerr<<"v3.1 compact tempo/key or negated emotion parsing failed\n";return 142;}
+
+    sectionIntent.generateComposition(
+        "progressive house 128 BPM F minor, quiet breakdown, explosive drop",
+        128.0,0x310033ULL);
+    const sonara::ArrangementSection *directedDrop=nullptr,*directedBreak=nullptr;
+    for(const auto& section:sectionIntent.getSections())
+    {
+        if(section.name.contains("DROP")&&directedDrop==nullptr)directedDrop=&section;
+        else if(section.name=="BREAKDOWN")directedBreak=&section;
+    }
+    if(!directedDrop||!directedBreak||directedDrop->energy-directedBreak->energy<.70f)
+    {std::cerr<<"v3.1 section-specific energy directions were not executed\n";return 143;}
+
+    const auto restoredIntent=sonara::SongArrangement::fromValueTree(semanticIntent.toValueTree());
+    if(restoredIntent.getPromptIntentSummary()!=semanticIntent.getPromptIntentSummary())
+    {std::cerr<<"v3.1 parsed prompt intent did not survive project restore\n";return 144;}
+
     // Same key/BPM/genre: variation must come from composition, not transposition.
     std::set<uint64_t> fixedHarmony,fixedMelody,fixedBass,fixedDrums,fixedPluck;
     for(uint64_t i=0;i<10;++i)
