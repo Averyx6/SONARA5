@@ -813,8 +813,29 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     {
         plan.chordMode=juce::jmax(plan.chordMode,2);
         plan.hatMode=juce::jmax(plan.hatMode,1);
-        plan.bassMode=juce::jmin(plan.bassMode,2);
     }
+
+    // v2.5 bass direction is a composition decision, not a side effect of a
+    // random seed. Genre supplies a useful default and explicit wording wins.
+    // Modes: sustained root, offbeat house, octave pickup, rolling, syncopated.
+    const bool techHouse=p.contains("tech house")||p.contains("minimal house");
+    const bool drumAndBass=p.contains("drum and bass")||p.contains("dnb");
+    const bool trance=p.contains("trance");
+    const bool futureRave=p.contains("future rave")||p.contains("electro house")
+        ||p.contains("big room")||p.contains("mainstage");
+    if(techHouse)plan.bassMode=3;
+    else if(drumAndBass)plan.bassMode=4;
+    else if(trance)plan.bassMode=1;
+    else if(futureRave)plan.bassMode=2;
+    else if(progressive)plan.bassMode=1;
+    else if(p.contains("pop"))plan.bassMode=0;
+
+    if(p.contains("sustained bass")||p.contains("long bass"))plan.bassMode=0;
+    else if(p.contains("offbeat bass")||p.contains("off-beat bass"))plan.bassMode=1;
+    else if(p.contains("octave pickup")||p.contains("progressive bass"))plan.bassMode=2;
+    else if(p.contains("rolling bass")||p.contains("rolling low end"))plan.bassMode=3;
+    else if(p.contains("syncopated bass")||p.contains("melodic bass")
+            ||p.contains("moving bass")||p.contains("reese bass"))plan.bassMode=4;
 }
 
 void SongArrangement::buildSections(uint64_t seed)
@@ -1323,6 +1344,13 @@ void SongArrangement::addHarmony(uint64_t seed)
         ||productionPrompt.contains("pop")||productionPrompt.contains("trance")
         ||productionPrompt.contains("festival")||productionPrompt.contains("mainstage")
         ||productionPrompt.contains("future rave");
+    const bool houseBass=productionPrompt.contains("house")||productionPrompt.contains("trance")
+        ||productionPrompt.contains("future rave")||productionPrompt.contains("festival")
+        ||productionPrompt.contains("mainstage")||productionPrompt.contains("edm");
+    const bool techBass=productionPrompt.contains("tech house")||productionPrompt.contains("minimal house");
+    const bool dnbBass=productionPrompt.contains("drum and bass")||productionPrompt.contains("dnb");
+    const bool sparseLowEnd=productionPrompt.contains("more space")
+        ||productionPrompt.contains("less busy")||productionPrompt.contains("sparse bass");
 
     const int bassMode=plan.bassMode;
     const int chordMode=plan.chordMode;
@@ -1556,9 +1584,6 @@ void SongArrangement::addHarmony(uint64_t seed)
         const uint64_t bassMotifSeed=mix64(domains.bass
             ^ ((uint64_t)supportTheme+1ULL)*0x9e3779b97f4a7c15ULL
             ^ ((uint64_t)supportMotifBar+1ULL)*0xbf58476d1ce4e5b9ULL);
-        const uint64_t subMotifSeed=mix64(domains.sub
-            ^ ((uint64_t)supportTheme+1ULL)*0x94d049bb133111ebULL
-            ^ ((uint64_t)supportMotifBar+1ULL)*0x517cc1b727220a95ULL);
         const uint64_t pluckMotifSeed=mix64(domains.pluck
             ^ ((uint64_t)supportTheme+1ULL)*0xd1342543de82ef95ULL
             ^ ((uint64_t)supportMotifBar+1ULL)*0xa24baed4963ee407ULL);
@@ -1568,33 +1593,30 @@ void SongArrangement::addHarmony(uint64_t seed)
 
         if(!intro||localBar>=juce::jmax(1,section->bars/2))
         {
-            static constexpr double pos0[4]={0.0,1.0,2.0,3.0};
-            static constexpr double pos1[6]={0.0,.75,1.5,2.0,2.75,3.5};
-            static constexpr double pos2[5]={0.0,1.0,1.75,2.5,3.25};
-            static constexpr double pos3[7]={0.0,.5,1.25,2.0,2.5,3.0,3.75};
-            static constexpr double pos4[5]={0.0,1.5,2.0,2.75,3.5};
+            static constexpr double sustained[1]={0.16};
+            static constexpr double offbeat[4]={0.50,1.50,2.50,3.50};
+            static constexpr double octavePickup[4]={0.16,1.50,2.50,3.50};
+            static constexpr double rolling[6]={0.16,0.75,1.50,2.16,2.75,3.50};
+            static constexpr double syncopated[5]={0.16,0.75,1.75,2.50,3.25};
 
-            const double* positions=pos0;
-            int count=drop||chorus?4:2;
-            if(bassMode==1){positions=pos1;count=(drop||chorus)?6:4;}
-            else if(bassMode==2){positions=pos2;count=(drop||finalHook)?5:3;}
-            else if(bassMode==3){positions=pos3;count=(drop||chorus)?7:4;}
-            else if(bassMode==4){positions=pos4;count=(drop||chorus)?5:3;}
+            const double* positions=sustained;
+            int patternSize=1;
+            if(bassMode==1){positions=offbeat;patternSize=4;}
+            else if(bassMode==2){positions=octavePickup;patternSize=4;}
+            else if(bassMode==3){positions=rolling;patternSize=6;}
+            else if(bassMode==4){positions=syncopated;patternSize=5;}
 
-            if(breakdown)count=juce::jmin(count,2);
-            if(mainstreamSong)
-            {
-                positions=pos0;
-                count=(drop||chorus||finalHook)?2:1;
-                if(breakdown)count=(localBar%2==0)?1:0;
-                if(build&&localBar<section->bars/2)count=0;
-            }
+            int count=patternSize;
+            if(verse)count=juce::jmin(count,bassMode==0?1:(bassMode==3?4:3));
+            if(build&&localBar<section->bars/2)count=juce::jmin(count,2);
+            if(breakdown)count=(localBar%2==0)?juce::jmin(count,1):0;
+            if(intro)count=juce::jmin(count,2);
+            if(sparseLowEnd)count=juce::jmin(count,2);
 
             for(int i=0;i<count;++i)
             {
                 const double pos=positions[i];
                 if(preDropGap&&pos>=3.0)continue;
-                if(!mainstreamSong&&i>0&&random01(bassMotifSeed,0x7100+i)<(verse?.20f:.08f))continue;
                 const auto* h=harmonyAtBeat(barBeat+pos);
                 if(h==nullptr)continue;
 
@@ -1602,48 +1624,45 @@ void SongArrangement::addHarmony(uint64_t seed)
                 int note=rootMidi+scaleSemitoneForDegree(degree)-12;
 
                 const float move=random01(bassMotifSeed,0x7200+i);
-                if(mainstreamSong)
+                if(bassMode==2)
                 {
-                    // Root-first support. At most one predictable fifth pickup.
-                    if((drop||chorus||finalHook)&&i==1&&count==2)note+=7;
+                    // Progressive/festival pickup: lift an octave when the safe
+                    // support register permits it, otherwise use a fifth rather
+                    // than folding the octave back to the identical root.
+                    if(i==count-1&&(drop||chorus||finalHook))note+=note+12<=52?12:7;
                 }
-                else
+                else if(bassMode==4)
                 {
                     const float bassPassing=harmonyPlan.passingProbability;
-                    if(i>0&&move<bassPassing)
+                    if(i>0&&i==count-1&&move<bassPassing)
                     {
                         const int dir=random01(bassMotifSeed,0x7210+i)>.5f?1:-1;
                         note=rootMidi+scaleSemitoneForDegree(degree+dir)-12;
                     }
-                    else if(move<.26f&&i%3==2)note+=7;
-                    else if(move>.84f&&(drop||finalHook))note+=12;
+                    else if(i>0&&i%3==2)note+=7;
                 }
 
                 note=foldBass(note);
-                const double rawLen=mainstreamSong?(count==1?2.90:1.55):(bassMode==3?.28:(drop||chorus?.48:.72));
+                double rawLen=bassMode==0?3.20:(bassMode==1?.34:(bassMode==3?.42:.62));
+                if(i+1<count)rawLen=juce::jmin(rawLen,juce::jmax(.08,positions[i+1]-pos-.08));
+                rawLen=juce::jmin(rawLen,juce::jmax(.08,4.0-pos-.08));
                 const double len=preDropGap?juce::jmin(rawLen,juce::jmax(.08,3.0-pos)):rawLen;
                 addNote(bass,note,barBeat+pos,len,
                         juce::jlimit(62,120,76+(int)(energy*28.f)+(int)(random01(domains.bass,0x7300+bs+i)*12.f)));
             }
         }
 
-        // SUB owns its own rhythm domain and only follows harmonic fundamentals.
+        // SUB is a monophonic fundamental layer. It starts just after strong kick
+        // onsets, uses at most two non-overlapping notes per bar, and leaves the
+        // final beat clear at the pre-drop transition.
         if(!intro||localBar>=juce::jmax(1,section->bars/2))
         {
             int subCount=1;
-            double positions[4]={0.0,2.0,3.0,1.0};
-            if(drop||chorus||finalHook)
-                subCount=random01(subMotifSeed,0x7400)>.52f?2:3;
-            else if(verse&&random01(subMotifSeed,0x7410)>.62f)
-                subCount=2;
+            double positions[2]={0.16,2.16};
+            if((dnbBass||techBass)&&(drop||chorus||finalHook))subCount=2;
             if(breakdown)subCount=(localBar%2==0)?1:0;
-            if(mainstreamSong)
-            {
-                subCount=1;
-                positions[0]=0.0;
-                if(build&&localBar<section->bars/2)subCount=0;
-                if(breakdown&&localBar%2!=0)subCount=0;
-            }
+            if(build&&localBar<section->bars/2)subCount=0;
+            if(sparseLowEnd||mainstreamSong||houseBass)subCount=juce::jmin(subCount,1);
 
             for(int i=0;i<subCount;++i)
             {
@@ -1653,8 +1672,9 @@ void SongArrangement::addHarmony(uint64_t seed)
                 if(h==nullptr)continue;
                 int note=rootMidi+scaleSemitoneForDegree(h->scaleDegree)-24;
                 while(note<24)note+=12;
-                while(note>47)note-=12;
-                const double rawLen=subCount==1?juce::jmin(3.30,4.0-pos):juce::jmin(1.45,4.0-pos);
+                while(note>43)note-=12;
+                double rawLen=subCount==1?juce::jmin(3.18,4.0-pos-.12):juce::jmin(1.72,4.0-pos-.12);
+                if(i+1<subCount)rawLen=juce::jmin(rawLen,positions[i+1]-pos-.12);
                 const double len=preDropGap?juce::jmin(rawLen,juce::jmax(.08,3.0-pos)):rawLen;
                 addNote(sub,note,barBeat+pos,len,
                         juce::jlimit(52,96,60+(int)(energy*22.f)+(int)(random01(domains.sub,0x7420+bs+i)*8.f)));

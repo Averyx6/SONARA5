@@ -773,6 +773,100 @@ int main()
     if(cleanMajor.getHarmonyId()==borrowedMajor.getHarmonyId())
     {std::cerr<<"v2.4 borrowed quality was omitted from Harmony DNA identity\n";return 96;}
 
+    // v2.5: bass wording must select a real groove family. Previously every
+    // mainstream prompt collapsed to the same one/two-note root pattern.
+    sonara::SongArrangement sustainedBass,offbeatBass,rollingBass;
+    sustainedBass.generateComposition(
+        "progressive house 128 BPM F minor sustained bass",128.0,0x250025ULL);
+    offbeatBass.generateComposition(
+        "progressive house 128 BPM F minor offbeat bass",128.0,0x250025ULL);
+    rollingBass.generateComposition(
+        "progressive house 128 BPM F minor rolling bass",128.0,0x250025ULL);
+
+    auto firstDrop=[&](const sonara::SongArrangement& song)
+        ->const sonara::ArrangementSection*
+    {
+        for(const auto& section:song.getSections())
+            if(section.name=="DROP")return &section;
+        return nullptr;
+    };
+    auto firstBarOnsets=[&](const sonara::SongArrangement& song,const juce::String& laneName)
+    {
+        std::set<int> onsets;
+        const auto* section=firstDrop(song);
+        const auto* lane=findLane(song,laneName);
+        if(section==nullptr||lane==nullptr)return onsets;
+        const double begin=section->startBar*4.0;
+        for(const auto& note:lane->notes)
+            if(note.beat>=begin&&note.beat<begin+4.0)
+                onsets.insert((int)std::llround((note.beat-begin)*100.0));
+        return onsets;
+    };
+    const auto sustainedOnsets=firstBarOnsets(sustainedBass,"BASS");
+    const auto offbeatOnsets=firstBarOnsets(offbeatBass,"BASS");
+    const auto rollingOnsets=firstBarOnsets(rollingBass,"BASS");
+    if(sustainedOnsets!=std::set<int>{16}
+       ||offbeatOnsets!=std::set<int>({50,150,250,350})
+       ||rollingOnsets!=std::set<int>({16,75,150,216,275,350}))
+    {std::cerr<<"v2.5 explicit bass groove families collapsed or were ignored\n";return 97;}
+
+    sonara::SongArrangement octavePickupBass;
+    octavePickupBass.generateComposition(
+        "progressive house 128 BPM C minor octave pickup",128.0,0x250025ULL);
+    const auto* octaveDrop=firstDrop(octavePickupBass);
+    const auto* octaveLane=findLane(octavePickupBass,"BASS");
+    std::vector<int> pickupPitches;
+    if(octaveDrop&&octaveLane)
+    {
+        const double begin=octaveDrop->startBar*4.0;
+        for(const auto& note:octaveLane->notes)
+            if(note.beat>=begin&&note.beat<begin+4.0)pickupPitches.push_back(note.note);
+    }
+    if(pickupPitches.size()!=4||pickupPitches.back()-pickupPitches.front()!=12)
+    {std::cerr<<"v2.5 octave-pickup groove did not produce its deliberate lift\n";return 104;}
+
+    auto laneIsMonophonic=[](const sonara::ArrangementLane& lane)
+    {
+        for(size_t i=1;i<lane.notes.size();++i)
+            if(lane.notes[i-1].beat+lane.notes[i-1].length>lane.notes[i].beat+1.0e-6)
+                return false;
+        return true;
+    };
+    for(const auto* song:{&sustainedBass,&offbeatBass,&rollingBass})
+    {
+        const auto* bass=findLane(*song,"BASS");
+        const auto* sub=findLane(*song,"SUB");
+        if(!bass||!sub||!laneIsMonophonic(*bass)||!laneIsMonophonic(*sub))
+        {std::cerr<<"v2.5 low lanes contain overlapping monophonic notes\n";return 98;}
+        for(const auto& note:bass->notes)if(note.note<32||note.note>52)
+        {std::cerr<<"v2.5 BASS escaped its support register\n";return 99;}
+        for(const auto& note:sub->notes)if(note.note<24||note.note>43)
+        {std::cerr<<"v2.5 SUB escaped its safe fundamental register\n";return 100;}
+    }
+
+    sonara::SongArrangement dnbLowEnd;
+    dnbLowEnd.generateComposition(
+        "drum and bass 174 BPM D minor moving reese bass",174.0,0x25d0b5ULL);
+    const auto* dnbSub=findLane(dnbLowEnd,"SUB");
+    const auto dnbSubOnsets=firstBarOnsets(dnbLowEnd,"SUB");
+    if(!dnbSub||dnbSubOnsets!=std::set<int>({16,216})
+       ||!laneIsMonophonic(*dnbSub)||dnbSub->sound.unison!=1
+       ||dnbSub->sound.width!=0.f||dnbSub->sound.reverb!=0.f||dnbSub->sound.delay!=0.f)
+    {std::cerr<<"v2.5 SUB is not deterministic, mono, dry and kick-aware\n";return 101;}
+
+    const auto* offbeatChorus=(const sonara::ArrangementSection*)nullptr;
+    for(const auto& section:offbeatBass.getSections())
+        if(section.name=="CHORUS"){offbeatChorus=&section;break;}
+    const auto* offbeatBassLane=findLane(offbeatBass,"BASS");
+    const auto* offbeatSubLane=findLane(offbeatBass,"SUB");
+    if(!offbeatChorus||!offbeatBassLane||!offbeatSubLane)
+    {std::cerr<<"v2.5 transition-gap fixture missing\n";return 102;}
+    const double gapBar=(offbeatChorus->startBar+offbeatChorus->bars-1)*4.0;
+    for(const auto* lane:{offbeatBassLane,offbeatSubLane})
+        for(const auto& note:lane->notes)
+            if(note.beat>=gapBar&&note.beat<gapBar+4.0&&note.beat+note.length>gapBar+3.001)
+            {std::cerr<<"v2.5 low-frequency tail fills the pre-drop breathing space\n";return 103;}
+
     // Same key/BPM/genre: variation must come from composition, not transposition.
     std::set<uint64_t> fixedHarmony,fixedMelody,fixedBass,fixedDrums,fixedPluck;
     for(uint64_t i=0;i<10;++i)
