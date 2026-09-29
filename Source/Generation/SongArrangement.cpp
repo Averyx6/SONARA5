@@ -1397,7 +1397,9 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
         else if(chorus)hatSteps=8;
         else if(intro)hatSteps=localBar>=juce::jmax(1,section->bars-2)?8:4;
         else if(energy>=.58f||energetic)hatSteps=8;
-        if(drop&&energy<.86f)hatSteps=juce::jmin(hatSteps,8);
+        // A softer curve may simplify a generic drop, but genre-defining trance
+        // and festival 16th motion is a hard style constraint, not optional fill.
+        if(drop&&energy<.86f&&!trance&&!festival)hatSteps=juce::jmin(hatSteps,8);
         if(energy>=.88f&&!intro&&!breakdown)hatSteps=juce::jmax(hatSteps,12);
         for(int h=0;h<hatSteps;++h)
         {
