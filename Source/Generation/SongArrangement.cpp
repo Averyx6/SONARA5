@@ -1407,6 +1407,11 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             const bool strong=(h%quarter==0);
             float skip=breakdown?.58f:(intro?.28f:(drop?.05f:(chorus?.09f:(build?.12f:.18f))));
             skip=juce::jlimit(.02f,.76f,skip+(.5f-energy)*.36f);
+            // Sixteenth-note trance/festival hats are the groove skeleton, not
+            // optional ornamentation.  Energy may still shape their velocity
+            // and timbre, but stochastic thinning can otherwise erase five or
+            // more hits and collapse the style back into an eight-note groove.
+            if(drop&&(trance||festival))skip=0.f;
             if(!strong && random01(seed,1300+bs+h)<skip) continue;
             double beat=b+h*(4.0/hatSteps);
             if(h%2==1) beat+=swing*(hatMode==1?1.0:.55);
