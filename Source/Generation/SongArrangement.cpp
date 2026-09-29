@@ -892,6 +892,7 @@ void SongArrangement::clear()
     lanes.clear();
     sections.clear();
     harmonyEvents.clear();
+    palettePlan=SoundPalettePlan{};
     harmonyId=0;
     melodyId=0;
 }
@@ -1396,10 +1397,36 @@ void SongArrangement::finalizeSoundPalette()
     const bool cinematic=productionPrompt.contains("cinematic")||productionPrompt.contains("film");
     const bool tropical=productionPrompt.contains("tropical");
 
+    // v3.2: choose one song-level timbral world before designing individual
+    // instruments. Previously every lane independently drew a flavour adjective,
+    // so a song could combine unrelated bright/dark/airy/thick patches by chance.
+    // These axes remain seed-variable, but explicit prompt intent and the shared
+    // producer plan constrain them into one coherent palette.
+    palettePlan.character=(int)(random01(domains.soundPalette,0x3200)*4.f)%4;
+    palettePlan.brightness=.30f+.40f*random01(domains.soundPalette,0x3201);
+    palettePlan.movement=.24f+.48f*random01(domains.soundPalette,0x3202);
+    palettePlan.space=.24f+.48f*random01(domains.soundPalette,0x3203);
+    palettePlan.impact=.30f+.45f*random01(domains.soundPalette,0x3204);
+    if(plan.emotionProfile==2)palettePlan.brightness=juce::jmax(.68f,palettePlan.brightness);
+    if(plan.emotionProfile==3)palettePlan.brightness=juce::jmin(.36f,palettePlan.brightness);
+    if(plan.emotionProfile==4)palettePlan.space=juce::jmax(.72f,palettePlan.space);
+    if(plan.emotionProfile==5)palettePlan.impact=juce::jmax(.78f,palettePlan.impact);
+    if(productionPrompt.contains("bright")||productionPrompt.contains("airy"))palettePlan.brightness=juce::jmax(.78f,palettePlan.brightness);
+    if(productionPrompt.contains("dark")||productionPrompt.contains("warm"))palettePlan.brightness=juce::jmin(.38f,palettePlan.brightness);
+    if(productionPrompt.contains("dry")||productionPrompt.contains("intimate"))palettePlan.space=juce::jmin(.24f,palettePlan.space);
+    if(productionPrompt.contains("spacious")||productionPrompt.contains("wide"))palettePlan.space=juce::jmax(.76f,palettePlan.space);
+    if(productionPrompt.contains("aggressive")||productionPrompt.contains("hard"))palettePlan.impact=juce::jmax(.80f,palettePlan.impact);
+    static constexpr const char* paletteWords[4]={"vintage analog","clean digital","organic natural","hybrid modern"};
+
     for (size_t i = 0; i < lanes.size(); ++i)
     {
         auto& lane = lanes[i];
         juce::String soundPrompt = sourcePrompt + " " + lane.name + " ";
+        // Drum synthesis has its own material vocabulary; applying e.g. the
+        // generic "digital" family after the kick rule could relabel and reshape
+        // a kick as a melodic digital patch. Drums share palette impact/macros,
+        // while tonal lanes also inherit the oscillator-material character.
+        if(!lane.drums)soundPrompt += juce::String(paletteWords[palettePlan.character])+" ";
 
         // Role descriptions intentionally use the semantic vocabulary understood by
         // PromptGenerator. The palette can now choose topology based on musical job,
@@ -1479,6 +1506,23 @@ void SongArrangement::finalizeSoundPalette()
                                         "airy animated wide heavy modulation";
         lane.sound = designer.generate(soundPrompt, mix64(domains.soundPalette ^ mix64((static_cast<uint64_t>(i)+1ULL) * 0x517cc1b727220a95ULL)));
 
+        // Publish the common palette axes in every SoundDNA. Small deterministic
+        // role offsets keep instruments distinguishable without dissolving the
+        // shared production identity.
+        const float roleOffset=(random01(domains.soundPalette,0xa200ULL+i*17ULL)-.5f)*.16f;
+        lane.sound.macroBrightness=juce::jlimit(0.f,1.f,palettePlan.brightness+roleOffset);
+        lane.sound.macroMovement=juce::jlimit(0.f,1.f,palettePlan.movement-roleOffset*.35f);
+        lane.sound.macroSpace=juce::jlimit(0.f,1.f,palettePlan.space+roleOffset*.45f);
+        lane.sound.macroImpact=juce::jlimit(0.f,1.f,palettePlan.impact-roleOffset*.25f);
+        lane.sound.cutoff=juce::jlimit(80.f,19000.f,lane.sound.cutoff*(.72f+.56f*lane.sound.macroBrightness));
+        lane.sound.drive=juce::jlimit(0.f,1.f,lane.sound.drive*(.72f+.62f*lane.sound.macroImpact));
+        lane.sound.lfoRate=juce::jlimit(.02f,8.f,lane.sound.lfoRate*(.72f+.60f*lane.sound.macroMovement));
+        lane.sound.lfoCutoff=juce::jlimit(-1.f,1.f,lane.sound.lfoCutoff*(.55f+.90f*lane.sound.macroMovement));
+        lane.sound.width=juce::jlimit(0.f,1.f,lane.sound.width*(.76f+.40f*lane.sound.macroSpace));
+        lane.sound.chorus=juce::jlimit(0.f,1.f,lane.sound.chorus*(.68f+.62f*lane.sound.macroSpace));
+        lane.sound.reverb=juce::jlimit(0.f,1.f,lane.sound.reverb*(.62f+.74f*lane.sound.macroSpace));
+        lane.sound.delay=juce::jlimit(0.f,1.f,lane.sound.delay*(.62f+.74f*lane.sound.macroSpace));
+
         // Keep song playback lighter and cleaner than single-instrument design.
         // Each role gets a bounded unison/FX/sub budget so low notes do not stack into mud.
         if(lane.name=="BASS")
@@ -1550,9 +1594,47 @@ void SongArrangement::finalizeSoundPalette()
             lane.sound.release=juce::jmin(.45f,lane.sound.release);
         }
 
+        // Stereo/space remains role-safe even when the song palette is lush.
+        if(lane.name=="SUB"||lane.name=="KICK")
+        {
+            lane.sound.macroSpace=0.f;lane.sound.width=0.f;
+            lane.sound.chorus=0.f;lane.sound.reverb=0.f;lane.sound.delay=0.f;
+        }
+        else if(lane.name=="BASS")lane.sound.macroSpace=juce::jmin(.12f,lane.sound.macroSpace);
+
         const auto semanticName=lane.sound.name.replace("Generated ","").trim();
         lane.sound.name=lane.name+" • "+(semanticName.isEmpty()?juce::String("Custom"):semanticName);
     }
+}
+
+juce::String SongArrangement::getSoundPaletteSummary() const
+{
+    static constexpr const char* names[4]={"ANALOG","DIGITAL","ORGANIC","HYBRID"};
+    return "CHARACTER: "+juce::String(names[juce::jlimit(0,3,palettePlan.character)])
+        +" | BRIGHTNESS: "+juce::String((int)std::lround(palettePlan.brightness*100.f))
+        +" | MOVEMENT: "+juce::String((int)std::lround(palettePlan.movement*100.f))
+        +" | SPACE: "+juce::String((int)std::lround(palettePlan.space*100.f))
+        +" | IMPACT: "+juce::String((int)std::lround(palettePlan.impact*100.f));
+}
+
+std::vector<int> SongArrangement::getSoundPaletteFingerprint() const
+{
+    std::vector<int> fingerprint;
+    fingerprint.reserve(5+lanes.size()*12);
+    fingerprint.push_back(palettePlan.character);
+    for(const float value:{palettePlan.brightness,palettePlan.movement,palettePlan.space,palettePlan.impact})
+        fingerprint.push_back((int)std::lround(value*1000.f));
+    for(const auto& lane:lanes)
+    {
+        const auto& d=lane.sound;
+        fingerprint.insert(fingerprint.end(),{
+            (int)d.oscA,(int)d.oscB,(int)std::lround(d.oscMix*100.f),d.unison,
+            (int)d.filterMode,(int)std::lround(d.cutoff/40.f),(int)std::lround(d.drive*200.f),
+            (int)std::lround(d.width*100.f),(int)std::lround(d.fmAmount*100.f),
+            (int)std::lround(d.macroBrightness*100.f),(int)std::lround(d.macroSpace*100.f),
+            (int)std::lround(d.macroImpact*100.f)});
+    }
+    return fingerprint;
 }
 
 void SongArrangement::addDrums(uint64_t seed, bool energetic)
@@ -3176,6 +3258,7 @@ juce::ValueTree SongArrangement::toValueTree() const
     songPlan.setProperty("padPolicy",plan.padPolicy,nullptr);songPlan.setProperty("counterPolicy",plan.counterPolicy,nullptr);songPlan.setProperty("hookStrength",plan.hookStrength,nullptr);songPlan.setProperty("dropIntensity",plan.dropIntensity,nullptr);songPlan.setProperty("drumDrive",plan.drumDrive,nullptr);
     songPlan.setProperty("energyContrast",plan.energyContrast,nullptr);songPlan.setProperty("energyBias",plan.energyBias,nullptr);songPlan.setProperty("transitionIntensity",plan.transitionIntensity,nullptr);
     songPlan.setProperty("density",plan.density,nullptr);songPlan.setProperty("syncopation",plan.syncopation,nullptr);songPlan.setProperty("restAmount",plan.restAmount,nullptr);songPlan.setProperty("development",plan.development,nullptr);
+    songPlan.setProperty("paletteCharacter",palettePlan.character,nullptr);songPlan.setProperty("paletteBrightness",palettePlan.brightness,nullptr);songPlan.setProperty("paletteMovement",palettePlan.movement,nullptr);songPlan.setProperty("paletteSpace",palettePlan.space,nullptr);songPlan.setProperty("paletteImpact",palettePlan.impact,nullptr);
     root.addChild(songPlan,-1,nullptr);
 
     juce::ValueTree harmony("HARMONY_DNA");
@@ -3226,6 +3309,8 @@ SongArrangement SongArrangement::fromValueTree(const juce::ValueTree& root)
         a.plan.padPolicy=juce::jlimit(0,3,(int)composition.getProperty("padPolicy",0));a.plan.counterPolicy=juce::jlimit(0,3,(int)composition.getProperty("counterPolicy",1));a.plan.hookStrength=juce::jlimit(.35f,1.f,(float)composition.getProperty("hookStrength",.72f));a.plan.dropIntensity=juce::jlimit(.55f,1.25f,(float)composition.getProperty("dropIntensity",.90f));a.plan.drumDrive=juce::jlimit(.55f,1.25f,(float)composition.getProperty("drumDrive",.90f));
         a.plan.energyContrast=juce::jlimit(.5f,1.5f,(float)composition.getProperty("energyContrast",1.f));a.plan.energyBias=juce::jlimit(-.25f,.25f,(float)composition.getProperty("energyBias",0.f));a.plan.transitionIntensity=juce::jlimit(.4f,1.6f,(float)composition.getProperty("transitionIntensity",1.f));
         a.plan.density=(float)composition.getProperty("density",.65f);a.plan.syncopation=(float)composition.getProperty("syncopation",.35f);a.plan.restAmount=(float)composition.getProperty("restAmount",.18f);a.plan.development=(float)composition.getProperty("development",.55f);
+        a.palettePlan.character=juce::jlimit(0,3,(int)composition.getProperty("paletteCharacter",0));
+        a.palettePlan.brightness=juce::jlimit(0.f,1.f,(float)composition.getProperty("paletteBrightness",.5f));a.palettePlan.movement=juce::jlimit(0.f,1.f,(float)composition.getProperty("paletteMovement",.5f));a.palettePlan.space=juce::jlimit(0.f,1.f,(float)composition.getProperty("paletteSpace",.5f));a.palettePlan.impact=juce::jlimit(0.f,1.f,(float)composition.getProperty("paletteImpact",.5f));
     }
     auto harmony=root.getChildWithName("HARMONY_DNA");
     if(harmony.isValid())

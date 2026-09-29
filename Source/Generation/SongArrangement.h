@@ -62,6 +62,8 @@ public:
     juce::String getMelodyArchetypeName() const;
     juce::String getProducerPlanSummary() const;
     juce::String getPromptIntentSummary() const;
+    juce::String getSoundPaletteSummary() const;
+    std::vector<int> getSoundPaletteFingerprint() const;
     std::vector<int> getProgressionFingerprint() const;
     std::vector<int> getHarmonyFingerprint() const;
     std::vector<int> getMelodyFingerprint() const;
@@ -129,6 +131,14 @@ private:
         uint64_t melody=0,counter=0,fx=0,soundPalette=0;
     };
 
+    struct SoundPalettePlan {
+        int character=0; // analog, digital, organic, hybrid
+        float brightness=.5f;
+        float movement=.5f;
+        float space=.5f;
+        float impact=.5f;
+    };
+
     struct HarmonyPlan {
         int progressionLength=4;
         std::array<int,8> mainDegrees{0,5,2,6,0,3,4,6};
@@ -189,6 +199,7 @@ private:
     std::vector<ArrangementLane> lanes;
     std::vector<ArrangementSection> sections;
     SongPlan plan;
+    SoundPalettePlan palettePlan;
     SeedDomains domains;
     HarmonyPlan harmonyPlan;
     std::vector<HarmonyEvent> harmonyEvents;

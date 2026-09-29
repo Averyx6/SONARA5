@@ -1309,6 +1309,38 @@ int main()
     if(restoredIntent.getPromptIntentSummary()!=semanticIntent.getPromptIntentSummary())
     {std::cerr<<"v3.1 parsed prompt intent did not survive project restore\n";return 144;}
 
+    // v3.2: all lane sounds inherit one seed-variable palette world while role
+    // constraints keep sub/kick mono and dry. The palette must be deterministic,
+    // inspectable, persistent, and materially different for a new song seed.
+    sonara::SongArrangement paletteA,paletteAgain,paletteB;
+    const auto palettePrompt=juce::String("dreamy spacious progressive house 128 BPM F minor bright evolving");
+    paletteA.generate(palettePrompt,128.0,0x320032ULL);
+    paletteAgain.generate(palettePrompt,128.0,0x320032ULL);
+    paletteB.generate(palettePrompt,128.0,0x320033ULL);
+    if(paletteA.getSoundPaletteFingerprint()!=paletteAgain.getSoundPaletteFingerprint()
+       ||paletteA.getSoundPaletteFingerprint()==paletteB.getSoundPaletteFingerprint()
+       ||!paletteA.getSoundPaletteSummary().contains("CHARACTER:")
+       ||!paletteA.getSoundPaletteSummary().contains("BRIGHTNESS:"))
+    {std::cerr<<"v3.2 shared SoundDNA palette is not deterministic, inspectable, or seed-variable\n";return 145;}
+
+    const auto* paletteKick=findLane(paletteA,"KICK");
+    const auto* paletteSub=findLane(paletteA,"SUB");
+    const auto* paletteLead=findLane(paletteA,"LEAD");
+    const auto* palettePluck=findLane(paletteA,"PLUCK");
+    if(!paletteKick||!paletteSub||!paletteLead||!palettePluck
+       ||paletteKick->sound.width>0.f||paletteKick->sound.reverb>0.f
+       ||paletteSub->sound.width>0.f||paletteSub->sound.reverb>0.f
+       ||paletteSub->sound.chorus>0.f||paletteSub->sound.delay>0.f
+       ||(paletteLead->sound.oscA==palettePluck->sound.oscA
+          &&paletteLead->sound.oscB==palettePluck->sound.oscB
+          &&std::abs(paletteLead->sound.attack-palettePluck->sound.attack)<.001f))
+    {std::cerr<<"v3.2 palette coherence broke lane identity or mono low-end safety\n";return 146;}
+
+    const auto restoredPalette=sonara::SongArrangement::fromValueTree(paletteA.toValueTree());
+    if(restoredPalette.getSoundPaletteSummary()!=paletteA.getSoundPaletteSummary()
+       ||restoredPalette.getSoundPaletteFingerprint()!=paletteA.getSoundPaletteFingerprint())
+    {std::cerr<<"v3.2 SoundDNA palette plan did not survive persistence\n";return 147;}
+
     // Same key/BPM/genre: variation must come from composition, not transposition.
     std::set<uint64_t> fixedHarmony,fixedMelody,fixedBass,fixedDrums,fixedPluck;
     for(uint64_t i=0;i<10;++i)
