@@ -60,6 +60,7 @@ public:
     juce::String getHarmonySummary() const;
     juce::String getHarmonicRhythmSummary() const;
     juce::String getMelodyArchetypeName() const;
+    juce::String getProducerPlanSummary() const;
     std::vector<int> getProgressionFingerprint() const;
     std::vector<int> getHarmonyFingerprint() const;
     std::vector<int> getMelodyFingerprint() const;
@@ -85,6 +86,17 @@ private:
         int motifLength=8;
         int phraseBars=4;
         int octaveRange=2;
+        // v3.0 semantic producer decisions. These are chosen once before MIDI
+        // generation and shared by composition, arrangement and SoundDNA.
+        int genreFamily=0;
+        int emotionProfile=0;
+        int hookShape=0;
+        int chordTexture=0;
+        int padPolicy=0;
+        int counterPolicy=1;
+        float hookStrength=.72f;
+        float dropIntensity=.90f;
+        float drumDrive=.90f;
         float energyContrast=1.f;
         float energyBias=0.f;
         float transitionIntensity=1.f;

@@ -480,6 +480,23 @@ juce::String SongArrangement::getMelodyArchetypeName() const
     return names[juce::jlimit(0,11,plan.melodyArchetype)];
 }
 
+juce::String SongArrangement::getProducerPlanSummary() const
+{
+    static constexpr const char* genres[]={"GENERAL","PROGRESSIVE","FESTIVAL","TECH HOUSE","TRANCE","DRUM & BASS","CINEMATIC","POP"};
+    static constexpr const char* emotions[]={"NEUTRAL","EMOTIONAL","UPLIFTING","DARK","DREAMY","AGGRESSIVE"};
+    static constexpr const char* hooks[]={"CALL / RESPONSE","RISING","FALLING","ARCH"};
+    static constexpr const char* chords[]={"SUSTAINED","RHYTHMIC","ANTHEM","DRY STABS"};
+    static constexpr const char* pads[]={"VERSE + BREAKDOWN","BREAKDOWN ONLY","ATMOSPHERIC","OFF"};
+    static constexpr const char* counters[]={"FINAL ONLY","DROP + FINAL","HOOK SECTIONS","OFF"};
+    return "STYLE: "+juce::String(genres[juce::jlimit(0,7,plan.genreFamily)])
+        +" | EMOTION: "+emotions[juce::jlimit(0,5,plan.emotionProfile)]
+        +" | HOOK: "+hooks[juce::jlimit(0,3,plan.hookShape)]
+        +" | CHORDS: "+chords[juce::jlimit(0,3,plan.chordTexture)]
+        +" | PAD: "+pads[juce::jlimit(0,3,plan.padPolicy)]
+        +" | COUNTER: "+counters[juce::jlimit(0,3,plan.counterPolicy)]
+        +" | DROP: "+juce::String((int)std::llround(plan.dropIntensity*100.f))+"%";
+}
+
 juce::String SongArrangement::getHarmonySummary() const
 {
     static constexpr const char* minorRoman[]={"i","ii°","III","iv","v","VI","VII"};
@@ -745,6 +762,43 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     plan.energyBias=-.015f+.03f*random01(domains.structure,0x1017);
     plan.transitionIntensity=.92f+.16f*random01(domains.fx,0x1018);
 
+    // v3.0 producer brain: choose one semantic production direction before any
+    // lane is rendered. Downstream systems consume these decisions instead of
+    // independently guessing their role from the raw prompt.
+    const bool producerFestival=p.contains("festival")||p.contains("mainstage")||p.contains("big room")||p.contains("future rave");
+    const bool producerProgressive=p.contains("progressive house")||p.contains("melodic house");
+    const bool producerTech=p.contains("tech house")||p.contains("minimal house");
+    const bool producerTrance=p.contains("trance");
+    const bool producerDnb=p.contains("drum and bass")||p.contains("dnb");
+    const bool producerCinematic=p.contains("cinematic")||p.contains("film");
+    const bool producerPop=p.contains("pop")||p.contains("radio");
+    plan.genreFamily=producerProgressive?1:(producerFestival?2:(producerTech?3:
+        (producerTrance?4:(producerDnb?5:(producerCinematic?6:(producerPop?7:0))))));
+    plan.emotionProfile=p.contains("aggressive")||p.contains("hard")?5:
+        (p.contains("dreamy")?4:(p.contains("dark")?3:(p.contains("uplifting")||p.contains("hopeful")?2:
+        (p.contains("emotional")||p.contains("warm")?1:0))));
+    plan.hookShape=(int)(random01(domains.melody,0x1019)*4.f)%4;
+    const bool explicitRising=p.contains("rising motif")||p.contains("rising hook")||p.contains("rising melody");
+    const bool explicitFalling=p.contains("falling motif")||p.contains("falling hook")||p.contains("falling melody");
+    if(explicitRising){plan.hookShape=1;plan.melodyArchetype=9;}
+    else if(explicitFalling){plan.hookShape=2;plan.melodyArchetype=8;}
+    else if(p.contains("call and response")||p.contains("call / response")){plan.hookShape=0;plan.melodyArchetype=0;}
+    else if(p.contains("arch melody")||p.contains("arched motif")){plan.hookShape=3;plan.melodyArchetype=3;}
+    plan.hookStrength=.62f+.20f*random01(domains.melody,0x101a);
+    if(p.contains("memorable")||p.contains("catchy")||p.contains("strong hook"))plan.hookStrength=juce::jmax(plan.hookStrength,.90f);
+    if(p.contains("subtle hook"))plan.hookStrength=juce::jmin(plan.hookStrength,.58f);
+    plan.dropIntensity=.82f+.18f*random01(domains.structure,0x101b);
+    if(p.contains("powerful drop")||p.contains("huge drop")||p.contains("massive drop"))plan.dropIntensity=1.15f;
+    if(p.contains("soft drop")||p.contains("restrained drop"))plan.dropIntensity=.72f;
+    plan.drumDrive=.82f+.20f*random01(domains.drums,0x101c);
+    if(p.contains("huge drums")||p.contains("powerful drums")||p.contains("hard drums"))plan.drumDrive=1.15f;
+    if(p.contains("soft drums")||p.contains("restrained drums"))plan.drumDrive=.72f;
+    plan.chordTexture=producerTech?3:((producerFestival||producerProgressive||producerTrance)?2:0);
+    if(p.contains("rhythmic chords")||p.contains("pulsing chords"))plan.chordTexture=1;
+    if(p.contains("warm chords")||p.contains("sustained chords"))plan.chordTexture=0;
+    plan.padPolicy=producerTech?3:(producerFestival?1:(producerCinematic?2:0));
+    plan.counterPolicy=producerTech?3:((producerProgressive&&plan.emotionProfile==1)?0:1);
+
     const bool lowEnergy=p.contains("low energy")||p.contains("calm")
         ||p.contains("gentle")||p.contains("chill")||p.contains("restrained");
     const bool highEnergy=p.contains("high energy")||p.contains("energetic")
@@ -876,6 +930,14 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     else if(p.contains("rolling bass")||p.contains("rolling low end"))plan.bassMode=3;
     else if(p.contains("syncopated bass")||p.contains("melodic bass")
             ||p.contains("moving bass")||p.contains("reese bass"))plan.bassMode=4;
+
+    // Resolve explicit high-level directions last so lower-level genre defaults
+    // cannot accidentally overwrite the producer's central decision.
+    if(explicitRising)plan.melodyArchetype=9;
+    else if(explicitFalling)plan.melodyArchetype=8;
+    if(plan.chordTexture==0&&(p.contains("warm chords")||p.contains("sustained chords")))plan.chordMode=0;
+    else if(plan.chordTexture==1)plan.chordMode=1;
+    else if(plan.chordTexture==2)plan.chordMode=juce::jmax(plan.chordMode,2);
 }
 
 void SongArrangement::buildSections(uint64_t seed)
@@ -1162,10 +1224,10 @@ void SongArrangement::finalizeSoundPalette()
             soundPrompt += "pure clean sine sub mono lowpass controlled dry no highs ";
         else if(lane.name=="CHORDS")
         {
-            if(festival||progressive)soundPrompt += "festival supersaw chords wide bright controlled anthem ";
-            else if(tech)soundPrompt += "short house chord stab warm tight ";
-            else if(trance)soundPrompt += "wide trance supersaw chords bright ";
-            else soundPrompt += "wide musical harmony chords ";
+            if(plan.chordTexture==0)soundPrompt += "warm sustained chords soft attack musical harmony ";
+            else if(plan.chordTexture==1)soundPrompt += "rhythmic pulsing chords controlled attack ";
+            else if(plan.chordTexture==2)soundPrompt += "wide bright supersaw anthem chords controlled ";
+            else soundPrompt += "short dry house chord stabs tight transient ";
         }
         else if(lane.name=="PLUCK")
         {
@@ -1200,6 +1262,14 @@ void SongArrangement::finalizeSoundPalette()
             soundPrompt += festival?"festival riser uplifter transition airy noise sweep reverse ":
                            "riser uplifter transition atmospheric noise sweep reverse ";
         else soundPrompt += "clean atmospheric texture ";
+        if(plan.emotionProfile==1)soundPrompt += "warm emotional expressive hopeful ";
+        else if(plan.emotionProfile==2)soundPrompt += "uplifting bright open ";
+        else if(plan.emotionProfile==3)soundPrompt += "dark restrained moody ";
+        else if(plan.emotionProfile==4)soundPrompt += "dreamy soft spacious ";
+        else if(plan.emotionProfile==5)soundPrompt += "aggressive hard driven ";
+        if(lane.drums)
+            soundPrompt += plan.drumDrive>1.05f?"powerful hard transient ":
+                           (plan.drumDrive<.80f?"soft restrained transient ":"controlled transient ");
         const float flavour = random01(domains.soundPalette, 0x9000ULL + static_cast<uint64_t>(i) * 0x9e37ULL);
         soundPrompt += flavour < .25f ? "warm soft spacious long release" :
                        flavour < .50f ? "bright crisp wide fast attack" :
@@ -1321,7 +1391,9 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
         const double b=bar*beatsPerBar;
         const uint64_t bs=(uint64_t)bar*97ULL;
 
-        const int energyVelocity=(int)std::llround((energy-.5f)*18.f);
+        const int producerDrive=(int)std::llround((plan.drumDrive-.90f)*24.f
+            +(drop?(plan.dropIntensity-.90f)*18.f:0.f));
+        const int energyVelocity=(int)std::llround((energy-.5f)*18.f)+producerDrive;
         if(!breakdown && (!intro || bar-section->startBar>=juce::jmax(1,section->bars/2)))
         {
             if(dnb)
@@ -1410,7 +1482,7 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
             const int quarter=juce::jmax(1,hatSteps/4);
             const bool strong=(h%quarter==0);
             float skip=breakdown?.58f:(intro?.28f:(drop?.05f:(chorus?.09f:(build?.12f:.18f))));
-            skip=juce::jlimit(.02f,.76f,skip+(.5f-energy)*.36f);
+            skip=juce::jlimit(.02f,.76f,skip+(.5f-energy)*.36f-(plan.drumDrive-.90f)*.18f);
             // Sixteenth-note trance/festival hats are the groove skeleton, not
             // optional ornamentation.  Energy may still shape their velocity
             // and timbre, but stochastic thinning can otherwise erase five or
@@ -1649,7 +1721,11 @@ void SongArrangement::addHarmony(uint64_t seed)
                             juce::jmax(36,baseVel-11));
             }
 
-            if(intro||verse||breakdown||(!drop&&section->energy<.48f))
+            const bool plannedPad=plan.padPolicy==0
+                ?(intro||verse||breakdown||(!drop&&section->energy<.48f))
+                :(plan.padPolicy==1?breakdown:
+                  (plan.padPolicy==2?(intro||verse||breakdown||(!drop&&section->energy<.62f)):false));
+            if(plannedPad)
             {
                 // PAD is two slow upper voices, same harmony, same bar.
                 const int padA=foldNear(tones[1],57,74,64);
@@ -2185,6 +2261,8 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             float restChance=plan.restAmount;
             if(chorus)restChance=juce::jmax(.10f,restChance*.70f);
             if(drop||finalHook)restChance=juce::jmax(.08f,restChance*.58f);
+            if(chorus||drop||finalHook)
+                restChance*=juce::jlimit(.52f,1.18f,1.34f-plan.hookStrength*.62f);
             if(verse)restChance=juce::jmax(.16f,restChance*1.28f);
             if(breakdown)restChance=juce::jmax(restChance,.30f);
             if(tech)restChance=juce::jmax(restChance,.24f);
@@ -2405,7 +2483,10 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         const int leadNotesThisBar=(int)(lead.notes.size()-leadBeforeBar);
         const bool answerBar=motifBar==1;
         const bool counterSpace=leadNotesThisBar<=(finalHook?6:5);
-        if(!disableCounter&&(drop||finalHook)&&!tech&&answerBar&&counterSpace)
+        const bool plannedCounter=plan.counterPolicy==0?finalHook:
+            (plan.counterPolicy==1?(drop||finalHook):
+             (plan.counterPolicy==2?(chorus||drop||finalHook):false));
+        if(!disableCounter&&plannedCounter&&!tech&&answerBar&&counterSpace)
         {
             const uint64_t cs=mix64(domains.counter
                 ^ ((uint64_t)themeGroup+1ULL)*0x9e3779b97f4a7c15ULL
@@ -2892,6 +2973,8 @@ juce::ValueTree SongArrangement::toValueTree() const
     songPlan.setProperty("bassMode",plan.bassMode,nullptr);songPlan.setProperty("chordMode",plan.chordMode,nullptr);songPlan.setProperty("arpMode",plan.arpMode,nullptr);
     songPlan.setProperty("melodyArchetype",plan.melodyArchetype,nullptr);songPlan.setProperty("rhythmFamily",plan.rhythmFamily,nullptr);songPlan.setProperty("startingDegree",plan.startingDegree,nullptr);
     songPlan.setProperty("cadenceStyle",plan.cadenceStyle,nullptr);songPlan.setProperty("motifLength",plan.motifLength,nullptr);songPlan.setProperty("phraseBars",plan.phraseBars,nullptr);songPlan.setProperty("octaveRange",plan.octaveRange,nullptr);
+    songPlan.setProperty("genreFamily",plan.genreFamily,nullptr);songPlan.setProperty("emotionProfile",plan.emotionProfile,nullptr);songPlan.setProperty("hookShape",plan.hookShape,nullptr);songPlan.setProperty("chordTexture",plan.chordTexture,nullptr);
+    songPlan.setProperty("padPolicy",plan.padPolicy,nullptr);songPlan.setProperty("counterPolicy",plan.counterPolicy,nullptr);songPlan.setProperty("hookStrength",plan.hookStrength,nullptr);songPlan.setProperty("dropIntensity",plan.dropIntensity,nullptr);songPlan.setProperty("drumDrive",plan.drumDrive,nullptr);
     songPlan.setProperty("energyContrast",plan.energyContrast,nullptr);songPlan.setProperty("energyBias",plan.energyBias,nullptr);songPlan.setProperty("transitionIntensity",plan.transitionIntensity,nullptr);
     songPlan.setProperty("density",plan.density,nullptr);songPlan.setProperty("syncopation",plan.syncopation,nullptr);songPlan.setProperty("restAmount",plan.restAmount,nullptr);songPlan.setProperty("development",plan.development,nullptr);
     root.addChild(songPlan,-1,nullptr);
@@ -2940,6 +3023,8 @@ SongArrangement SongArrangement::fromValueTree(const juce::ValueTree& root)
         a.plan.bassMode=(int)composition.getProperty("bassMode",0);a.plan.chordMode=(int)composition.getProperty("chordMode",0);a.plan.arpMode=(int)composition.getProperty("arpMode",0);
         a.plan.melodyArchetype=(int)composition.getProperty("melodyArchetype",0);a.plan.rhythmFamily=(int)composition.getProperty("rhythmFamily",0);a.plan.startingDegree=(int)composition.getProperty("startingDegree",0);
         a.plan.cadenceStyle=(int)composition.getProperty("cadenceStyle",0);a.plan.motifLength=(int)composition.getProperty("motifLength",8);a.plan.phraseBars=(int)composition.getProperty("phraseBars",4);a.plan.octaveRange=(int)composition.getProperty("octaveRange",2);
+        a.plan.genreFamily=juce::jlimit(0,7,(int)composition.getProperty("genreFamily",0));a.plan.emotionProfile=juce::jlimit(0,5,(int)composition.getProperty("emotionProfile",0));a.plan.hookShape=juce::jlimit(0,3,(int)composition.getProperty("hookShape",0));a.plan.chordTexture=juce::jlimit(0,3,(int)composition.getProperty("chordTexture",0));
+        a.plan.padPolicy=juce::jlimit(0,3,(int)composition.getProperty("padPolicy",0));a.plan.counterPolicy=juce::jlimit(0,3,(int)composition.getProperty("counterPolicy",1));a.plan.hookStrength=juce::jlimit(.35f,1.f,(float)composition.getProperty("hookStrength",.72f));a.plan.dropIntensity=juce::jlimit(.55f,1.25f,(float)composition.getProperty("dropIntensity",.90f));a.plan.drumDrive=juce::jlimit(.55f,1.25f,(float)composition.getProperty("drumDrive",.90f));
         a.plan.energyContrast=juce::jlimit(.5f,1.5f,(float)composition.getProperty("energyContrast",1.f));a.plan.energyBias=juce::jlimit(-.25f,.25f,(float)composition.getProperty("energyBias",0.f));a.plan.transitionIntensity=juce::jlimit(.4f,1.6f,(float)composition.getProperty("transitionIntensity",1.f));
         a.plan.density=(float)composition.getProperty("density",.65f);a.plan.syncopation=(float)composition.getProperty("syncopation",.35f);a.plan.restAmount=(float)composition.getProperty("restAmount",.18f);a.plan.development=(float)composition.getProperty("development",.55f);
     }

@@ -1196,6 +1196,54 @@ int main()
        ||restoredEnergy.getStructureFingerprint()!=highEnergyPlan.getStructureFingerprint())
     {std::cerr<<"v2.9 energy plan/curve did not survive persistence\n";return 134;}
 
+    // v3.0: a semantic producer plan is decided once and then shared by the
+    // melody, arrangement and sound-design systems. It must be inspectable and
+    // persisted rather than reconstructed differently by every lane generator.
+    sonara::SongArrangement producerBrain,fallingBrain;
+    producerBrain.generate(
+        "emotional progressive house 128 BPM F minor simple memorable rising motif warm chords powerful drop huge drums",
+        128.0,0x300030ULL);
+    fallingBrain.generateComposition(
+        "emotional progressive house 128 BPM F minor simple memorable falling motif warm chords powerful drop huge drums",
+        128.0,0x300030ULL);
+    const auto producerTree=producerBrain.toValueTree();
+    const auto producerDna=producerTree.getChildWithName("COMPOSITION_DNA");
+    if((int)producerDna.getProperty("genreFamily",-1)!=1
+       ||(int)producerDna.getProperty("emotionProfile",-1)!=1
+       ||(int)producerDna.getProperty("hookShape",-1)!=1
+       ||(int)producerDna.getProperty("chordTexture",-1)!=0
+       ||(int)producerDna.getProperty("padPolicy",-1)!=0
+       ||(int)producerDna.getProperty("counterPolicy",-1)!=0
+       ||(float)producerDna.getProperty("hookStrength",0.f)<.89f
+       ||(float)producerDna.getProperty("dropIntensity",0.f)<1.1f
+       ||(float)producerDna.getProperty("drumDrive",0.f)<1.1f
+       ||!producerBrain.getProducerPlanSummary().contains("PROGRESSIVE")
+       ||!producerBrain.getProducerPlanSummary().contains("RISING")
+       ||producerBrain.getMelodyFingerprint()==fallingBrain.getMelodyFingerprint())
+    {std::cerr<<"v3.0 producer plan is descriptive only or ignores explicit direction\n";return 135;}
+
+    const auto* producerDrop=sectionNamed(producerBrain,"DROP");
+    const auto* producerFinal=(const sonara::ArrangementSection*)nullptr;
+    for(const auto& section:producerBrain.getSections())
+        if(section.name.contains("FINAL")){producerFinal=&section;break;}
+    const auto* producerPad=findLane(producerBrain,"PAD");
+    const auto* producerCounter=findLane(producerBrain,"COUNTER");
+    if(!producerDrop||!producerFinal||!producerPad||!producerCounter
+       ||averageLaneNotes(*producerPad,*producerDrop)>0.0
+       ||averageLaneNotes(*producerCounter,*producerDrop)>0.0
+       ||averageLaneNotes(*producerCounter,*producerFinal)<=0.0)
+    {std::cerr<<"v3.0 shared pad/counter roles were not executed by the arrangement\n";return 136;}
+
+    const auto restoredProducer=sonara::SongArrangement::fromValueTree(producerTree);
+    const auto restoredProducerDna=restoredProducer.toValueTree().getChildWithName("COMPOSITION_DNA");
+    for(const auto property:{"genreFamily","emotionProfile","hookShape","chordTexture",
+                             "padPolicy","counterPolicy","hookStrength","dropIntensity","drumDrive"})
+        if(!producerDna.hasProperty(property)
+           ||producerDna.getProperty(property)!=restoredProducerDna.getProperty(property))
+        {std::cerr<<"v3.0 producer plan did not survive persistence\n";return 137;}
+    if(restoredProducer.getProducerPlanSummary()!=producerBrain.getProducerPlanSummary())
+    {std::cerr<<"v3.0 restored producer summary changed\n";return 138;}
+
     // Same key/BPM/genre: variation must come from composition, not transposition.
     std::set<uint64_t> fixedHarmony,fixedMelody,fixedBass,fixedDrums,fixedPluck;
     for(uint64_t i=0;i<10;++i)
