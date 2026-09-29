@@ -1400,7 +1400,11 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
         // A softer curve may simplify a generic drop, but genre-defining trance
         // and festival 16th motion is a hard style constraint, not optional fill.
         if(drop&&energy<.86f&&!trance&&!festival)hatSteps=juce::jmin(hatSteps,8);
-        if(energy>=.88f&&!intro&&!breakdown)hatSteps=juce::jmax(hatSteps,12);
+        // Explicit closed-hat direction is also a hard groove constraint.  A
+        // high energy target should make that eight-step house pattern hit
+        // harder, not silently turn it into a denser twelve-step rhythm.
+        if(energy>=.88f&&!intro&&!breakdown&&!(house&&hatMode==0))
+            hatSteps=juce::jmax(hatSteps,12);
         for(int h=0;h<hatSteps;++h)
         {
             const int quarter=juce::jmax(1,hatSteps/4);
