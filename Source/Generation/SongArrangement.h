@@ -69,6 +69,8 @@ public:
 private:
     struct SongPlan {
         int structureStyle=0;
+        int structureVariant=0;
+        int targetBars=0;
         int drumGroove=0;
         int hatMode=0;
         int progressionIndex=0;
@@ -132,6 +134,7 @@ private:
     void buildSections(uint64_t seed);
     void buildHarmonyPlan(uint64_t seed);
     void buildHarmonyTimeline(uint64_t seed);
+    bool sectionFlowsIntoDrop(const ArrangementSection* section) const noexcept;
     const HarmonyEvent* harmonyAtBeat(double beat) const noexcept;
     int scaleSemitoneForDegree(int degree) const noexcept;
     std::array<int,4> chordTonesFor(const HarmonyEvent& event) const noexcept;

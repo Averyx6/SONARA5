@@ -703,7 +703,22 @@ int SongArrangement::parseRootMidi(const juce::String& raw, bool& minorOut)
 void SongArrangement::buildSongPlan(uint64_t seed)
 {
     const auto p=sourcePrompt.toLowerCase();
-    plan.structureStyle=(int)(random01(domains.structure,0x1001)*4.f)%4;
+    plan.structureVariant=(int)(random01(domains.structure,0x1001)*8.f)%8;
+    plan.structureStyle=plan.structureVariant%4;
+    // Structure families: radio/songwriter, festival, progressive and cinematic.
+    // Genre supplies the architecture while the independent structure seed still
+    // changes section lengths, so a prompt does not collapse to one fixed song.
+    const bool festivalStructure=p.contains("festival")||p.contains("mainstage")
+        ||p.contains("big room");
+    const bool cinematicStructure=p.contains("cinematic")||p.contains("film");
+    const bool progressiveStructure=p.contains("progressive house")
+        ||p.contains("melodic house")||p.contains("trance");
+    const bool radioStructure=p.contains("radio")||p.contains("pop")
+        ||(p.contains("house")&&!festivalStructure&&!progressiveStructure);
+    if(radioStructure)plan.structureStyle=0;
+    if(festivalStructure)plan.structureStyle=1;
+    if(progressiveStructure)plan.structureStyle=2;
+    if(cinematicStructure)plan.structureStyle=3;
     plan.drumGroove=(int)(random01(domains.drums,0x1002)*6.f)%6;
     plan.hatMode=(int)(random01(domains.drums,0x1003)*4.f)%4;
     plan.progressionIndex=0;
@@ -840,75 +855,149 @@ void SongArrangement::buildSongPlan(uint64_t seed)
 
 void SongArrangement::buildSections(uint64_t seed)
 {
-    struct Layout { int lengths[8]; };
-    static constexpr Layout layouts[] = {
-        // INTRO, VERSE, BUILD, CHORUS, DROP, BREAKDOWN, BUILD 2, FINAL HOOK
-        {{8,8,8,8,16,8,8,16}},
-        {{4,12,8,8,16,8,8,12}},
-        {{8,8,4,8,16,12,8,12}},
-        {{4,8,8,8,12,8,8,12}}
+    juce::ignoreUnused(seed);
+    std::array<juce::String,8> names;
+    std::array<int,8> lengths{};
+
+    // A SongPlan selects architecture before any MIDI is emitted. All families
+    // retain stable role labels for the UI/export path, but their actual order
+    // and duration are genre appropriate instead of one renamed fixed template.
+    switch(plan.structureStyle)
+    {
+        case 1: // festival: two drop statements around the breakdown
+            names={"INTRO","BUILD","CHORUS","DROP","BREAKDOWN","BUILD 2","DROP 2","FINAL HOOK"};
+            lengths={8,8,8,16,8,8,16,16};
+            break;
+        case 2: // progressive: patient full songwriter arc
+            names={"INTRO","VERSE","BUILD","CHORUS","DROP","BREAKDOWN","BUILD 2","FINAL HOOK"};
+            lengths={8,8,8,8,16,12,8,16};
+            break;
+        case 3: // cinematic: release before the late full-impact drop
+            names={"INTRO","VERSE","BUILD","CHORUS","BREAKDOWN","BUILD 2","DROP","FINAL HOOK"};
+            lengths={8,12,8,8,12,8,12,16};
+            break;
+        default: // radio/songwriter
+            names={"INTRO","VERSE","BUILD","CHORUS","DROP","BREAKDOWN","BUILD 2","FINAL HOOK"};
+            lengths={4,8,8,8,12,8,8,12};
+            break;
+    }
+
+    auto indexNamed=[&](const juce::String& wanted)
+    {
+        for(size_t i=0;i<names.size();++i)if(names[i]==wanted)return (int)i;
+        return -1;
+    };
+    auto firstContaining=[&](const juce::String& wanted)
+    {
+        for(size_t i=0;i<names.size();++i)if(names[i].contains(wanted))return (int)i;
+        return -1;
+    };
+    auto setMin=[&](const juce::String& name,int value)
+    {
+        const int i=indexNamed(name);if(i>=0)lengths[(size_t)i]=juce::jmax(lengths[(size_t)i],value);
+    };
+    auto setMax=[&](const juce::String& name,int value)
+    {
+        const int i=indexNamed(name);if(i>=0)lengths[(size_t)i]=juce::jmin(lengths[(size_t)i],value);
     };
 
-    const int style = plan.structureStyle;
-    std::array<int,8> lengths{};
-    for(int i=0;i<8;++i)lengths[(size_t)i]=layouts[style].lengths[i];
+    // Seed variation develops a family; it does not replace it with another
+    // unrelated order. Every adjustment stays phrase aligned in four-bar units.
+    if(plan.structureVariant&1)
+    {
+        const int i=firstContaining("VERSE");
+        if(i>=0)lengths[(size_t)i]+=4;else setMin("CHORUS",12);
+    }
+    if(plan.structureVariant&2)
+    {
+        const int i=firstContaining("DROP");if(i>=0)lengths[(size_t)i]+=4;
+    }
+    if(plan.structureVariant&4)setMin("BREAKDOWN",12);
 
     const auto p=sourcePrompt.toLowerCase();
     const bool festival=p.contains("festival")||p.contains("mainstage")||p.contains("big room");
     if(festival)
     {
-        lengths[2]=juce::jmax(lengths[2],8);   // BUILD
-        lengths[3]=juce::jmax(lengths[3],8);   // CHORUS
-        lengths[4]=juce::jmax(lengths[4],16);  // DROP
-        lengths[6]=juce::jmax(lengths[6],8);   // BUILD 2
-        lengths[7]=juce::jmax(lengths[7],12);  // FINAL HOOK
+        setMin("BUILD",8);setMin("CHORUS",8);setMin("DROP",16);
+        setMin("BUILD 2",8);setMin("FINAL HOOK",12);
     }
     if(p.contains("early drop"))
     {
-        lengths[0]=juce::jmin(lengths[0],4);
-        lengths[1]=juce::jmin(lengths[1],4);
-        lengths[2]=juce::jmin(lengths[2],4);
+        const int dropIndex=firstContaining("DROP");
+        for(int i=0;i<dropIndex;++i)lengths[(size_t)i]=juce::jmin(lengths[(size_t)i],4);
     }
-    if(p.contains("long build"))
-    {
-        lengths[2]=juce::jmax(lengths[2],12);
-        lengths[6]=juce::jmax(lengths[6],8);
-    }
+    if(p.contains("long build")){setMin("BUILD",12);setMin("BUILD 2",8);}
     if(p.contains("radio edit")||p.contains("short song"))
     {
-        lengths[0]=juce::jmin(lengths[0],4);
-        lengths[1]=juce::jmin(lengths[1],8);
-        lengths[3]=juce::jmin(lengths[3],8);
-        lengths[4]=juce::jmin(lengths[4],12);
-        lengths[5]=juce::jmin(lengths[5],8);
-        lengths[7]=juce::jmin(lengths[7],12);
+        setMax("INTRO",4);setMax("VERSE",8);setMax("CHORUS",8);setMax("DROP",12);
+        setMax("BREAKDOWN",8);setMax("FINAL HOOK",12);
     }
-    if(p.contains("cinematic"))
-    {
-        lengths[0]=juce::jmax(lengths[0],8);
-        lengths[5]=juce::jmax(lengths[5],12);
-    }
-    if(p.contains("short intro")||p.contains("minimal intro"))lengths[0]=juce::jmin(lengths[0],4);
-    if(p.contains("big chorus")||p.contains("long chorus"))lengths[3]=juce::jmax(lengths[3],12);
-    if(p.contains("long drop")||p.contains("extended drop"))lengths[4]=juce::jmax(lengths[4],20);
-    if(p.contains("short breakdown"))lengths[5]=juce::jmin(lengths[5],4);
-    if(p.contains("long breakdown"))lengths[5]=juce::jmax(lengths[5],12);
+    if(p.contains("cinematic")){setMin("INTRO",8);setMin("BREAKDOWN",12);}
+    if(p.contains("short intro")||p.contains("minimal intro"))setMax("INTRO",4);
+    if(p.contains("big chorus")||p.contains("long chorus"))setMin("CHORUS",12);
+    if(p.contains("long drop")||p.contains("extended drop"))setMin("DROP",20);
+    if(p.contains("short breakdown"))setMax("BREAKDOWN",4);
+    if(p.contains("long breakdown"))setMin("BREAKDOWN",12);
 
-    static constexpr const char* names[8] = {
-        "INTRO","VERSE","BUILD","CHORUS","DROP","BREAKDOWN","BUILD 2","FINAL HOOK"
-    };
-    static constexpr float energy[8] = {
-        .18f,.40f,.68f,.80f,.98f,.30f,.84f,1.00f
+    // Explicit "N bars" sets the planned full-song duration. Round to a musical
+    // four-bar grid, then distribute the difference across content sections.
+    int requestedBars=0;
+    juce::StringArray tokens;tokens.addTokens(p," ,;:/\t\r\n","");tokens.trim();tokens.removeEmptyStrings();
+    for(int i=0;i+1<tokens.size();++i)
+        if(tokens[i+1].startsWith("bar"))
+        {
+            const int value=tokens[i].getIntValue();
+            if(value>=48&&value<=160){requestedBars=4*((value+2)/4);break;}
+        }
+    auto totalBars=[&](){int total=0;for(const int value:lengths)total+=value;return total;};
+    if(requestedBars>0)
+    {
+        static constexpr int priority[8]={7,4,1,5,3,6,2,0};
+        int cursor=0;
+        while(totalBars()<requestedBars){lengths[(size_t)priority[cursor++%8]]+=4;}
+        cursor=0;
+        while(totalBars()>requestedBars&&cursor<64)
+        {
+            const int i=priority[cursor++%8];
+            if(lengths[(size_t)i]>4)lengths[(size_t)i]-=4;
+        }
+    }
+
+    auto energyFor=[](const juce::String& name)
+    {
+        if(name.contains("INTRO"))return .18f;
+        if(name.contains("BREAKDOWN"))return .30f;
+        if(name.contains("VERSE"))return .40f;
+        if(name.contains("BUILD 2"))return .84f;
+        if(name.contains("BUILD"))return .68f;
+        if(name.contains("CHORUS"))return .80f;
+        if(name.contains("FINAL"))return 1.00f;
+        if(name.contains("DROP 2"))return 1.00f;
+        if(name.contains("DROP"))return .98f;
+        return .50f;
     };
 
     sections.clear();
-    int start = 0;
-    for (int i = 0; i < 8; ++i)
+    int start=0;
+    for(size_t i=0;i<names.size();++i)
     {
-        sections.push_back({ names[i], start, lengths[(size_t)i], energy[i] });
-        start += lengths[(size_t)i];
+        sections.push_back({names[i],start,lengths[i],energyFor(names[i])});
+        start+=lengths[i];
     }
-    bars = start;
+    bars=start;
+    plan.targetBars=bars;
+}
+
+bool SongArrangement::sectionFlowsIntoDrop(const ArrangementSection* section) const noexcept
+{
+    if(section==nullptr)return false;
+    for(size_t i=0;i+1<sections.size();++i)
+    {
+        if(&sections[i]!=section&&sections[i].startBar!=section->startBar)continue;
+        const auto next=sections[i+1].name;
+        return next.contains("DROP")||next.contains("FINAL")||next.contains("HOOK");
+    }
+    return false;
 }
 
 void SongArrangement::generate(const juce::String& prompt, double bpm, uint64_t seed)
@@ -1195,7 +1284,7 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
         const int localBar=section?bar-section->startBar:0;
         const bool fourBarBoundary=!sectionEnd&&((localBar+1)%4==0);
         const bool eightBarBoundary=fourBarBoundary&&((localBar+1)%8==0);
-        const bool preDropGap=chorus&&sectionEnd&&(house||festival);
+        const bool preDropGap=sectionEnd&&sectionFlowsIntoDrop(section)&&(house||festival);
         const double b=bar*beatsPerBar;
         const uint64_t bs=(uint64_t)bar*97ULL;
 
@@ -1336,7 +1425,7 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
 
         // BUILD -> CHORUS gets a restrained lift. The true festival-style drum
         // tension belongs at CHORUS -> DROP, where the listener expects the payoff.
-        if(build && sectionEnd)
+        if(build && sectionEnd && !preDropGap)
         {
             const int divisions=8;
             for(int s=0;s<divisions;++s)
@@ -1485,7 +1574,8 @@ void SongArrangement::addHarmony(uint64_t seed)
             const bool breakdown=section->name.contains("BREAKDOWN");
             const bool chorus=section->name.contains("CHORUS");
             const bool drop=section->name.contains("DROP")||section->name.contains("FINAL")||section->name.contains("HOOK");
-            const bool preDropGap=chorus&&bar==section->startBar+section->bars-1;
+            const bool preDropGap=bar==section->startBar+section->bars-1
+                &&sectionFlowsIntoDrop(section);
             const auto tones=closeSongChord(*h);
 
             const double chordLen=preDropGap?2.95:3.82;
@@ -1639,7 +1729,7 @@ void SongArrangement::addHarmony(uint64_t seed)
         const uint64_t pluckMotifSeed=mix64(domains.pluck
             ^ ((uint64_t)supportTheme+1ULL)*0xd1342543de82ef95ULL
             ^ ((uint64_t)supportMotifBar+1ULL)*0xa24baed4963ee407ULL);
-        const bool preDropGap=chorus&&localBar==section->bars-1
+        const bool preDropGap=localBar==section->bars-1&&sectionFlowsIntoDrop(section)
             && (sourcePrompt.containsIgnoreCase("house")||sourcePrompt.containsIgnoreCase("edm")
                 ||sourcePrompt.containsIgnoreCase("festival")||sourcePrompt.containsIgnoreCase("mainstage"));
 
@@ -1890,7 +1980,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         const bool finalHook=sectionName.contains("FINAL")||sectionName.contains("HOOK");
         const int localBar=bar-section->startBar;
         const float energy=section->energy;
-        const bool preDropGap=chorus&&localBar==section->bars-1
+        const bool preDropGap=localBar==section->bars-1&&sectionFlowsIntoDrop(section)
             && (p.contains("house")||p.contains("edm")||p.contains("festival")||p.contains("mainstage"));
 
         // v1.3 section roles: the main melody is deliberately absent in places.
@@ -2729,7 +2819,8 @@ juce::ValueTree SongArrangement::toValueTree() const
     root.setProperty("melodyId",juce::String::toHexString((juce::int64)melodyId),nullptr);
 
     juce::ValueTree songPlan("COMPOSITION_DNA");
-    songPlan.setProperty("structureStyle",plan.structureStyle,nullptr);songPlan.setProperty("drumGroove",plan.drumGroove,nullptr);songPlan.setProperty("hatMode",plan.hatMode,nullptr);
+    songPlan.setProperty("structureStyle",plan.structureStyle,nullptr);songPlan.setProperty("structureVariant",plan.structureVariant,nullptr);songPlan.setProperty("targetBars",plan.targetBars,nullptr);
+    songPlan.setProperty("drumGroove",plan.drumGroove,nullptr);songPlan.setProperty("hatMode",plan.hatMode,nullptr);
     songPlan.setProperty("bassMode",plan.bassMode,nullptr);songPlan.setProperty("chordMode",plan.chordMode,nullptr);songPlan.setProperty("arpMode",plan.arpMode,nullptr);
     songPlan.setProperty("melodyArchetype",plan.melodyArchetype,nullptr);songPlan.setProperty("rhythmFamily",plan.rhythmFamily,nullptr);songPlan.setProperty("startingDegree",plan.startingDegree,nullptr);
     songPlan.setProperty("cadenceStyle",plan.cadenceStyle,nullptr);songPlan.setProperty("motifLength",plan.motifLength,nullptr);songPlan.setProperty("phraseBars",plan.phraseBars,nullptr);songPlan.setProperty("octaveRange",plan.octaveRange,nullptr);
@@ -2775,7 +2866,8 @@ SongArrangement SongArrangement::fromValueTree(const juce::ValueTree& root)
     auto composition=root.getChildWithName("COMPOSITION_DNA");
     if(composition.isValid())
     {
-        a.plan.structureStyle=(int)composition.getProperty("structureStyle",0);a.plan.drumGroove=(int)composition.getProperty("drumGroove",0);a.plan.hatMode=(int)composition.getProperty("hatMode",0);
+        a.plan.structureStyle=(int)composition.getProperty("structureStyle",0);a.plan.structureVariant=(int)composition.getProperty("structureVariant",0);a.plan.targetBars=(int)composition.getProperty("targetBars",a.bars);
+        a.plan.drumGroove=(int)composition.getProperty("drumGroove",0);a.plan.hatMode=(int)composition.getProperty("hatMode",0);
         a.plan.bassMode=(int)composition.getProperty("bassMode",0);a.plan.chordMode=(int)composition.getProperty("chordMode",0);a.plan.arpMode=(int)composition.getProperty("arpMode",0);
         a.plan.melodyArchetype=(int)composition.getProperty("melodyArchetype",0);a.plan.rhythmFamily=(int)composition.getProperty("rhythmFamily",0);a.plan.startingDegree=(int)composition.getProperty("startingDegree",0);
         a.plan.cadenceStyle=(int)composition.getProperty("cadenceStyle",0);a.plan.motifLength=(int)composition.getProperty("motifLength",8);a.plan.phraseBars=(int)composition.getProperty("phraseBars",4);a.plan.octaveRange=(int)composition.getProperty("octaveRange",2);

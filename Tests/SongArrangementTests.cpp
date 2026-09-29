@@ -1043,6 +1043,90 @@ int main()
        ||paletteFx->sound.subLevel!=0.f||paletteFx->sound.attack<.15f)
     {std::cerr<<"v2.7 impact rule still overwrites the swept FX SoundDNA\n";return 121;}
 
+    // v2.8: structure is now a real plan. Genre chooses an architecture, the
+    // structure seed develops its lengths, and an explicit bar target controls
+    // total duration without breaking section contiguity.
+    sonara::SongArrangement radioPlan,festivalPlan,progressivePlan,cinematicPlan,targetPlan;
+    radioPlan.generateComposition("radio pop EDM 124 BPM C minor",124.0,0x280028ULL);
+    festivalPlan.generateComposition("festival mainstage EDM 128 BPM C minor",128.0,0x280028ULL);
+    progressivePlan.generateComposition("progressive house 128 BPM C minor",128.0,0x280028ULL);
+    cinematicPlan.generateComposition("cinematic EDM 112 BPM C minor",112.0,0x280028ULL);
+    targetPlan.generateComposition("progressive house 128 BPM C minor 72 bars",128.0,0x280028ULL);
+
+    auto structureSignature=[](const sonara::SongArrangement& song)
+    {
+        juce::StringArray names;
+        for(const auto& section:song.getSections())names.add(section.name);
+        return names.joinIntoString("|");
+    };
+    const std::set<juce::String> structureFamilies={
+        structureSignature(radioPlan),structureSignature(festivalPlan),
+        structureSignature(progressivePlan),structureSignature(cinematicPlan)};
+    if(structureFamilies.size()<3
+       ||!structureSignature(festivalPlan).contains("DROP 2")
+       ||structureSignature(cinematicPlan).indexOf("BREAKDOWN")
+          >structureSignature(cinematicPlan).indexOf("DROP"))
+    {std::cerr<<"v2.8 genre prompts still collapse to one fixed architecture\n";return 122;}
+
+    for(const auto* song:{&radioPlan,&festivalPlan,&progressivePlan,&cinematicPlan,&targetPlan})
+    {
+        int nextBar=0,total=0;
+        if(song->getSections().size()!=8)
+        {std::cerr<<"v2.8 SongPlan lost a complete eight-role arrangement\n";return 123;}
+        for(const auto& section:song->getSections())
+        {
+            if(section.startBar!=nextBar||section.bars<4||section.bars%4!=0)
+            {std::cerr<<"v2.8 section plan is discontinuous or off phrase grid\n";return 124;}
+            nextBar+=section.bars;total+=section.bars;
+        }
+        if(total!=song->getBars())
+        {std::cerr<<"v2.8 planned section lengths do not equal song length\n";return 125;}
+    }
+    if(targetPlan.getBars()!=72)
+    {std::cerr<<"v2.8 explicit target song length was ignored\n";return 126;}
+    const auto targetTree=targetPlan.toValueTree();
+    const auto targetDna=targetTree.getChildWithName("COMPOSITION_DNA");
+    const auto restoredTarget=sonara::SongArrangement::fromValueTree(targetTree).toValueTree()
+        .getChildWithName("COMPOSITION_DNA");
+    if(!targetDna.hasProperty("structureVariant")||!targetDna.hasProperty("targetBars")
+       ||(int)targetDna.getProperty("targetBars",0)!=72
+       ||targetDna.getProperty("structureVariant")!=restoredTarget.getProperty("structureVariant")
+       ||(int)restoredTarget.getProperty("targetBars",0)!=72)
+    {std::cerr<<"v2.8 adaptive SongPlan metadata did not survive persistence\n";return 127;}
+
+    const auto* cinematicLead=findLane(cinematicPlan,"LEAD");
+    const auto* cinematicBass=findLane(cinematicPlan,"BASS");
+    const auto* cinematicSub=findLane(cinematicPlan,"SUB");
+    const auto* cinematicKick=findLane(cinematicPlan,"KICK");
+    const auto* cinematicSnare=findLane(cinematicPlan,"SNARE / CLAP");
+    const auto& cinematicSections=cinematicPlan.getSections();
+    const sonara::ArrangementSection *beforeDrop=nullptr,*cinematicChorus=nullptr;
+    for(size_t i=0;i<cinematicSections.size();++i)
+    {
+        if(cinematicSections[i].name=="CHORUS")cinematicChorus=&cinematicSections[i];
+        if(i+1<cinematicSections.size()&&cinematicSections[i+1].name.contains("DROP"))
+            beforeDrop=&cinematicSections[i];
+    }
+    if(!cinematicLead||!cinematicBass||!cinematicSub||!cinematicKick||!cinematicSnare
+       ||!beforeDrop||!cinematicChorus||beforeDrop==cinematicChorus)
+    {std::cerr<<"v2.8 adaptive pre-drop fixture is incomplete\n";return 128;}
+    const double adaptiveGap=(beforeDrop->startBar+beforeDrop->bars)*4.0;
+    for(const auto* lane:{cinematicLead,cinematicBass,cinematicSub,cinematicKick})
+        for(const auto& note:lane->notes)
+            if(note.beat>=adaptiveGap-.50&&note.beat<adaptiveGap)
+            {std::cerr<<"v2.8 pre-drop air is still attached to a fixed section name\n";return 129;}
+
+    const double chorusLast=(cinematicChorus->startBar+cinematicChorus->bars-1)*4.0;
+    const double buildLast=(beforeDrop->startBar+beforeDrop->bars-1)*4.0;
+    int chorusRoll=0,adaptiveRoll=0;
+    for(const auto& note:cinematicSnare->notes)
+    {
+        if(note.beat>=chorusLast+2.0&&note.beat<chorusLast+3.5)++chorusRoll;
+        if(note.beat>=buildLast+2.0&&note.beat<buildLast+3.5)++adaptiveRoll;
+    }
+    if(chorusRoll>=7||adaptiveRoll<7)
+    {std::cerr<<"v2.8 transition tension did not follow the actual DROP boundary\n";return 130;}
+
     // Same key/BPM/genre: variation must come from composition, not transposition.
     std::set<uint64_t> fixedHarmony,fixedMelody,fixedBass,fixedDrums,fixedPluck;
     for(uint64_t i=0;i<10;++i)
