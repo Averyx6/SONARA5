@@ -845,7 +845,7 @@ int main()
     }
 
     sonara::SongArrangement dnbLowEnd;
-    dnbLowEnd.generateComposition(
+    dnbLowEnd.generate(
         "drum and bass 174 BPM D minor moving reese bass",174.0,0x25d0b5ULL);
     const auto* dnbSub=findLane(dnbLowEnd,"SUB");
     const auto dnbSubOnsets=firstBarOnsets(dnbLowEnd,"SUB");

@@ -1238,7 +1238,17 @@ int SonaraAudioProcessor::currentSongBar() const noexcept
     auto a=arrangementSnapshot();if(!a)return 0;
     const double spb=previewSampleRate*60.0/a->getBpm();
     const double beat=spb>0.0?(double)songSample.load()/spb:0.0;
-    const int exactBar=(int)std::floor(beat/sonara::SongArrangement::beatsPerBar+1.0e-9);
+    const double barPosition=beat/sonara::SongArrangement::beatsPerBar;
+    const double nearestBoundary=std::round(barPosition);
+    // startSongPreviewAtBar() must round an exact musical boundary to an integer
+    // sample. When that sample is converted back to beats it can land just below
+    // the requested bar, making PLAY DROP report the preceding CHORUS. Snap only
+    // positions within half a sample of a bar boundary; normal playback still
+    // advances continuously and cannot jump early.
+    const double halfSampleInBars=spb>0.0?.5/(spb*sonara::SongArrangement::beatsPerBar):0.0;
+    const double stableBar=std::abs(barPosition-nearestBoundary)<=halfSampleInBars+1.0e-12
+        ?nearestBoundary:std::floor(barPosition);
+    const int exactBar=(int)stableBar;
     return juce::jlimit(0,juce::jmax(0,a->getBars()-1),exactBar);
 }
 
