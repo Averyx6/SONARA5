@@ -134,7 +134,7 @@ private:
     void buildSections(uint64_t seed);
     void buildHarmonyPlan(uint64_t seed);
     void buildHarmonyTimeline(uint64_t seed);
-    bool sectionFlowsIntoDrop(const ArrangementSection* section) const noexcept;
+    bool sectionFlowsIntoImpact(const ArrangementSection* section) const noexcept;
     const HarmonyEvent* harmonyAtBeat(double beat) const noexcept;
     int scaleSemitoneForDegree(int degree) const noexcept;
     std::array<int,4> chordTonesFor(const HarmonyEvent& event) const noexcept;

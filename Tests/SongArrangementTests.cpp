@@ -471,13 +471,18 @@ int main()
     if(maxDistinctOnsetsPerBar(*rpBass)>2)
     {std::cerr<<"v1.7 BASS exceeded two support onsets per bar\n";return 72;}
 
-    const sonara::ArrangementSection* rpChorusForGap=nullptr;
-    for(const auto& s:rolePure.getSections())if(s.name=="CHORUS"){rpChorusForGap=&s;break;}
+    const auto& roleSections=rolePure.getSections();
     for(const auto& n:rpChords->notes)
     {
         const int bar=(int)std::floor(n.beat/4.0);
-        const bool intentionalPreDropGap=rpChorusForGap
-            && bar==rpChorusForGap->startBar+rpChorusForGap->bars-1;
+        bool intentionalPreDropGap=false;
+        for(size_t i=0;i+1<roleSections.size();++i)
+        {
+            const auto nextName=roleSections[i+1].name;
+            if(bar==roleSections[i].startBar+roleSections[i].bars-1
+               &&(nextName.contains("DROP")||nextName.contains("FINAL")||nextName.contains("HOOK")))
+            {intentionalPreDropGap=true;break;}
+        }
         const double minimumLength=intentionalPreDropGap?2.90:3.20;
         if(n.length<minimumLength)
         {std::cerr<<"v2 CHORDS contains short/retrigger-style notes outside the pre-drop gap\n";return 73;}
