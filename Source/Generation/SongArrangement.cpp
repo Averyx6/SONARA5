@@ -563,6 +563,12 @@ void SongArrangement::buildHarmonyTimeline(uint64_t seed)
             event.inversion=harmonyPlan.inversions[(size_t)(step%8)];
             event.voicingStyle=harmonyPlan.voicingStyles[(size_t)(step%8)];
             event.sectionIndex=(int)si;
+            // An explicit borrowed-colour request must produce one real modal
+            // event even when the seeded progression contains no eligible iv.
+            // Place it at the first chorus/breakdown opportunity; subsequent
+            // events retain the planned functional progression.
+            if(explicitBorrowed&&!placedBorrowedColour&&(chorus||breakdown))
+                event.scaleDegree=minor?4:3;
             const bool borrowedCandidate=(minor&&event.scaleDegree==4)
                                       ||(!minor&&event.scaleDegree==3);
             event.borrowed=borrowedCandidate
