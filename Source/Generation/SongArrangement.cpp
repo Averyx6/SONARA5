@@ -925,7 +925,14 @@ void SongArrangement::buildSections(uint64_t seed)
     if(p.contains("early drop"))
     {
         const int dropIndex=firstContaining("DROP");
-        for(int i=0;i<dropIndex;++i)lengths[(size_t)i]=juce::jmin(lengths[(size_t)i],4);
+        for(int i=0;i<dropIndex;++i)
+        {
+            // Compress the lead-in, not the hook statement itself. Shortening a
+            // CHORUS to four bars turns its fourth bar into the pre-drop gap and
+            // silently changes an otherwise identical melody fingerprint.
+            if(names[(size_t)i].contains("CHORUS"))continue;
+            lengths[(size_t)i]=juce::jmin(lengths[(size_t)i],4);
+        }
     }
     if(p.contains("long build")){setMin("BUILD",12);setMin("BUILD 2",8);}
     if(p.contains("radio edit")||p.contains("short song"))
