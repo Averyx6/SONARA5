@@ -68,7 +68,7 @@ SongArrangement::PromptIntent SongArrangement::parsePromptIntent(const juce::Str
         .replace(juce::String::fromUTF8("\xe2\x99\xaf"),"#")
         .replace(juce::String::fromUTF8("\xe2\x99\xad"),"b");
     juce::StringArray tokens;
-    tokens.addTokens(normalized," ,;:/\\t\\r\\n()[]{}","\"'");
+    tokens.addTokens(normalized," ,;:/\t\r\n()[]{}","\"'");
     tokens.trim();tokens.removeEmptyStrings();
 
     auto phrase=[&](const juce::String& value){return normalized.contains(value);};
