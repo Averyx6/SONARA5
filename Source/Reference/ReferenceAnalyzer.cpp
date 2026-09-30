@@ -37,25 +37,46 @@ ReferenceAnalysis ReferenceAnalyzer::analyseAudio(const juce::File& file) const
     juce::AudioBuffer<float> audio(channels, (int) inspectSamples);
     reader->read(&audio, 0, audio.getNumSamples(), 0, true, true);
 
-    std::vector<float> mono((size_t) audio.getNumSamples());
-    double energy = 0.0; float peak = 0.f;
-    for (int i = 0; i < audio.getNumSamples(); ++i)
+    std::vector<float> tempoSignal((size_t)audio.getNumSamples());
+    std::vector<float> melodySignal((size_t)audio.getNumSamples());
+    float peak=0.f;
+    for(int i=0;i<audio.getNumSamples();++i)
     {
-        const float l = audio.getSample(0, i);
-        const float r = channels > 1 ? audio.getSample(1, i) : l;
-        // Mid/side blend deliberately de-emphasises strongly centred material (often vocals)
-        // while retaining enough mid signal for mono instruments and bass.
-        const float mid = (l + r) * .5f, side = (l - r) * .5f;
-        const float x = channels > 1 ? side * .68f + mid * .32f : mid;
-        mono[(size_t) i] = x;
-        peak = juce::jmax(peak, juce::jmax(std::abs(l), std::abs(r)));
-        energy += (double) mid * mid;
+        const float l=audio.getSample(0,i);
+        const float r=channels>1?audio.getSample(1,i):l;
+        const float mid=(l+r)*.5f,side=(l-r)*.5f;
+        tempoSignal[(size_t)i]=mid;
+        // A reference hook is commonly centred. The previous side-heavy blend
+        // could almost erase mono leads and then "successfully" analyse garbage.
+        melodySignal[(size_t)i]=channels>1?mid*.82f+side*.18f:mid;
+        peak=juce::jmax(peak,juce::jmax(std::abs(l),std::abs(r)));
     }
-    const float rms = mono.empty() ? 0.f : (float) std::sqrt(energy / (double) mono.size());
-    out.rmsDb = juce::Decibels::gainToDecibels(rms, -100.f);
-    out.peakDb = juce::Decibels::gainToDecibels(peak, -100.f);
-    out.estimatedBpm = estimateTempo(mono, reader->sampleRate);
-    out.melody = extractPitchContour(mono, reader->sampleRate, out.estimatedBpm, rms);
+
+    // Lightweight melody-focus band limiting: suppress sub/bass fundamentals and
+    // very high percussion before autocorrelation. This is deterministic and does
+    // not allocate in any realtime audio path (reference analysis is offline).
+    const float hpHz=105.f,lpHz=3400.f;
+    const float dt=1.f/(float)reader->sampleRate;
+    const float hpRc=1.f/(juce::MathConstants<float>::twoPi*hpHz);
+    const float hpA=hpRc/(hpRc+dt);
+    const float lpRc=1.f/(juce::MathConstants<float>::twoPi*lpHz);
+    const float lpA=dt/(lpRc+dt);
+    float hpX=0.f,hpY=0.f,lpY=0.f;
+    double energy=0.0;
+    for(auto& sample:melodySignal)
+    {
+        const float hp=hpA*(hpY+sample-hpX);
+        hpX=sample;hpY=hp;
+        lpY+=lpA*(hp-lpY);
+        sample=lpY;
+        energy+=(double)sample*sample;
+    }
+
+    const float rms=melodySignal.empty()?0.f:(float)std::sqrt(energy/(double)melodySignal.size());
+    out.rmsDb=juce::Decibels::gainToDecibels(rms,-100.f);
+    out.peakDb=juce::Decibels::gainToDecibels(peak,-100.f);
+    out.estimatedBpm=estimateTempo(tempoSignal,reader->sampleRate);
+    out.melody=extractPitchContour(melodySignal,reader->sampleRate,out.estimatedBpm,rms);
     out.keyName = estimateKey(out.melody);
     return out;
 }
@@ -142,7 +163,7 @@ std::vector<ReferenceNote> ReferenceAnalyzer::extractPitchContour(const std::vec
         double e = 0.0; for (int i = 0; i < frame; ++i) e += (double)mono[pos + (size_t)i] * mono[pos + (size_t)i];
         const float rms = (float)std::sqrt(e / frame);
         float confidence = 0.f; int midi = rms > juce::jmax(0.002f, globalRms * .16f) ? estimateMidiPitch(mono.data() + pos, frame, sampleRate, confidence) : -1;
-        if (midi < 36 || midi > 96 || confidence < .30f) midi = -1;
+        if (midi < 43 || midi > 96 || confidence < .32f) midi = -1;
         const double seconds = (double)pos / sampleRate;
         if (midi < 0) { finish(seconds); continue; }
         if (activeNote < 0) { activeNote = midi; activeStart = seconds; activeFrames = 1; activeConfidence = confidence; continue; }
@@ -153,9 +174,15 @@ std::vector<ReferenceNote> ReferenceAnalyzer::extractPitchContour(const std::vec
 
     // Remove tiny duplicates / impossible overlaps from noisy frames.
     std::vector<ReferenceNote> cleaned; cleaned.reserve(notes.size());
-    for (const auto& n : notes)
+    for(auto n:notes)
     {
-        if (!cleaned.empty() && n.beat < cleaned.back().beat + .08 && std::abs(n.midiNote - cleaned.back().midiNote) <= 1) continue;
+        if(!cleaned.empty())
+        {
+            const int previous=cleaned.back().midiNote;
+            while(n.midiNote-previous>12&&n.midiNote-12>=43)n.midiNote-=12;
+            while(previous-n.midiNote>12&&n.midiNote+12<=96)n.midiNote+=12;
+            if(n.beat<cleaned.back().beat+.08&&std::abs(n.midiNote-previous)<=1)continue;
+        }
         cleaned.push_back(n);
     }
     return cleaned;

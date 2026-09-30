@@ -83,7 +83,7 @@ private:
     juce::TextButton applyLaneSound{"APPLY SELECTED SOUND"}, autoLaneSound{"AUTO FIT SELECTED"};
     juce::TextButton undo{"UNDO"}, redo{"REDO"}, variation1{"V1"}, variation2{"V2"}, variation3{"V3"}, variation4{"V4"};
     juce::TextButton captureA{"CAPTURE A"}, captureB{"CAPTURE B"}, recallA{"A"}, recallB{"B"};
-    juce::TextButton connect{"CYANORYX • BRIDGE READY"}, previewSound{"PREVIEW SOUND"}, playSong{"PLAY SONG"}, playChorus{"PLAY CHORUS"}, playDrop{"PLAY DROP"}, stop{"STOP"};
+    juce::TextButton connect{"COPY CYANORYX BUNDLE"}, previewSound{"PREVIEW SOUND"}, playSong{"PLAY SONG"}, playChorus{"PLAY CHORUS"}, playDrop{"PLAY DROP"}, stop{"STOP"};
 
     juce::TextButton loadReference{"LOAD AUDIO"}, importMidi{"IMPORT MIDI"}, resound{"RESOUND"}, rebuildReference{"REBUILD TRACK"};
     juce::TextButton saveSoundButton{"SAVE SOUND"}, loadSoundButton{"LOAD SOUND"}, saveProjectButton{"SAVE PROJECT"}, loadProjectButton{"LOAD PROJECT"};

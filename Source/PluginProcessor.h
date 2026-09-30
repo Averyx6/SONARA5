@@ -33,8 +33,8 @@ public:
     double previewPosition01() const noexcept { return previewLengthSamples > 0 ? juce::jlimit(0.0,1.0,(double)previewSample.load()/(double)previewLengthSamples) : 0.0; }
     bool writePreviewMidiFile(const juce::File&) const;
 
-    void generateTrack(const juce::String& prompt);
-    void randomizeEverything(const juce::String& prompt);
+    bool generateTrack(const juce::String& prompt);
+    bool randomizeEverything(const juce::String& prompt);
     juce::String makeSurprisePrompt();
     void regenerateDrums(const juce::String& prompt);
     void startSongPreview();
@@ -59,10 +59,10 @@ public:
     // Reference / RESOUND / MIDI import
     bool analyseReferenceFile(const juce::File&);
     bool importMidiFile(const juce::File&);
-    bool hasReference() const noexcept { return referenceLoaded; }
+    bool hasReference() const noexcept { return referenceLoaded && reference.valid(); }
     juce::String getReferenceSummary() const { return reference.summary(); }
-    void resoundReference(const juce::String& prompt);
-    void rebuildInstrumentalFromReference(const juce::String& prompt);
+    bool resoundReference(const juce::String& prompt);
+    bool rebuildInstrumentalFromReference(const juce::String& prompt);
     bool writeReferenceMidiFile(const juce::File&) const;
 
     // Real project/preset persistence and audio export.

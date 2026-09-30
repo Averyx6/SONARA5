@@ -446,6 +446,17 @@ int main()
     auto surprised=randomizer.arrangementSnapshot();
     if(!surprised||surprised->getLanes().size()!=12||surprised->getSections().size()!=8)return fail("SURPRISE ME arrangement incomplete");
 
+    // Reference actions must fail truthfully before any reference exists and must
+    // never publish a stale arrangement merely because the UI button was clicked.
+    {
+        SonaraAudioProcessor emptyReference;
+        emptyReference.prepareToPlay(48000.0,512);
+        if(emptyReference.resoundReference("lead")||emptyReference.rebuildInstrumentalFromReference("song"))
+            return fail("reference actions reported success without a usable reference");
+        if(emptyReference.arrangementSnapshot())
+            return fail("failed reference action published stale/phantom arrangement");
+    }
+
     // Reference audio path: create a real WAV and run the same analyser used by LOAD AUDIO.
     auto referenceWav=juce::File::getSpecialLocation(juce::File::tempDirectory)
         .getNonexistentChildFile("sonara-reference-audio",".wav");
@@ -486,11 +497,29 @@ int main()
         if(!out.openedOk()||!mf.writeTo(out))return fail("could not create reference MIDI test file");
     }
     if(!randomizer.importMidiFile(referenceMidi)||!randomizer.hasReference())return fail("reference MIDI import failed");
-    randomizer.resoundReference("glassy emotional lead, wide but controlled");
+    if(!randomizer.resoundReference("glassy emotional lead, wide but controlled"))
+        return fail("RESOUND reported success path unavailable after valid MIDI reference");
+    const auto arrangementBeforeReferenceRebuild=randomizer.arrangementSnapshot();
+    if(!randomizer.rebuildInstrumentalFromReference("emotional progressive house, strong drums, warm chords"))
+        return fail("reference REBUILD failed after valid MIDI import");
+    const auto rebuiltReferenceSong=randomizer.arrangementSnapshot();
+    if(!rebuiltReferenceSong||rebuiltReferenceSong==arrangementBeforeReferenceRebuild)
+        return fail("reference REBUILD did not publish a genuinely new arrangement");
+    const auto rebuiltLead=std::find_if(rebuiltReferenceSong->getLanes().begin(),rebuiltReferenceSong->getLanes().end(),
+        [](const auto& lane){return lane.name=="LEAD";});
+    const auto rebuiltBass=std::find_if(rebuiltReferenceSong->getLanes().begin(),rebuiltReferenceSong->getLanes().end(),
+        [](const auto& lane){return lane.name=="BASS";});
+    if(rebuiltLead==rebuiltReferenceSong->getLanes().end()||rebuiltLead->notes.empty()
+       ||rebuiltBass==rebuiltReferenceSong->getLanes().end()||rebuiltBass->notes.empty())
+        return fail("reference REBUILD did not create lead + backing arrangement");
+    if(!randomizer.generationStatus.containsIgnoreCase("rebuilt"))
+        return fail("reference REBUILD did not expose truthful completion state");
     auto extracted=juce::File::getSpecialLocation(juce::File::tempDirectory)
         .getNonexistentChildFile("sonara-reference-extracted",".mid");
     if(!randomizer.writeReferenceMidiFile(extracted)||extracted.getSize()<64)return fail("reference MIDI re-export failed");
     referenceMidi.deleteFile();extracted.deleteFile();
+    if(randomizer.analyseReferenceFile(juce::File{})||randomizer.hasReference())
+        return fail("failed reference load retained stale reference state");
 
     // MIDI export paths.
     auto fullMidi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-playback-full",".mid");

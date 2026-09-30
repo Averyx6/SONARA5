@@ -21,7 +21,7 @@ struct ReferenceAnalysis {
     float peakDb = -100.f;
     std::vector<ReferenceNote> melody;
 
-    bool valid() const noexcept { return sampleRate > 0.0 && durationSeconds > 0.0; }
+    bool valid() const noexcept { return sampleRate > 0.0 && durationSeconds > 0.0 && !melody.empty(); }
     double melodyBeats() const noexcept;
     juce::String summary() const;
 };
