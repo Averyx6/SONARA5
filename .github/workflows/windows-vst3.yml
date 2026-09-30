@@ -20,23 +20,66 @@ jobs:
         run: cmake --build build-win64 --config Release --parallel
       - name: Run regression tests
         run: ctest --test-dir build-win64 -C Release --output-on-failure
-      - name: Package verified VST3
+      - name: Validate and package host-discoverable VST3
         shell: pwsh
         run: |
-          $vst = Get-ChildItem -Path build-win64 -Recurse -Directory -Filter "SONARA.vst3" | Select-Object -First 1
-          if (-not $vst) { throw "SONARA.vst3 not found" }
+          $vst = Get-ChildItem -Path build-win64 -Recurse -Directory -Filter "SONARA.vst3" |
+            Where-Object { Test-Path (Join-Path $_.FullName "Contents/x86_64-win/SONARA.vst3") } |
+            Select-Object -First 1
+          if (-not $vst) { throw "SONARA x64 VST3 bundle not found" }
+
+          $moduleInfo = Join-Path $vst.FullName "Contents/Resources/moduleinfo.json"
+          if (-not (Test-Path $moduleInfo)) { throw "VST3 moduleinfo.json missing" }
+
+          # JUCE 8.0.12 currently emits trailing commas in this generated file.
+          # Some DAW scanners are permissive, but FL Studio may reject malformed
+          # module metadata. Publish strict JSON so discovery never depends on
+          # parser leniency.
+          $raw = Get-Content -Raw $moduleInfo
+          $strict = [regex]::Replace($raw, ',(?=\s*[}\]])', '')
+          [System.IO.File]::WriteAllText($moduleInfo, $strict, [System.Text.UTF8Encoding]::new($false))
+          python -c "import json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); assert d['Name']=='SONARA'; assert any('Instrument' in c.get('Sub Categories',[]) for c in d['Classes'])" "$moduleInfo"
+          if ($LASTEXITCODE -ne 0) { throw "VST3 moduleinfo.json is invalid" }
+
+          $binary = Join-Path $vst.FullName "Contents/x86_64-win/SONARA.vst3"
+          $bytes = [System.IO.File]::ReadAllBytes($binary)
+          if ($bytes.Length -lt 100000) { throw "VST3 binary is unexpectedly small" }
+          $pe = [BitConverter]::ToInt32($bytes, 0x3c)
+          $machine = [BitConverter]::ToUInt16($bytes, $pe + 4)
+          if ($machine -ne 0x8664) { throw ("Expected x64 PE VST3, got machine 0x{0:X4}" -f $machine) }
+
+          Remove-Item -Recurse -Force DIST -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path DIST | Out-Null
           Copy-Item -Recurse -Force $vst.FullName "DIST/SONARA.vst3"
-          Compress-Archive -Path "DIST/SONARA.vst3" -DestinationPath "DIST/SONARA-Windows-x64-VST3.zip" -Force
-          "commit=${{ github.sha }}" | Set-Content DIST/BUILD_LOG.txt
+          @"
+          SONARA VST3 3.2.1 - Windows x64
+
+          INSTALL:
+          1. Close FL Studio.
+          2. Copy the entire SONARA.vst3 folder to:
+             C:\Program Files\Common Files\VST3\
+          3. The final binary must be:
+             C:\Program Files\Common Files\VST3\SONARA.vst3\Contents\x86_64-win\SONARA.vst3
+          4. Open FL Studio > Options > Manage plugins.
+          5. Enable Verify plugins and Rescan previously verified plugins, then Find installed plugins.
+          6. Search for SONARA under instruments.
+
+          Do not copy only the inner .vst3 binary. Keep the whole SONARA.vst3 bundle folder.
+          "@ | Set-Content -Encoding utf8 DIST/INSTALL.txt
+          "version=3.2.1" | Set-Content DIST/BUILD_LOG.txt
+          "commit=${{ github.sha }}" | Add-Content DIST/BUILD_LOG.txt
           "runner=$env:RUNNER_OS" | Add-Content DIST/BUILD_LOG.txt
+          "vst3_discovery_test=passed" | Add-Content DIST/BUILD_LOG.txt
+          "moduleinfo_json=valid" | Add-Content DIST/BUILD_LOG.txt
+          "architecture=x86_64" | Add-Content DIST/BUILD_LOG.txt
           "tests=passed" | Add-Content DIST/BUILD_LOG.txt
       - name: Upload SONARA Windows package
         uses: actions/upload-artifact@v4
         with:
           name: SONARA-Windows-x64-VST3
           path: |
-            DIST/SONARA-Windows-x64-VST3.zip
+            DIST/SONARA.vst3
+            DIST/INSTALL.txt
             DIST/BUILD_LOG.txt
           if-no-files-found: error
           retention-days: 14

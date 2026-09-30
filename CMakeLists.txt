@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(SONARA VERSION 2.0.0)
+project(SONARA VERSION 3.2.1)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -136,4 +136,21 @@ if(BUILD_TESTING)
         juce::juce_audio_utils juce::juce_dsp
         juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
     add_test(NAME sonara_full_playback_acceptance COMMAND SONARA_PlaybackTests)
+
+    # Release-blocking host-discovery regression. Unit tests that instantiate the
+    # processor directly cannot catch a malformed VST3 bundle or registration.
+    juce_add_console_app(SONARA_VST3DiscoveryTests PRODUCT_NAME "SONARA VST3 Discovery Tests")
+    juce_generate_juce_header(SONARA_VST3DiscoveryTests)
+    target_sources(SONARA_VST3DiscoveryTests PRIVATE Tests/VST3DiscoveryTests.cpp)
+    target_compile_definitions(SONARA_VST3DiscoveryTests PRIVATE
+        JUCE_PLUGINHOST_VST3=1
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0)
+    target_link_libraries(SONARA_VST3DiscoveryTests PRIVATE
+        juce::juce_audio_utils
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+    add_dependencies(SONARA_VST3DiscoveryTests SONARA_VST3)
+    add_test(NAME sonara_vst3_host_discovery
+        COMMAND SONARA_VST3DiscoveryTests "$<TARGET_FILE:SONARA_VST3>")
 endif()
