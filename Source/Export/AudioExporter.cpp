@@ -1,4 +1,5 @@
 #include "AudioExporter.h"
+#include "../Engine/MixPolicy.h"
 #include <algorithm>
 #include <cmath>
 
@@ -85,9 +86,6 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
     engines.reserve((size_t)musicalCount);
 
     static constexpr int voiceBudget[expectedMusical]={1,1,3,2,3,3,2,1};
-    static constexpr float laneGain[expectedMusical]={.64f,.42f,.37f,.27f,.21f,.84f,.18f,.15f};
-    static constexpr float hpHz[expectedMusical]={28.f,18.f,120.f,125.f,160.f,120.f,150.f,110.f};
-    static constexpr float fxSend[expectedMusical]={0.f,0.f,.14f,.10f,.18f,.12f,.08f,.15f};
 
     for(int i=0;i<musicalCount;++i)
     {
@@ -174,7 +172,7 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
             s.clear();
             engines[(size_t)i]->render(s,midi,n);
 
-            const float rc=1.f/(juce::MathConstants<float>::twoPi*hpHz[i]);
+            const float rc=1.f/(juce::MathConstants<float>::twoPi*mixpolicy::highPassHz(i));
             const float dt=1.f/(float)sampleRate;
             const float hpA=rc/(rc+dt);
             for(int ch=0;ch<2;++ch)
@@ -193,11 +191,11 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
             if(i==0)
             {
                 auto* l=s.getWritePointer(0);auto* r=s.getWritePointer(1);
-                for(int smp=0;smp<n;++smp){const float mid=.5f*(l[smp]+r[smp]);l[smp]=mid*.88f+l[smp]*.12f;r[smp]=mid*.88f+r[smp]*.12f;}
+                for(int smp=0;smp<n;++smp){const float mid=.5f*(l[smp]+r[smp]);const float side=mixpolicy::bassStereoFraction();l[smp]=mid*(1.f-side)+l[smp]*side;r[smp]=mid*(1.f-side)+r[smp]*side;}
             }
             else if(i==1)
             {
-                const float lpRc=1.f/(juce::MathConstants<float>::twoPi*125.f);
+                const float lpRc=1.f/(juce::MathConstants<float>::twoPi*mixpolicy::subLowPassHz());
                 const float lpA=dt/(lpRc+dt);
                 auto* l=s.getWritePointer(0);auto* r=s.getWritePointer(1);
                 float state=lpState[(size_t)i][0];
@@ -207,7 +205,7 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
 
             if(i>=2)
             {
-                const float toneHz=4800.f+14800.f*sectionEnergy;
+                const float toneHz=mixpolicy::toneCutoffHz(sectionEnergy);
                 const float toneRc=1.f/(juce::MathConstants<float>::twoPi*toneHz);
                 const float toneA=dt/(toneRc+dt);
                 for(int ch=0;ch<2;++ch)
@@ -228,9 +226,7 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
             {
                 auto* l=s.getWritePointer(0);auto* r=s.getWritePointer(1);
                 const float requestedWidth=juce::jlimit(0.f,1.5f,mixState.width);
-                const float energyWidth=.70f+.34f*sectionEnergy;
-                const float width=i==1?0.f:(i==0?juce::jmin(.25f,requestedWidth)
-                    :requestedWidth*energyWidth);
+                const float width=mixpolicy::stereoWidth(i,requestedWidth,sectionEnergy);
                 const float pan=juce::jlimit(-1.f,1.f,mixState.pan);
                 const float panL=pan>0.f?1.f-pan:1.f;
                 const float panR=pan<0.f?1.f+pan:1.f;
@@ -243,7 +239,7 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
                 }
             }
 
-            const float duckDepth=i==1?.54f:(i==0?.46f:(i==2?.28f:(i==4?.20f:0.f)));
+            const float duckDepth=mixpolicy::duckDepth(i);
             if(duckDepth>0.f)
             {
                 for(int ch=0;ch<s.getNumChannels();++ch)
@@ -254,26 +250,12 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
                 }
             }
 
-            float sectionGain=1.f;
-            if(i==5)
-                sectionGain=mixIntro?.62f:(mixVerse?.76f:(mixBuild?.84f:(mixChorus?1.02f:(mixDrop?1.14f:(mixBreakdown?.66f:(mixFinal?1.18f:1.f))))));
-            else if(i==0)
-                sectionGain=mixIntro?.50f:(mixVerse?.80f:(mixBuild?.88f:(mixChorus?.96f:(mixDrop?1.12f:(mixBreakdown?.48f:(mixFinal?1.14f:1.f))))));
-            else if(i==1)
-                sectionGain=mixIntro?.25f:(mixVerse?.72f:(mixBuild?.82f:(mixChorus?.92f:(mixDrop?1.10f:(mixBreakdown?.30f:(mixFinal?1.12f:1.f))))));
-            else if(i==2)
-                sectionGain=mixIntro?.72f:(mixVerse?.78f:(mixBuild?.88f:(mixChorus?1.02f:(mixDrop?1.04f:(mixBreakdown?.74f:(mixFinal?1.08f:1.f))))));
-            else if(i==3)
-                sectionGain=mixIntro?.45f:(mixVerse?.62f:(mixBuild?.72f:(mixChorus?.70f:(mixDrop?.88f:(mixBreakdown?.40f:(mixFinal?.92f:1.f))))));
-            else if(i==4)
-                sectionGain=mixIntro?1.02f:(mixVerse?.88f:(mixBuild?.72f:(mixChorus?.52f:(mixDrop?.38f:(mixBreakdown?1.08f:(mixFinal?.42f:1.f))))));
-            else if(i==6)
-                sectionGain=(mixDrop||mixFinal)?.72f:.42f;
-
-            const float energyGain=.84f+.20f*sectionEnergy;
-            const float gain=laneGain[i]*sectionGain*energyGain*juce::jlimit(0.f,1.5f,mixState.level);
-            const float energySpace=.88f+.24f*(1.f-sectionEnergy);
-            const float send=fxSend[i]*energySpace*juce::jlimit(0.f,1.5f,mixState.fxSend);
+            const float sectionGain=mixpolicy::sectionGain(i,blockSection);
+            const float energyGain=mixpolicy::energyGain(i,sectionEnergy);
+            const float gain=mixpolicy::baseGain(i)*sectionGain*energyGain
+                            *juce::jlimit(0.f,1.5f,mixState.level);
+            const float send=mixpolicy::baseFxSend(i)*mixpolicy::energySpace(sectionEnergy)
+                            *juce::jlimit(0.f,1.5f,mixState.fxSend);
             for(int ch=0;ch<2;++ch)
             {
                 block.addFrom(ch,0,s,ch,0,n,gain);
@@ -283,28 +265,18 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
 
         juce::AudioBuffer<float> drumView(drumBus.getArrayOfWritePointers(),2,0,n);
         drums.render(drumView,triggers.data(),count);
-        const float drumSectionGain=(mixIntro?.46f:(mixVerse?.60f:(mixBuild?.64f:
-            (mixChorus?.68f:(mixDrop?.84f:(mixBreakdown?.48f:(mixFinal?.86f:.70f)))))))
-            *(.84f+.20f*sectionEnergy);
+        const float drumSectionGain=mixpolicy::drumGain(blockSection,sectionEnergy);
         for(int ch=0;ch<2;++ch)block.addFrom(ch,0,drumBus,ch,0,n,drumSectionGain);
 
         reverb.processStereo(fxBus.getWritePointer(0),fxBus.getWritePointer(1),n);
         for(int ch=0;ch<2;++ch)block.addFrom(ch,0,fxBus,ch,0,n,.66f);
 
-        const float masterRc=1.f/(juce::MathConstants<float>::twoPi*24.f);
-        const float masterDt=1.f/(float)sampleRate;
-        const float masterA=masterRc/(masterRc+masterDt);
         for(int ch=0;ch<2;++ch)
         {
             auto* d=block.getWritePointer(ch);
             float x1=masterX[(size_t)ch],y1=masterY[(size_t)ch];
             for(int smp=0;smp<n;++smp)
-            {
-                const float x=std::isfinite(d[smp])?d[smp]:0.f;
-                const float hp=masterA*(y1+x-x1);
-                x1=x;y1=hp;
-                d[smp]=juce::jlimit(-.96f,.96f,std::tanh(hp*1.22f));
-            }
+                d[smp]=mixpolicy::processMasterSample(d[smp],x1,y1,sampleRate);
             masterX[(size_t)ch]=x1;masterY[(size_t)ch]=y1;
         }
 

@@ -1,5 +1,6 @@
 #include <JuceHeader.h>
 #include "../Source/PluginProcessor.h"
+#include "../Source/Engine/MixPolicy.h"
 #include "../Source/Export/AudioExporter.h"
 #include <chrono>
 #include <cmath>
@@ -601,6 +602,24 @@ int main()
     randomizer.stopSongPreview();
 
     fullMidi.deleteFile();subMidi.deleteFile();leadMidi.deleteFile();
+
+    // v3.3 shared mix policy invariants. Preview and offline export both call these
+    // exact helpers, preventing the duplicated constants from drifting apart again.
+    if(sonara::mixpolicy::stereoWidth(1,1.5f,1.f)!=0.f)
+        return fail("v3.3 SUB is no longer forced mono");
+    if(sonara::mixpolicy::stereoWidth(0,1.5f,1.f)>.181f)
+        return fail("v3.3 BASS stereo safety widened too far");
+    if(sonara::mixpolicy::baseFxSend(0)!=0.f||sonara::mixpolicy::baseFxSend(1)!=0.f)
+        return fail("v3.3 low end entered shared reverb send");
+    if(sonara::mixpolicy::subLowPassHz()>120.f
+       ||sonara::mixpolicy::energyGain(1,1.f)>=sonara::mixpolicy::energyGain(5,1.f))
+        return fail("v3.3 low-end buildup guard regressed");
+    {
+        float x1=0.f,y1=0.f;
+        const float y=sonara::mixpolicy::processMasterSample(1000.f,x1,y1,48000.0);
+        if(!std::isfinite(y)||std::abs(y)>sonara::mixpolicy::masterCeiling()+1.0e-5f)
+            return fail("v3.3 master safety ceiling regressed");
+    }
 
     // Shortened offline export exercises the real full-mix/stem renderers without a long CI file.
     auto shortTree=surprised->toValueTree();

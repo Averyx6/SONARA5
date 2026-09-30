@@ -31,7 +31,7 @@ target_sources(SONARA PRIVATE
     Source/PluginProcessor.cpp Source/PluginProcessor.h
     Source/PluginEditor.cpp Source/PluginEditor.h
     Source/Engine/SoundDNA.cpp Source/Engine/SoundDNA.h
-    Source/Engine/SonaraEngine.cpp Source/Engine/SonaraEngine.h
+    Source/Engine/SonaraEngine.cpp Source/Engine/SonaraEngine.h Source/Engine/MixPolicy.h
     Source/Generation/PromptGenerator.cpp Source/Generation/PromptGenerator.h
     Source/Generation/SongArrangement.cpp Source/Generation/SongArrangement.h
     Source/Integration/CyanoryxBridge.h

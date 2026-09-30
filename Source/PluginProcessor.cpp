@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "Engine/MixPolicy.h"
 #ifndef SONARA_HEADLESS_TEST
 #include "PluginEditor.h"
 #endif
@@ -1364,12 +1365,6 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
     }
     songDuckState=duck;
 
-    // Lane order: BASS, SUB, CHORDS, PLUCK, PAD, LEAD, COUNTER, FX.
-    // v1.7 music-forward balance: the hook sits clearly above the drum kit.
-    static constexpr float laneGain[musicalLaneCount]={.64f,.42f,.37f,.27f,.21f,.84f,.18f,.15f};
-    static constexpr float hpHz[musicalLaneCount]={28.f,18.f,120.f,125.f,160.f,120.f,150.f,110.f};
-    static constexpr float fxSend[musicalLaneCount]={0.f,0.f,.14f,.10f,.18f,.12f,.08f,.15f};
-
     for(int i=0;i<musicalLaneCount;++i)
     {
         const int laneIndex=firstMusicalLane+i;
@@ -1385,7 +1380,7 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
         scratch.clear(0,renderSamples);
         songEngines[(size_t)i].render(scratch,midi,renderSamples);
 
-        const float rc=1.f/(juce::MathConstants<float>::twoPi*hpHz[i]);
+        const float rc=1.f/(juce::MathConstants<float>::twoPi*sonara::mixpolicy::highPassHz(i));
         const float dt=1.f/(float)previewSampleRate;
         const float hpAlpha=rc/(rc+dt);
 
@@ -1414,15 +1409,16 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
             for(int s=0;s<renderSamples;++s)
             {
                 const float mid=.5f*(l[s]+r[s]);
-                l[s]=mid*.88f+l[s]*.12f;
-                r[s]=mid*.88f+r[s]*.12f;
+                const float side=sonara::mixpolicy::bassStereoFraction();
+                l[s]=mid*(1.f-side)+l[s]*side;
+                r[s]=mid*(1.f-side)+r[s]*side;
             }
         }
 
         // SUB is mono and low-passed. It never enters the shared reverb bus.
         if(i==1)
         {
-            const float lpRc=1.f/(juce::MathConstants<float>::twoPi*125.f);
+            const float lpRc=1.f/(juce::MathConstants<float>::twoPi*sonara::mixpolicy::subLowPassHz());
             const float lpA=dt/(lpRc+dt);
             auto* l=scratch.getWritePointer(0);
             auto* r=scratch.getNumChannels()>1?scratch.getWritePointer(1):l;
@@ -1443,7 +1439,7 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
         // this allocation-free and makes fast section seeks click-safe.
         if(i>=2)
         {
-            const float toneHz=4800.f+14800.f*sectionEnergy;
+            const float toneHz=sonara::mixpolicy::toneCutoffHz(sectionEnergy);
             const float toneRc=1.f/(juce::MathConstants<float>::twoPi*toneHz);
             const float toneA=dt/(toneRc+dt);
             for(int ch=0;ch<scratch.getNumChannels()&&ch<2;++ch)
@@ -1460,9 +1456,7 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
             auto* l=scratch.getWritePointer(0);
             auto* r=scratch.getWritePointer(1);
             const float requestedWidth=juce::jlimit(0.f,1.5f,mix.width);
-            const float energyWidth=.70f+.34f*sectionEnergy;
-            const float width=i==1?0.f:(i==0?juce::jmin(.25f,requestedWidth)
-                :requestedWidth*energyWidth);
+            const float width=sonara::mixpolicy::stereoWidth(i,requestedWidth,sectionEnergy);
             const float pan=juce::jlimit(-1.f,1.f,mix.pan);
             const float panL=pan>0.f?1.f-pan:1.f;
             const float panR=pan<0.f?1.f+pan:1.f;
@@ -1477,7 +1471,7 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
 
         // Duck only the layers that mask a festival kick. Lead/pluck/counter/FX
         // stay forward, while BASS/SUB duck most and CHORDS/PAD more gently.
-        const float duckDepth=i==1?.54f:(i==0?.46f:(i==2?.28f:(i==4?.20f:0.f)));
+        const float duckDepth=sonara::mixpolicy::duckDepth(i);
         if(duckDepth>0.f)
         {
             for(int ch=0;ch<scratch.getNumChannels();++ch)
@@ -1488,26 +1482,11 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
             }
         }
 
-        float sectionGain=1.f;
-        if(i==5) // LEAD
-            sectionGain=mixIntro?.62f:(mixVerse?.76f:(mixBuild?.84f:(mixChorus?1.02f:(mixDrop?1.14f:(mixBreakdown?.66f:(mixFinal?1.18f:1.f))))));
-        else if(i==0) // BASS
-            sectionGain=mixIntro?.50f:(mixVerse?.80f:(mixBuild?.88f:(mixChorus?.96f:(mixDrop?1.12f:(mixBreakdown?.48f:(mixFinal?1.14f:1.f))))));
-        else if(i==1) // SUB
-            sectionGain=mixIntro?.25f:(mixVerse?.72f:(mixBuild?.82f:(mixChorus?.92f:(mixDrop?1.10f:(mixBreakdown?.30f:(mixFinal?1.12f:1.f))))));
-        else if(i==2) // CHORDS
-            sectionGain=mixIntro?.72f:(mixVerse?.78f:(mixBuild?.88f:(mixChorus?1.02f:(mixDrop?1.04f:(mixBreakdown?.74f:(mixFinal?1.08f:1.f))))));
-        else if(i==3) // PLUCK
-            sectionGain=mixIntro?.45f:(mixVerse?.62f:(mixBuild?.72f:(mixChorus?.70f:(mixDrop?.88f:(mixBreakdown?.40f:(mixFinal?.92f:1.f))))));
-        else if(i==4) // PAD
-            sectionGain=mixIntro?1.02f:(mixVerse?.88f:(mixBuild?.72f:(mixChorus?.52f:(mixDrop?.38f:(mixBreakdown?1.08f:(mixFinal?.42f:1.f))))));
-        else if(i==6) // COUNTER
-            sectionGain=(mixDrop||mixFinal)?.72f:.42f;
-
-        const float energyGain=.84f+.20f*sectionEnergy;
-        const float mixedGain=laneGain[i]*sectionGain*energyGain*mix.level;
-        const float energySpace=.88f+.24f*(1.f-sectionEnergy);
-        const float sendGain=fxSend[i]*mix.fxSend*energySpace;
+        const float sectionGain=sonara::mixpolicy::sectionGain(i,blockSection);
+        const float energyGain=sonara::mixpolicy::energyGain(i,sectionEnergy);
+        const float mixedGain=sonara::mixpolicy::baseGain(i)*sectionGain*energyGain*mix.level;
+        const float sendGain=sonara::mixpolicy::baseFxSend(i)*mix.fxSend
+                           *sonara::mixpolicy::energySpace(sectionEnergy);
         for(int ch=0;ch<out.getNumChannels();++ch)
         {
             out.addFrom(ch,0,scratch,ch,0,renderSamples,mixedGain);
@@ -1520,9 +1499,7 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
     drumSynth.render(songDrumBus,drumTriggers.data(),drumCount);
     // Section-level drum contrast makes the DROP obvious even when it reuses
     // the song's hook identity. Builds pull back; drops/final hooks hit harder.
-    const float drumSectionGain=(mixIntro?.46f:(mixVerse?.60f:(mixBuild?.64f:
-        (mixChorus?.68f:(mixDrop?.84f:(mixBreakdown?.48f:(mixFinal?.86f:.70f)))))))
-        *(.84f+.20f*sectionEnergy);
+    const float drumSectionGain=sonara::mixpolicy::drumGain(blockSection,sectionEnergy);
     for(int ch=0;ch<out.getNumChannels();++ch)
         out.addFrom(ch,0,songDrumBus,ch,0,renderSamples,drumSectionGain);
 
@@ -1534,10 +1511,6 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
     for(int ch=0;ch<out.getNumChannels();++ch)
         out.addFrom(ch,0,songFxBus,ch,0,renderSamples,.66f);
 
-    const float masterRc=1.f/(juce::MathConstants<float>::twoPi*24.f);
-    const float masterDt=1.f/(float)previewSampleRate;
-    const float masterAlpha=masterRc/(masterRc+masterDt);
-
     const int fadeStart=songFadeRemaining.load(std::memory_order_acquire);
     for(int ch=0;ch<out.getNumChannels()&&ch<2;++ch)
     {
@@ -1545,10 +1518,7 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
         float x1=masterHpX[(size_t)ch],y1=masterHpY[(size_t)ch];
         for(int s=0;s<renderSamples;++s)
         {
-            const float x=std::isfinite(d[s])?d[s]:0.f;
-            const float hp=masterAlpha*(y1+x-x1);
-            x1=x;y1=hp;
-            float y=juce::jlimit(-.96f,.96f,std::tanh(hp*1.22f));
+            float y=sonara::mixpolicy::processMasterSample(d[s],x1,y1,previewSampleRate);
             if(fadeStart>s)
             {
                 const int remaining=fadeStart-s;
