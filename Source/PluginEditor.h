@@ -90,7 +90,7 @@ private:
     juce::TextButton exportMixButton{"EXPORT MIX"}, exportStemsButton{"EXPORT STEMS"};
 
     ExternalDragButton dragPreviewMidi{*this,"SOUND MIDI • USE ON SONARA",ExternalDragButton::Kind::previewMidi};
-    ExternalDragButton dragFullMidi{*this,"MULTITRACK MIDI • SEPARATE LANES",ExternalDragButton::Kind::fullMidi};
+    ExternalDragButton dragFullMidi{*this,"FULL SONG MIDI • ALL LANES",ExternalDragButton::Kind::fullMidi};
     ExternalDragButton dragLaneMidi{*this,"PIANO ROLL • SELECTED MIDI",ExternalDragButton::Kind::laneMidi};
     ExternalDragButton dragLeadMidi{*this,"LEAD MIDI • PIANO ROLL",ExternalDragButton::Kind::leadMidi};
     ExternalDragButton dragReferenceMidi{*this,"DRAG REF MIDI",ExternalDragButton::Kind::referenceMidi};

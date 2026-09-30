@@ -495,6 +495,18 @@ int main()
     // MIDI export paths.
     auto fullMidi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-playback-full",".mid");
     if(!randomizer.writeArrangementMidiFile(fullMidi)||fullMidi.getSize()<512)return fail("full MIDI export failed");
+    {
+        juce::FileInputStream fullStream(fullMidi);
+        juce::MidiFile fullFile;
+        if(!fullStream.openedOk()||!fullFile.readFrom(fullStream))
+            return fail("full song MIDI could not be parsed");
+        const int expectedTracks=1+(int)surprised->getLanes().size(); // conductor + every arrangement lane
+        if(fullFile.getNumTracks()!=expectedTracks)
+            return fail("full song MIDI does not contain every generated lane as a separate track");
+        const auto* conductor=fullFile.getTrack(0);
+        if(conductor==nullptr||conductor->getNumEvents()==0)
+            return fail("full song MIDI conductor/tempo track missing");
+    }
     int subIndex=-1;for(int i=0;i<(int)surprised->getLanes().size();++i)if(surprised->getLanes()[(size_t)i].name=="SUB"){subIndex=i;break;}
     if(subIndex<0)return fail("SUB index missing");
     randomizer.setSelectedLane(subIndex);

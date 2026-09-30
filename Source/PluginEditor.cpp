@@ -336,7 +336,7 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     for(auto* b:buttons){addAndMakeVisible(*b);styleButton(*b,b==&generateSound||b==&generateTrack||b==&generateDrums||b==&randomizeEverythingButton||b==&surpriseMe||b==&playSong||b==&playChorus||b==&playDrop||b==&resound||b==&rebuildReference||b==&exportMixButton||b==&exportStemsButton);}
     dragLaneMidi.setTooltip("Selected lane notes for FL Piano Roll. Drop onto a SONARA channel to use that lane's SoundDNA; other instruments will sound different.");
     dragLeadMidi.setTooltip("Always exports only the generated LEAD notes for FL Piano Roll. No BASS, SUB, CHORDS, PAD or drum notes are included.");
-    dragFullMidi.setTooltip("Multitrack arrangement MIDI. Import as separate lanes/tracks; do not merge this into one Piano Roll or BASS/SUB notes will appear under the lead.");
+    dragFullMidi.setTooltip("Drag the WHOLE generated song as multitrack MIDI: drums, bass, sub, chords, pluck, pad, lead, counter and FX stay on separate named tracks with full song timing.");
     dragPreviewMidi.setTooltip("Sound-preview notes. Drop onto the same SONARA instrument to keep its SoundDNA; use WAV for exact rendered audio.");
     dragLaneAudio.setTooltip("Rendered selected lane with SONARA SoundDNA preserved. Drag to FL Playlist for the exact lane sound.");
     dragLeadAudio.setTooltip("Always renders the generated LEAD with its SONARA SoundDNA. Drag to FL Playlist when you want the lead sound preserved.");
@@ -496,7 +496,7 @@ void SonaraAudioProcessorEditor::showStatus(const juce::String& s){p.generationS
 void SonaraAudioProcessorEditor::beginExternalDrag(ExternalDragButton::Kind kind){
     const auto temp=juce::File::getSpecialLocation(juce::File::tempDirectory);bool ok=false;juce::String status;juce::StringArray files;
     if(kind==ExternalDragButton::Kind::previewMidi){dragFile=temp.getNonexistentChildFile("SONARA-Sound",".mid");ok=p.writePreviewMidiFile(dragFile);status="Sound MIDI ready • drop on this SONARA channel for the same SoundDNA";files.add(dragFile.getFullPathName());}
-    else if(kind==ExternalDragButton::Kind::fullMidi){dragFile=temp.getNonexistentChildFile("SONARA-Full-Arrangement",".mid");ok=p.writeArrangementMidiFile(dragFile);status="Multitrack MIDI ready • import as separate lanes, not one Piano Roll";files.add(dragFile.getFullPathName());}
+    else if(kind==ExternalDragButton::Kind::fullMidi){dragFile=temp.getNonexistentChildFile("SONARA-Full-Arrangement",".mid");ok=p.writeArrangementMidiFile(dragFile);status="FULL SONG MIDI ready • all generated lanes + complete song timing";files.add(dragFile.getFullPathName());}
     else if(kind==ExternalDragButton::Kind::laneMidi){dragFile=temp.getNonexistentChildFile("SONARA-Selected-Lane",".mid");ok=p.writeSelectedLaneMidiFile(dragFile);status="Selected Piano Roll MIDI ready • same SONARA channel keeps lane SoundDNA";files.add(dragFile.getFullPathName());}
     else if(kind==ExternalDragButton::Kind::leadMidi){p.setSelectedLane(9);dragFile=temp.getNonexistentChildFile("SONARA-Lead",".mid");ok=p.writeLeadMidiFile(dragFile);status="LEAD MIDI ready • LEAD SoundDNA loaded in SONARA • main melody only";files.add(dragFile.getFullPathName());}
     else if(kind==ExternalDragButton::Kind::referenceMidi){dragFile=temp.getNonexistentChildFile("SONARA-Reference-Melody",".mid");ok=p.writeReferenceMidiFile(dragFile);status="Dragging extracted reference melody MIDI";files.add(dragFile.getFullPathName());}
@@ -890,7 +890,7 @@ void SonaraAudioProcessorEditor::resized()
     switch(activeTab)
     {
         case 0: layoutRow({&dragPreviewMidi},h-130,34); break;
-        case 1: layoutRow({&dragLeadMidi,&dragLeadAudio,&dragLaneMidi,&dragLaneAudio,&dragFullAudio},h-130,34); break;
+        case 1: layoutRow({&dragFullMidi,&dragLaneMidi,&dragLeadMidi,&dragFullAudio,&dragLaneAudio,&dragLeadAudio},h-130,34); break;
         case 2: layoutRow({&dragLaneMidi,&dragLaneAudio},h-130,34); break;
         case 4: layoutRow({&dragReferenceMidi},h-130,34); break;
         case 5: layoutRow({&dragLeadMidi,&dragLeadAudio,&dragLaneMidi,&dragFullMidi,&dragReferenceMidi},h-130,34); break;
