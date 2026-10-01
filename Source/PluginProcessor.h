@@ -48,6 +48,7 @@ public:
     double songPosition01() const noexcept;
     int currentSongBar() const noexcept;
     juce::String currentSectionName() const;
+    juce::String getCurrentSongPrompt() const { auto a=arrangementSnapshot(); return a?a->getSourcePrompt():juce::String{}; }
     std::shared_ptr<const sonara::SongArrangement> arrangementSnapshot() const noexcept { return std::atomic_load_explicit(&arrangement,std::memory_order_acquire); }
     bool writeArrangementMidiFile(const juce::File&) const;
     bool writeSelectedLaneMidiFile(const juce::File&) const;

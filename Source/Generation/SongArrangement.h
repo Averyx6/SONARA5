@@ -62,6 +62,7 @@ public:
     juce::String getMelodyArchetypeName() const;
     juce::String getProducerPlanSummary() const;
     juce::String getPromptIntentSummary() const;
+    const juce::String& getSourcePrompt() const noexcept { return sourcePrompt; }
     juce::String getSoundPaletteSummary() const;
     std::vector<int> getSoundPaletteFingerprint() const;
     std::vector<int> getProgressionFingerprint() const;

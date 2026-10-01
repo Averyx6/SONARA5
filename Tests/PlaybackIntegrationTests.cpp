@@ -544,8 +544,6 @@ int main()
         return fail("RESOUND WAV was silent or exceeded safety ceiling");
 
     referenceMidi.deleteFile();extracted.deleteFile();resoundWav.deleteFile();
-    if(randomizer.analyseReferenceFile(juce::File{})||randomizer.hasReference())
-        return fail("failed reference load retained stale reference state");
 
     // MIDI export paths.
     auto fullMidi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-playback-full",".mid");
@@ -584,6 +582,10 @@ int main()
     if(restored.getSelectedLane()!=subIndex
        ||restored.currentPatch().seed!=restored.arrangementSnapshot()->getLanes()[(size_t)subIndex].sound.seed)
         return fail("selected lane / live SoundDNA did not survive plugin state round-trip");
+    if(!restored.hasReference())
+        return fail("reference analysis did not survive plugin state round-trip");
+    if(restored.getCurrentSongPrompt().isEmpty())
+        return fail("song prompt did not survive plugin state round-trip");
 
     auto projectFile=juce::File::getSpecialLocation(juce::File::tempDirectory)
         .getNonexistentChildFile("sonara-project-roundtrip",".sonara");
@@ -597,6 +599,37 @@ int main()
     if(projectLoaded.getSelectedLane()!=subIndex
        ||projectLoaded.currentPatch().seed!=projectLoaded.arrangementSnapshot()->getLanes()[(size_t)subIndex].sound.seed)
         return fail("project round-trip lost selected lane SoundDNA");
+    if(!projectLoaded.hasReference())
+        return fail("project round-trip lost reference analysis");
+    if(projectLoaded.getCurrentSongPrompt().isEmpty())
+        return fail("project round-trip lost source prompt");
+
+    auto soundOnlyProject=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("sonara-sound-only",".sonaraproject");
+    SonaraAudioProcessor soundOnly;
+    soundOnly.prepareToPlay(48000.0,512);
+    soundOnly.generatePatch("warm clean pluck");
+    if(!soundOnly.saveProject(soundOnlyProject))
+        return fail("sound-only project save failed");
+    if(!projectLoaded.loadProject(soundOnlyProject))
+        return fail("sound-only project load failed");
+    if(projectLoaded.arrangementSnapshot()||projectLoaded.hasReference())
+        return fail("loading sound-only project retained stale song/reference state");
+
+    juce::MemoryBlock soundOnlyState;
+    soundOnly.getStateInformation(soundOnlyState);
+    SonaraAudioProcessor staleStateTarget;
+    staleStateTarget.prepareToPlay(48000.0,512);
+    if(!staleStateTarget.generateTrack("melodic EDM, 128 BPM, F minor, strong hook"))
+        return fail("stale-state target song generation failed");
+    staleStateTarget.setStateInformation(soundOnlyState.getData(),(int)soundOnlyState.getSize());
+    if(staleStateTarget.arrangementSnapshot()||staleStateTarget.hasReference())
+        return fail("loading sound-only plugin state retained stale song/reference state");
+
+    if(randomizer.analyseReferenceFile(juce::File{})||randomizer.hasReference())
+        return fail("failed reference load retained stale reference state");
+
+    soundOnlyProject.deleteFile();
     projectFile.deleteFile();
 
     auto subMidi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-playback-sub",".mid");
