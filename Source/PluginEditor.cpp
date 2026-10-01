@@ -328,9 +328,9 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     songPrompt.setTextToShowWhenEmpty("Describe the whole song: genre, key, BPM, energy, drop, instruments...",dim);
     laneSoundPrompt.setTextToShowWhenEmpty("Describe ONLY the selected lane sound: e.g. warm supersaw lead, clean pluck, donk bass...",dim);
 
-    std::array<juce::Button*,45> buttons {&generateSound,&generateTrack,&generateDrums,&randomizeEverythingButton,&surpriseMe,&similar,&mutate,&randomize,&undo,&redo,
+    std::array<juce::Button*,46> buttons {&generateSound,&generateTrack,&generateDrums,&randomizeEverythingButton,&surpriseMe,&similar,&mutate,&randomize,&undo,&redo,
         &variation1,&variation2,&variation3,&variation4,&captureA,&captureB,&recallA,&recallB,&connect,&previewSound,&playSong,&playChorus,&playDrop,&stop,
-        &dragPreviewMidi,&dragFullMidi,&dragLaneMidi,&dragLeadMidi,&dragReferenceMidi,&dragFullAudio,&dragLaneAudio,&dragLeadAudio,&dragStems,
+        &dragPreviewMidi,&dragFullMidi,&dragLaneMidi,&dragLeadMidi,&dragReferenceMidi,&dragReferenceAudio,&dragFullAudio,&dragLaneAudio,&dragLeadAudio,&dragStems,
         &loadReference,&importMidi,&resound,&rebuildReference,&saveSoundButton,&loadSoundButton,&saveProjectButton,&loadProjectButton,&exportMixButton,&exportStemsButton,
         &applyLaneSound,&autoLaneSound};
     for(auto* b:buttons){addAndMakeVisible(*b);styleButton(*b,b==&generateSound||b==&generateTrack||b==&generateDrums||b==&randomizeEverythingButton||b==&surpriseMe||b==&playSong||b==&playChorus||b==&playDrop||b==&resound||b==&rebuildReference||b==&exportMixButton||b==&exportStemsButton);}
@@ -340,6 +340,7 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     dragPreviewMidi.setTooltip("Sound-preview notes. Drop onto the same SONARA instrument to keep its SoundDNA; use WAV for exact rendered audio.");
     dragLaneAudio.setTooltip("Rendered selected lane with SONARA SoundDNA preserved. Drag to FL Playlist for the exact lane sound.");
     dragLeadAudio.setTooltip("Always renders the generated LEAD with its SONARA SoundDNA. Drag to FL Playlist when you want the lead sound preserved.");
+    dragReferenceAudio.setTooltip("Rendered extracted reference melody using the current RESOUND SoundDNA. Drag to FL Playlist for the actual resounded audio.");
     dragFullAudio.setTooltip("Rendered full mix using the same SONARA song mixer as preview. Drag to FL Playlist for preview-matched sound.");
 
     juce::TextButton* tabs[]={&tabInstrument,&tabSong,&tabDrums,&tabFx,&tabReference,&tabMidi,&tabExport};
@@ -511,19 +512,103 @@ void SonaraAudioProcessorEditor::syncMixControls()
 void SonaraAudioProcessorEditor::syncLockButtons(){const auto& l=p.mutationLocks();lockOsc.setToggleState(l.oscillators,juce::dontSendNotification);lockUnison.setToggleState(l.unison,juce::dontSendNotification);lockEnv.setToggleState(l.ampEnvelope,juce::dontSendNotification);lockFilter.setToggleState(l.filter,juce::dontSendNotification);lockMod.setToggleState(l.modulation,juce::dontSendNotification);lockSources.setToggleState(l.sources,juce::dontSendNotification);lockTone.setToggleState(l.tone,juce::dontSendNotification);lockFx.setToggleState(l.spatialFx,juce::dontSendNotification);}
 void SonaraAudioProcessorEditor::showStatus(const juce::String& s){p.generationStatus=s;statusLine.setText(s,juce::dontSendNotification);}
 
-void SonaraAudioProcessorEditor::beginExternalDrag(ExternalDragButton::Kind kind){
-    const auto temp=juce::File::getSpecialLocation(juce::File::tempDirectory);bool ok=false;juce::String status;juce::StringArray files;
-    if(kind==ExternalDragButton::Kind::previewMidi){dragFile=temp.getNonexistentChildFile("SONARA-Sound",".mid");ok=p.writePreviewMidiFile(dragFile);status="Sound MIDI ready • drop on this SONARA channel for the same SoundDNA";files.add(dragFile.getFullPathName());}
-    else if(kind==ExternalDragButton::Kind::fullMidi){dragFile=temp.getNonexistentChildFile("SONARA-Full-Arrangement",".mid");ok=p.writeArrangementMidiFile(dragFile);status="FULL SONG MIDI ready • all generated lanes + complete song timing";files.add(dragFile.getFullPathName());}
-    else if(kind==ExternalDragButton::Kind::laneMidi){dragFile=temp.getNonexistentChildFile("SONARA-Selected-Lane",".mid");ok=p.writeSelectedLaneMidiFile(dragFile);status="Selected Piano Roll MIDI ready • same SONARA channel keeps lane SoundDNA";files.add(dragFile.getFullPathName());}
-    else if(kind==ExternalDragButton::Kind::leadMidi){p.setSelectedLane(9);dragFile=temp.getNonexistentChildFile("SONARA-Lead",".mid");ok=p.writeLeadMidiFile(dragFile);status="LEAD MIDI ready • LEAD SoundDNA loaded in SONARA • main melody only";files.add(dragFile.getFullPathName());}
-    else if(kind==ExternalDragButton::Kind::referenceMidi){dragFile=temp.getNonexistentChildFile("SONARA-Reference-Melody",".mid");ok=p.writeReferenceMidiFile(dragFile);status="Dragging extracted reference melody MIDI";files.add(dragFile.getFullPathName());}
-    else if(kind==ExternalDragButton::Kind::fullMixAudio){dragFile=temp.getNonexistentChildFile("SONARA-Full-Mix",".wav");ok=p.exportFullMix(dragFile);status="Dragging preview-matched 24-bit full mix";files.add(dragFile.getFullPathName());}
-    else if(kind==ExternalDragButton::Kind::laneAudio){dragFile=temp.getNonexistentChildFile("SONARA-Selected-Lane",".wav");ok=p.exportSelectedLaneAudio(dragFile);status="Dragging selected lane with SONARA SoundDNA preserved";files.add(dragFile.getFullPathName());}
-    else if(kind==ExternalDragButton::Kind::leadAudio){dragFile=temp.getNonexistentChildFile("SONARA-Lead",".wav");ok=p.exportLeadAudio(dragFile);status="Dragging LEAD WAV with SONARA SoundDNA preserved";files.add(dragFile.getFullPathName());}
-    else {dragFile=temp.getNonexistentChildFile("SONARA-Stems","");ok=dragFile.createDirectory()&&p.exportAllStems(dragFile);status="Dragging all rendered 24-bit stems";if(ok){juce::Array<juce::File> wavs;dragFile.findChildFiles(wavs,juce::File::findFiles,false,"*.wav");for(const auto& f:wavs)files.add(f.getFullPathName());ok=!files.isEmpty();}}
-    if(!ok||files.isEmpty()){showStatus("Export unavailable • generate or load the required content first");return;}showStatus(status);
-    juce::DragAndDropContainer::performExternalDragDropOfFiles(files,false,this,[this]{showStatus("External drag finished");});
+void SonaraAudioProcessorEditor::beginExternalDrag(ExternalDragButton::Kind kind)
+{
+    const auto temp=juce::File::getSpecialLocation(juce::File::tempDirectory);
+    bool ok=false;
+    juce::String status;
+    juce::StringArray files;
+
+    if(kind==ExternalDragButton::Kind::previewMidi)
+    {
+        showStatus("Preparing SOUND MIDI...");
+        dragFile=temp.getNonexistentChildFile("SONARA-Sound",".mid");
+        ok=p.writePreviewMidiFile(dragFile);
+        status="SOUND MIDI ready • drop on SONARA for the same SoundDNA";
+    }
+    else if(kind==ExternalDragButton::Kind::fullMidi)
+    {
+        showStatus("Preparing FULL SONG MIDI...");
+        dragFile=temp.getNonexistentChildFile("SONARA-Full-Arrangement",".mid");
+        ok=p.writeArrangementMidiFile(dragFile);
+        status="FULL SONG MIDI ready • separate generated tracks + complete timing";
+    }
+    else if(kind==ExternalDragButton::Kind::laneMidi)
+    {
+        showStatus("Preparing SELECTED MIDI...");
+        dragFile=temp.getNonexistentChildFile("SONARA-Selected-Lane",".mid");
+        ok=p.writeSelectedLaneMidiFile(dragFile);
+        status="SELECTED MIDI ready • current lane only";
+    }
+    else if(kind==ExternalDragButton::Kind::leadMidi)
+    {
+        showStatus("Preparing LEAD MIDI...");
+        dragFile=temp.getNonexistentChildFile("SONARA-Lead",".mid");
+        ok=p.writeLeadMidiFile(dragFile);
+        status="LEAD MIDI ready • main melody only";
+    }
+    else if(kind==ExternalDragButton::Kind::referenceMidi)
+    {
+        showStatus("Preparing REFERENCE MIDI...");
+        dragFile=temp.getNonexistentChildFile("SONARA-Reference-Melody",".mid");
+        ok=p.writeReferenceMidiFile(dragFile);
+        status="REFERENCE MIDI ready • extracted melody";
+    }
+    else if(kind==ExternalDragButton::Kind::referenceAudio)
+    {
+        showStatus("Rendering RESOUND WAV...");
+        dragFile=temp.getNonexistentChildFile("SONARA-Resound",".wav");
+        ok=p.exportReferenceAudio(dragFile);
+        status="RESOUND WAV ready • extracted melody + current SoundDNA";
+    }
+    else if(kind==ExternalDragButton::Kind::fullMixAudio)
+    {
+        showStatus("Rendering FULL MIX WAV...");
+        dragFile=temp.getNonexistentChildFile("SONARA-Full-Mix",".wav");
+        ok=p.exportFullMix(dragFile);
+        status="FULL MIX WAV ready • preview-matched 24-bit audio";
+    }
+    else if(kind==ExternalDragButton::Kind::laneAudio)
+    {
+        showStatus("Rendering SELECTED WAV...");
+        dragFile=temp.getNonexistentChildFile("SONARA-Selected-Lane",".wav");
+        ok=p.exportSelectedLaneAudio(dragFile);
+        status="SELECTED WAV ready • current lane SoundDNA preserved";
+    }
+    else if(kind==ExternalDragButton::Kind::leadAudio)
+    {
+        showStatus("Rendering LEAD WAV...");
+        dragFile=temp.getNonexistentChildFile("SONARA-Lead",".wav");
+        ok=p.exportLeadAudio(dragFile);
+        status="LEAD WAV ready • LEAD SoundDNA preserved";
+    }
+    else
+    {
+        showStatus("Rendering STEMS...");
+        dragFile=temp.getNonexistentChildFile("SONARA-Stems","");
+        ok=dragFile.createDirectory()&&p.exportAllStems(dragFile);
+        status="STEMS ready • rendered 24-bit lanes";
+        if(ok)
+        {
+            juce::Array<juce::File> wavs;
+            dragFile.findChildFiles(wavs,juce::File::findFiles,false,"*.wav");
+            for(const auto& f:wavs)files.add(f.getFullPathName());
+            ok=!files.isEmpty();
+        }
+    }
+
+    if(ok&&kind!=ExternalDragButton::Kind::stemsAudio)
+        files.add(dragFile.getFullPathName());
+
+    if(!ok||files.isEmpty())
+    {
+        showStatus("Export unavailable • required generated/reference content is missing");
+        return;
+    }
+
+    showStatus(status);
+    juce::DragAndDropContainer::performExternalDragDropOfFiles(files,false,this,
+        [this]{showStatus("Drag finished • file handed to FL Studio/target");});
 }
 
 void SonaraAudioProcessorEditor::chooseReferenceAudio()
@@ -646,10 +731,11 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     dragFullMidi.setVisible(songTab||midiTab||exportTab);
     dragLaneMidi.setVisible(songTab||drumsTab||midiTab||exportTab);
     dragLeadMidi.setVisible(songTab||midiTab||exportTab);
-    dragReferenceMidi.setVisible(referenceTab||midiTab);
+    dragReferenceMidi.setVisible(referenceTab||midiTab||exportTab);
+    dragReferenceAudio.setVisible(referenceTab||exportTab);
     dragFullAudio.setVisible(songTab||exportTab);
-    dragLaneAudio.setVisible(songTab||drumsTab||midiTab||exportTab);
-    dragLeadAudio.setVisible(songTab||midiTab||exportTab);
+    dragLaneAudio.setVisible(songTab||drumsTab||exportTab);
+    dragLeadAudio.setVisible(songTab||exportTab);
     dragStems.setVisible(exportTab);
 
     previewSound.setVisible(instrumentTab||referenceTab);
@@ -673,13 +759,38 @@ void SonaraAudioProcessorEditor::timerCallback()
     const bool referenceReady=p.hasReference();
     resound.setEnabled(referenceReady);
     rebuildReference.setEnabled(referenceReady);
-    dragReferenceMidi.setEnabled(referenceReady);
     playSong.setButtonText(p.isSongPlaying()?"PAUSE":(p.songPosition01()>0.0&&p.songPosition01()<.9999?"RESUME":"PLAY SONG"));
     previewSound.setButtonText(p.isPreviewPlaying()?"PREVIEWING":"PREVIEW SOUND");
 
     auto a=p.arrangementSnapshot();
-    selectedLaneLabel.setText(a&&juce::isPositiveAndBelow(p.getSelectedLane(),(int)a->getLanes().size())
-        ?"SELECTED • "+a->getLanes()[(size_t)p.getSelectedLane()].name:"SELECTED • none",juce::dontSendNotification);
+    const bool hasArrangement=a&&!a->isEmpty();
+    const int selected=p.getSelectedLane();
+    const bool selectedReady=hasArrangement&&juce::isPositiveAndBelow(selected,(int)a->getLanes().size())
+                          &&!a->getLanes()[(size_t)selected].notes.empty();
+    bool leadReady=false;
+    if(hasArrangement)
+        for(const auto& lane:a->getLanes())
+            if(lane.name=="LEAD"&&!lane.notes.empty()){leadReady=true;break;}
+
+    dragFullMidi.setEnabled(hasArrangement);
+    dragFullAudio.setEnabled(hasArrangement);
+    dragStems.setEnabled(hasArrangement);
+    exportMixButton.setEnabled(hasArrangement);
+    exportStemsButton.setEnabled(hasArrangement);
+    dragLaneMidi.setEnabled(selectedReady);
+    dragLaneAudio.setEnabled(selectedReady);
+    dragLeadMidi.setEnabled(leadReady);
+    dragLeadAudio.setEnabled(leadReady);
+    playSong.setEnabled(hasArrangement);
+    playChorus.setEnabled(hasArrangement);
+    playDrop.setEnabled(hasArrangement);
+    dragReferenceMidi.setEnabled(referenceReady);
+    dragReferenceAudio.setEnabled(referenceReady);
+
+    selectedLaneLabel.setText(selectedReady
+        ?"SELECTED • "+a->getLanes()[(size_t)selected].name
+        :(hasArrangement?"SELECTED • lane has no events":"SELECTED • generate a song first"),
+        juce::dontSendNotification);
 
     if(activeTab==3)syncMixControls();
     if(activeTab==4&&p.hasReference())referenceSummary.setText(p.getReferenceSummary(),juce::dontSendNotification);
@@ -949,16 +1060,19 @@ void SonaraAudioProcessorEditor::resized()
     pianoRoll.setBounds(cx,pianoY,cw,pianoH);
 
     patchName.setBounds(cx+18,upperY+8,cw-36,22);
-    selectedLaneLabel.setBounds(cx,bottomControlsY-58,juce::jmin(240,cw/2),20);
+    selectedLaneLabel.setBounds(cx,bottomControlsY-(activeTab==6?104:58),juce::jmin(280,cw/2),20);
 
     switch(activeTab)
     {
         case 0: layoutRow({&dragPreviewMidi},h-130,34); break;
         case 1: layoutRow({&dragFullMidi,&dragLaneMidi,&dragLeadMidi,&dragFullAudio,&dragLaneAudio,&dragLeadAudio},h-130,34); break;
         case 2: layoutRow({&dragLaneMidi,&dragLaneAudio},h-130,34); break;
-        case 4: layoutRow({&dragReferenceMidi},h-130,34); break;
-        case 5: layoutRow({&dragLeadMidi,&dragLeadAudio,&dragLaneMidi,&dragFullMidi,&dragReferenceMidi},h-130,34); break;
-        case 6: layoutRow({&dragFullAudio,&dragLeadAudio,&dragStems,&dragFullMidi,&dragLeadMidi},h-130,34); break;
+        case 4: layoutRow({&dragReferenceMidi,&dragReferenceAudio},h-130,34); break;
+        case 5: layoutRow({&dragFullMidi,&dragLaneMidi,&dragLeadMidi,&dragReferenceMidi},h-130,34); break;
+        case 6:
+            layoutRow({&dragFullMidi,&dragLaneMidi,&dragLeadMidi,&dragReferenceMidi},h-168,32);
+            layoutRow({&dragFullAudio,&dragLaneAudio,&dragLeadAudio,&dragReferenceAudio,&dragStems},h-130,32);
+            break;
         default: break;
     }
 

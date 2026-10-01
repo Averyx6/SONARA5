@@ -1346,8 +1346,7 @@ void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int num
     // are mixed. This gives festival drops room for the kick without running a
     // compressor per lane.
     const int drumCount=collectDrumTriggers(*a,start,renderSamples);
-    if((int)songDuckEnvelope.size()<renderSamples)
-        songDuckEnvelope.resize((size_t)renderSamples,0.f);
+    jassert((int)songDuckEnvelope.size()>=renderSamples);
     const float duckRelease=std::exp(-1.f/(float)(previewSampleRate*.18));
     float duck=songDuckState;
     int duckTriggerIndex=0;
@@ -1848,6 +1847,28 @@ bool SonaraAudioProcessor::exportLeadAudio(const juce::File& file)
         [this](float x,const juce::String& status){generationProgress.store(x);generationStatus=status;});
     generationProgress.store(ok?1.f:0.f);
     generationStatus=ok?"LEAD WAV ready • "+file.getFullPathName():"LEAD WAV export failed";
+    return ok;
+}
+
+bool SonaraAudioProcessor::exportReferenceAudio(const juce::File& file)
+{
+    if(!hasReference())
+    {
+        generationProgress.store(0.f);
+        generationStatus="RESOUND WAV unavailable • load a usable reference first";
+        return false;
+    }
+
+    generationProgress.store(.02f);
+    generationStatus="Rendering RESOUND WAV";
+    const bool ok=audioExporter.renderReferenceMelody(reference,engine.patch(),file,44100.0,
+        [this](float x,const juce::String& status)
+        {
+            generationProgress.store(x);
+            generationStatus=status;
+        });
+    generationProgress.store(ok?1.f:0.f);
+    generationStatus=ok?"RESOUND WAV ready • "+file.getFullPathName():"RESOUND WAV export failed";
     return ok;
 }
 

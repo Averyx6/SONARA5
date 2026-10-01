@@ -518,7 +518,32 @@ int main()
     auto extracted=juce::File::getSpecialLocation(juce::File::tempDirectory)
         .getNonexistentChildFile("sonara-reference-extracted",".mid");
     if(!randomizer.writeReferenceMidiFile(extracted)||extracted.getSize()<64)return fail("reference MIDI re-export failed");
-    referenceMidi.deleteFile();extracted.deleteFile();
+
+    auto resoundWav=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("sonara-reference-resound",".wav");
+    if(!randomizer.exportReferenceAudio(resoundWav)||resoundWav.getSize()<4096)
+        return fail("RESOUND WAV export failed");
+    juce::AudioFormatManager resoundFormats;resoundFormats.registerBasicFormats();
+    auto resoundReader=resoundFormats.createReaderFor(resoundWav);
+    if(!resoundReader||resoundReader->lengthInSamples<1024)
+        return fail("RESOUND WAV could not be reopened");
+    juce::AudioBuffer<float> resoundAudio(2,(int)juce::jmin<juce::int64>(resoundReader->lengthInSamples,44100*4));
+    resoundAudio.clear();
+    if(!resoundReader->read(&resoundAudio,0,resoundAudio.getNumSamples(),0,true,true))
+        return fail("RESOUND WAV readback failed");
+    double resoundEnergy=0.0;float resoundPeak=0.f;
+    for(int ch=0;ch<resoundAudio.getNumChannels();++ch)
+        for(int i=0;i<resoundAudio.getNumSamples();++i)
+        {
+            const float x=resoundAudio.getSample(ch,i);
+            if(!std::isfinite(x))return fail("RESOUND WAV contained non-finite audio");
+            resoundPeak=juce::jmax(resoundPeak,std::abs(x));
+            resoundEnergy+=(double)x*x;
+        }
+    if(resoundEnergy<=1.0e-7||resoundPeak>sonara::mixpolicy::masterCeiling()+.01f)
+        return fail("RESOUND WAV was silent or exceeded safety ceiling");
+
+    referenceMidi.deleteFile();extracted.deleteFile();resoundWav.deleteFile();
     if(randomizer.analyseReferenceFile(juce::File{})||randomizer.hasReference())
         return fail("failed reference load retained stale reference state");
 
@@ -578,8 +603,11 @@ int main()
     if(!randomizer.writeSelectedLaneMidiFile(subMidi)||subMidi.getSize()<64)return fail("selected SUB MIDI export failed");
 
     auto leadMidi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-playback-lead",".mid");
+    const int selectedBeforeLeadExport=randomizer.getSelectedLane();
     if(!randomizer.writeLeadMidiFile(leadMidi)||leadMidi.getSize()<64||leadMidi.getSize()>=fullMidi.getSize())
         return fail("dedicated LEAD MIDI export failed or still contains the full arrangement");
+    if(randomizer.getSelectedLane()!=selectedBeforeLeadExport)
+        return fail("LEAD MIDI export changed the selected lane");
     juce::FileInputStream leadStream(leadMidi);
     juce::MidiFile leadFile;
     if(!leadStream.openedOk()||!leadFile.readFrom(leadStream)||leadFile.getNumTracks()!=1)

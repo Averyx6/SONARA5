@@ -48,11 +48,15 @@ jobs:
           $machine = [BitConverter]::ToUInt16($bytes, $pe + 4)
           if ($machine -ne 0x8664) { throw ("Expected x64 PE VST3, got machine 0x{0:X4}" -f $machine) }
 
+          $versionMatch = Select-String -Path CMakeLists.txt -Pattern 'project\(SONARA VERSION ([0-9.]+)\)'
+          if (-not $versionMatch -or $versionMatch.Matches.Count -lt 1) { throw "SONARA version not found in CMakeLists.txt" }
+          $sonaraVersion = $versionMatch.Matches[0].Groups[1].Value
+
           Remove-Item -Recurse -Force DIST -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path DIST | Out-Null
           Copy-Item -Recurse -Force $vst.FullName "DIST/SONARA.vst3"
           @"
-          SONARA VST3 3.2.1 - Windows x64
+          SONARA VST3 $sonaraVersion - Windows x64
 
           INSTALL:
           1. Close FL Studio.
@@ -66,7 +70,7 @@ jobs:
 
           Do not copy only the inner .vst3 binary. Keep the whole SONARA.vst3 bundle folder.
           "@ | Set-Content -Encoding utf8 DIST/INSTALL.txt
-          "version=3.2.1" | Set-Content DIST/BUILD_LOG.txt
+          "version=$sonaraVersion" | Set-Content DIST/BUILD_LOG.txt
           "commit=${{ github.sha }}" | Add-Content DIST/BUILD_LOG.txt
           "runner=$env:RUNNER_OS" | Add-Content DIST/BUILD_LOG.txt
           "vst3_discovery_test=passed" | Add-Content DIST/BUILD_LOG.txt

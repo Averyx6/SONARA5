@@ -3,6 +3,7 @@
 #include "../Generation/SongArrangement.h"
 #include "../Engine/SonaraEngine.h"
 #include "../Song/DrumSynth.h"
+#include "../Reference/ReferenceAnalyzer.h"
 #include <functional>
 #include <array>
 
@@ -16,6 +17,7 @@ public:
 
     bool renderFullMix(const SongArrangement&, const juce::File& destination, double sampleRate = 44100.0, Progress = {}, const MixArray* mix = nullptr) const;
     bool renderSelectedLane(const SongArrangement&, int laneIndex, const juce::File& destination, double sampleRate = 44100.0, Progress = {}) const;
+    bool renderReferenceMelody(const ReferenceAnalysis&, const SoundDNA&, const juce::File& destination, double sampleRate = 44100.0, Progress = {}) const;
     bool renderAllStems(const SongArrangement&, const juce::File& directory, double sampleRate = 44100.0, Progress = {}) const;
 
 private:

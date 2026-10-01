@@ -67,6 +67,65 @@ bool AudioExporter::renderSelectedLane(const SongArrangement& a,int laneIndex,co
     if(cb)cb(1.f,lane.name+" ready");return true;
 }
 
+bool AudioExporter::renderReferenceMelody(const ReferenceAnalysis& reference,const SoundDNA& patch,
+                                               const juce::File& destination,double sampleRate,Progress cb) const
+{
+    if(!reference.valid()||reference.melody.empty())return false;
+    std::unique_ptr<juce::AudioFormatWriter> writer;
+    if(!createWavWriter(destination,sampleRate,writer))return false;
+
+    ArrangementLane lane;
+    lane.name="REFERENCE";
+    lane.midiChannel=1;
+    lane.sound=patch;
+    lane.notes.reserve(reference.melody.size());
+    for(const auto& n:reference.melody)
+        lane.notes.push_back({n.midiNote,juce::jlimit(1,127,n.velocity),
+                              juce::jmax(0.0,n.beat),juce::jmax(.0625,n.length)});
+
+    constexpr int blockSize=512;
+    const double bpm=juce::jlimit(40.0,240.0,reference.estimatedBpm);
+    const double spb=sampleRate*60.0/bpm;
+    const int64_t total=(int64_t)std::llround(
+        (juce::jmax(1.0,reference.melodyBeats())*spb)+sampleRate*3.0);
+
+    SonaraEngine synth;
+    synth.setLowCpuMode(true);
+    synth.setVoiceLimit(4);
+    synth.prepare(sampleRate,blockSize,2);
+    synth.setPatch(patch);
+
+    juce::AudioBuffer<float> block(2,blockSize);
+    juce::MidiBuffer midi;
+    midi.ensureSize(8192);
+    std::array<float,2> masterX{},masterY{};
+
+    for(int64_t start=0;start<total;start+=blockSize)
+    {
+        const int n=(int)juce::jmin<int64_t>(blockSize,total-start);
+        block.clear();
+        juce::AudioBuffer<float> view(block.getArrayOfWritePointers(),2,0,n);
+        injectLaneMidi(lane,midi,start,n,bpm,sampleRate);
+        synth.render(view,midi,n);
+
+        for(int ch=0;ch<2;++ch)
+        {
+            auto* d=block.getWritePointer(ch);
+            float x1=masterX[(size_t)ch],y1=masterY[(size_t)ch];
+            for(int i=0;i<n;++i)
+                d[i]=mixpolicy::processMasterSample(d[i],x1,y1,sampleRate);
+            masterX[(size_t)ch]=x1;masterY[(size_t)ch]=y1;
+        }
+
+        if(!writer->writeFromAudioSampleBuffer(block,0,n))return false;
+        if(cb&&start%(blockSize*64)==0)
+            cb((float)start/(float)juce::jmax<int64_t>(1,total),"Rendering RESOUND WAV");
+    }
+
+    if(cb)cb(1.f,"RESOUND WAV ready");
+    return true;
+}
+
 bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& destination,double sampleRate,Progress cb,const MixArray* mix) const
 {
     std::unique_ptr<juce::AudioFormatWriter> writer;

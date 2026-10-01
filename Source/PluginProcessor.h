@@ -73,6 +73,7 @@ public:
     bool exportFullMix(const juce::File&);
     bool exportSelectedLaneAudio(const juce::File&);
     bool exportLeadAudio(const juce::File&);
+    bool exportReferenceAudio(const juce::File&);
     bool exportAllStems(const juce::File& directory);
 
     void setPreviewBpm(double bpm) noexcept { previewBpm=juce::jlimit(60.0,200.0,bpm); }
