@@ -900,9 +900,6 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
         else if(lower.contains("drum and bass")||lower.contains("dnb")) style="DRUM & BASS";
         else if(lower.contains("electro pop")||lower.contains("pop")) style="ELECTRO POP";
         else if(lower.contains("cinematic")) style="CINEMATIC EDM";
-        const juce::String energy=(lower.contains("powerful")||lower.contains("energetic")||lower.contains("aggressive")||lower.contains("huge"))?"HIGH":
-                                  (lower.contains("soft")||lower.contains("calm")||lower.contains("mellow"))?"LOW":"MEDIUM";
-
         const auto card=[&](const juce::String& label,const juce::String& value,int y)
         {
             const auto box=juce::Rectangle<float>((float)rx, (float)y, 186.f, 44.f);
@@ -916,7 +913,24 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
         {
             card("STYLE",style,ry);ry+=48;
             card("KEY / TEMPO",key+" • "+juce::String(a->getBpm(),0)+" BPM",ry);ry+=48;
-            card("ENERGY",energy,ry);ry+=48;
+            juce::String sectionPlan="—";
+            const auto& goals=a->getSectionGoals();
+            const int currentBar=p.currentSongBar();
+            for(size_t gi=0;gi<a->getSections().size()&&gi<goals.size();++gi)
+            {
+                const auto& section=a->getSections()[gi];
+                if(currentBar>=section.startBar&&currentBar<section.startBar+section.bars)
+                {
+                    const auto& goal=goals[gi];
+                    sectionPlan="E"+juce::String((int)std::lround(goal.energy*100.f))
+                        +" D"+juce::String((int)std::lround(goal.density*100.f))
+                        +" M"+juce::String((int)std::lround(goal.melodyActivity*100.f))
+                        +" B"+juce::String((int)std::lround(goal.bassDrive*100.f))
+                        +" R"+juce::String((int)std::lround(goal.drumDrive*100.f));
+                    break;
+                }
+            }
+            card("SECTION PRODUCER GOAL",sectionPlan,ry);ry+=48;
             card("SONG ID",seedHex.isEmpty()?"—":seedHex,ry);ry+=48;
             card("HARMONY / ID",a->getHarmonySummary()+" • "+shortHex(a->getHarmonyId()),ry);ry+=48;
             card("HARMONIC RHYTHM",a->getHarmonicRhythmSummary(),ry);ry+=48;

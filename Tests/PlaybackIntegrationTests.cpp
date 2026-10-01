@@ -620,8 +620,9 @@ int main()
     soundOnly.getStateInformation(soundOnlyState);
     SonaraAudioProcessor staleStateTarget;
     staleStateTarget.prepareToPlay(48000.0,512);
-    if(!staleStateTarget.generateTrack("melodic EDM, 128 BPM, F minor, strong hook"))
-        return fail("stale-state target song generation failed");
+    staleStateTarget.setStateInformation(state.getData(),(int)state.getSize());
+    if(!staleStateTarget.arrangementSnapshot()||!staleStateTarget.hasReference())
+        return fail("stale-state fixture did not restore full song/reference state");
     staleStateTarget.setStateInformation(soundOnlyState.getData(),(int)soundOnlyState.getSize());
     if(staleStateTarget.arrangementSnapshot()||staleStateTarget.hasReference())
         return fail("loading sound-only plugin state retained stale song/reference state");

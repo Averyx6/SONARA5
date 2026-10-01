@@ -1483,6 +1483,87 @@ int main()
        ||restored.getMelodyFingerprint()!=a.getMelodyFingerprint())
     {std::cerr<<"Composition/Harmony DNA persistence roundtrip failed\n";return 31;}
 
+    // v3.6: one persistent section-level producer plan must coordinate multiple
+    // generators. It is not metadata-only: the plan must show strong role contrast,
+    // survive persistence, and the rendered lanes must reflect that contrast.
+    sonara::SongArrangement sectionBrain;
+    sectionBrain.generateComposition(
+        "emotional progressive house 128 BPM F minor, strong hook, powerful drop, quiet breakdown, evolving final drop",
+        128.0,0x360036ULL);
+    const auto& sectionBrainSections=sectionBrain.getSections();
+    const auto& sectionGoals=sectionBrain.getSectionGoals();
+    if(sectionGoals.size()!=sectionBrainSections.size()||sectionGoals.size()<6
+       ||sectionBrain.getSectionGoalSummary().isEmpty())
+    {std::cerr<<"v3.6 section producer goals missing or not inspectable\n";return 148;}
+
+    int dropGoal=-1,breakGoal=-1,finalGoal=-1;
+    for(size_t i=0;i<sectionBrainSections.size();++i)
+    {
+        if(sectionBrainSections[i].name=="DROP"&&dropGoal<0)dropGoal=(int)i;
+        else if(sectionBrainSections[i].name=="BREAKDOWN")breakGoal=(int)i;
+        else if(sectionBrainSections[i].name=="FINAL HOOK")finalGoal=(int)i;
+    }
+    if(dropGoal<0||breakGoal<0||finalGoal<0)
+    {std::cerr<<"v3.6 section-goal fixture missing song roles\n";return 149;}
+
+    const auto& dg=sectionGoals[(size_t)dropGoal];
+    const auto& bg=sectionGoals[(size_t)breakGoal];
+    const auto& fg=sectionGoals[(size_t)finalGoal];
+    if(!(dg.drumDrive>bg.drumDrive+.35f&&dg.bassDrive>bg.bassDrive+.35f
+         &&bg.space>dg.space+.35f&&fg.development>dg.development+.12f
+         &&fg.melodyActivity>=dg.melodyActivity))
+    {std::cerr<<"v3.6 section goals do not express drop/break/final producer roles\n";return 150;}
+
+    const auto restoredSectionBrain=sonara::SongArrangement::fromValueTree(sectionBrain.toValueTree());
+    const auto& restoredGoals=restoredSectionBrain.getSectionGoals();
+    if(restoredGoals.size()!=sectionGoals.size()
+       ||std::abs(restoredGoals[(size_t)dropGoal].drumDrive-dg.drumDrive)>.0001f
+       ||std::abs(restoredGoals[(size_t)breakGoal].space-bg.space)>.0001f
+       ||restoredSectionBrain.getStructureFingerprint()!=sectionBrain.getStructureFingerprint())
+    {std::cerr<<"v3.6 section producer goals did not survive persistence\n";return 151;}
+
+    auto sectionNoteCount=[](const sonara::ArrangementLane& lane,const sonara::ArrangementSection& s)
+    {
+        const double begin=s.startBar*4.0,end=(s.startBar+s.bars)*4.0;
+        int n=0;for(const auto& note:lane.notes)if(note.beat>=begin&&note.beat<end)++n;
+        return n/(double)juce::jmax(1,s.bars);
+    };
+    const auto* brainHats=findLane(sectionBrain,"HATS");
+    const auto* brainBass=findLane(sectionBrain,"BASS");
+    if(!brainHats||!brainBass
+       ||sectionNoteCount(*brainHats,sectionBrainSections[(size_t)dropGoal])
+            <=sectionNoteCount(*brainHats,sectionBrainSections[(size_t)breakGoal])+1.5
+       ||sectionNoteCount(*brainBass,sectionBrainSections[(size_t)dropGoal])
+            <=sectionNoteCount(*brainBass,sectionBrainSections[(size_t)breakGoal])+.25)
+    {std::cerr<<"v3.6 section producer goals are not affecting drums/low end\n";return 152;}
+
+    const auto* brainLead=findLane(sectionBrain,"LEAD");
+    if(!brainLead||sectionBrainSections[(size_t)finalGoal].bars<8)
+    {std::cerr<<"v3.6 final-hook development fixture missing\n";return 153;}
+    auto finalStatement=[&](int statement)
+    {
+        std::vector<std::pair<int,int>> out;
+        const auto& finalSection=sectionBrainSections[(size_t)finalGoal];
+        const double begin=(finalSection.startBar+statement*4)*4.0;
+        const double end=begin+16.0;
+        for(const auto& n:brainLead->notes)
+            if(n.beat>=begin&&n.beat<end)
+                out.push_back({(int)std::llround((n.beat-begin)*8.0),n.note});
+        return out;
+    };
+    const auto finalA=finalStatement(0);
+    const auto finalB=finalStatement(1);
+    if(finalA.size()<4||finalB.size()<4||finalA==finalB)
+    {std::cerr<<"v3.6 FINAL HOOK is still an exact repeated chorus statement\n";return 154;}
+    std::set<std::pair<int,int>> finalIdentityA,finalIdentityB;
+    for(const auto& v:finalA)finalIdentityA.insert({v.first,((v.second%12)+12)%12});
+    for(const auto& v:finalB)finalIdentityB.insert({v.first,((v.second%12)+12)%12});
+    int finalShared=0;
+    for(const auto& v:finalIdentityA)if(finalIdentityB.count(v)>0)++finalShared;
+    const double finalOverlap=finalShared/(double)juce::jmax<size_t>(1,juce::jmin(finalIdentityA.size(),finalIdentityB.size()));
+    if(finalOverlap<.55)
+    {std::cerr<<"v3.6 FINAL HOOK development lost the primary hook identity\n";return 155;}
+
     sonara::SongArrangement dnb;
     dnb.generate("energetic drum and bass 174 BPM D minor fast aggressive",128.0,4567ULL);
     if(std::abs(dnb.getBpm()-174.0)>.01){std::cerr<<"174 BPM prompt parse failed\n";return 20;}

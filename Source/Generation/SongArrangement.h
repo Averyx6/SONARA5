@@ -28,6 +28,17 @@ struct ArrangementSection {
     float energy = 0.5f;
 };
 
+struct SectionGoal {
+    float energy = .5f;
+    float density = .5f;
+    float melodyActivity = .5f;
+    float harmonicTension = .4f;
+    float bassDrive = .5f;
+    float drumDrive = .5f;
+    float space = .5f;
+    float development = .5f;
+};
+
 class SongArrangement {
 public:
     static constexpr int beatsPerBar = 4;
@@ -48,6 +59,7 @@ public:
     const std::vector<ArrangementLane>& getLanes() const noexcept { return lanes; }
     std::vector<ArrangementLane>& editLanes() noexcept { return lanes; }
     const std::vector<ArrangementSection>& getSections() const noexcept { return sections; }
+    const std::vector<SectionGoal>& getSectionGoals() const noexcept { return sectionGoals; }
     int getBars() const noexcept { return bars; }
     double getBpm() const noexcept { return tempo; }
     int getRootMidi() const noexcept { return rootMidi; }
@@ -61,6 +73,7 @@ public:
     juce::String getHarmonicRhythmSummary() const;
     juce::String getMelodyArchetypeName() const;
     juce::String getProducerPlanSummary() const;
+    juce::String getSectionGoalSummary() const;
     juce::String getPromptIntentSummary() const;
     const juce::String& getSourcePrompt() const noexcept { return sourcePrompt; }
     juce::String getSoundPaletteSummary() const;
@@ -177,6 +190,8 @@ private:
     void buildSeedDomains(uint64_t master);
     void buildSongPlan(uint64_t seed);
     void buildSections(uint64_t seed);
+    void buildSectionGoals(uint64_t seed);
+    const SectionGoal& sectionGoalFor(const ArrangementSection* section) const noexcept;
     void buildHarmonyPlan(uint64_t seed);
     void buildHarmonyTimeline(uint64_t seed);
     bool sectionFlowsIntoImpact(const ArrangementSection* section) const noexcept;
@@ -199,6 +214,7 @@ private:
     bool minor = true;
     std::vector<ArrangementLane> lanes;
     std::vector<ArrangementSection> sections;
+    std::vector<SectionGoal> sectionGoals;
     SongPlan plan;
     SoundPalettePlan palettePlan;
     SeedDomains domains;
