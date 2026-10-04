@@ -2373,12 +2373,16 @@ void SongArrangement::addHarmony(uint64_t seed)
             if(build&&localBar<section->bars/2)count=juce::jmin(count,2);
             if(breakdown)count=(localBar%2==0)?juce::jmin(count,1):0;
             if(intro)count=juce::jmin(count,2);
-            if(sparseLowEnd)count=juce::jmin(count,2);
             if(goal.bassDrive<.38f)count=juce::jmin(count,1);
             else if(goal.bassDrive>.86f&&drop&&bassMode!=0)
                 count=juce::jmax(count,juce::jmin(patternSize,4));
             if(energy<.34f)count=juce::jmin(count,1);
             else if(energy<.52f)count=juce::jmin(count,juce::jmax(1,patternSize-2));
+
+            // Explicit sparse-low-end direction remains authoritative after all
+            // section-energy/drop boosts. A powerful drop may hit harder, but it
+            // must not turn a requested spacious support bass into a busy riff.
+            if(sparseLowEnd)count=juce::jmin(count,2);
 
             for(int i=0;i<count;++i)
             {
