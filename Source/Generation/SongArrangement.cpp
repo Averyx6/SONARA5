@@ -222,6 +222,31 @@ SongArrangement::PromptIntent SongArrangement::parsePromptIntent(const juce::Str
     if(positive("soft drop")||positive("restrained drop")||positive("gentle drop"))result.sectionDirections|=softDrop;
     if(positive("quiet breakdown")||positive("calm breakdown")||positive("sparse breakdown"))result.sectionDirections|=quietBreak;
     if(positive("intense breakdown")||positive("energetic breakdown"))result.sectionDirections|=intenseBreak;
+
+    if(phrase("straight rhythm")||phrase("straight groove")||phrase("no swing"))
+        result.rhythmicFeel=-1;
+    else if(positive("swing")||positive("swung")||positive("shuffle"))
+        result.rhythmicFeel=2;
+    else if(positive("syncopated")||positive("offbeat")||positive("off-beat"))
+        result.rhythmicFeel=1;
+
+    if(positive("bright")||positive("airy")||positive("open tone"))result.brightnessDirection=1;
+    else if(positive("dark")||positive("muted")||positive("muffled"))result.brightnessDirection=-1;
+    if(positive("spacious")||positive("wide")||positive("ambient")||positive("large space"))result.spaceDirection=1;
+    else if(positive("dry")||positive("intimate")||positive("tight space"))result.spaceDirection=-1;
+    if(positive("aggressive")||positive("hard")||positive("heavy"))result.aggressionDirection=1;
+    else if(positive("soft")||positive("gentle")||positive("controlled"))result.aggressionDirection=-1;
+
+    if(positive("euphoric drop")||positive("anthem drop"))result.dropCharacter=3;
+    else if(positive("driving drop")||positive("rhythmic drop"))result.dropCharacter=2;
+    else if(positive("heavy drop")||positive("hard drop")||positive("bass drop"))result.dropCharacter=4;
+    else if(positive("melodic drop"))result.dropCharacter=1;
+
+    if(phrase("simple harmony")||phrase("static harmony")||phrase("simple chords"))result.harmonicMotionDirection=-1;
+    else if(positive("moving harmony")||positive("passing harmony")||positive("borrowed harmony")||positive("harmonic movement"))result.harmonicMotionDirection=1;
+
+    if(phrase("same final drop")||phrase("repeat final drop")||phrase("faithful final drop"))result.finalEvolutionDirection=-1;
+    else if(positive("evolving final drop")||positive("developed final drop")||positive("bigger second drop")||positive("evolving second drop")||positive("final drop variation"))result.finalEvolutionDirection=1;
     return result;
 }
 
@@ -1151,6 +1176,46 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     if(plan.chordTexture==0&&(p.contains("warm chords")||p.contains("sustained chords")))plan.chordMode=0;
     else if(plan.chordTexture==1)plan.chordMode=1;
     else if(plan.chordTexture==2)plan.chordMode=juce::jmax(plan.chordMode,2);
+
+    const float feelRoll=random01(domains.drums,0x4010);
+    plan.rhythmicFeel=feelRoll>.78f?2:(feelRoll>.44f?1:0);
+    if(promptIntent.rhythmicFeel<0)plan.rhythmicFeel=0;
+    else if(promptIntent.rhythmicFeel>0)plan.rhythmicFeel=juce::jlimit(1,2,promptIntent.rhythmicFeel);
+
+    plan.dropCharacter=promptIntent.dropCharacter>0?promptIntent.dropCharacter:
+        (producerFestival?3:(producerTech?2:(producerDnb?4:1)));
+    plan.brightness=.30f+.40f*random01(domains.soundPalette,0x4011);
+    plan.space=.28f+.44f*random01(domains.soundPalette,0x4012);
+    plan.aggression=.24f+.52f*random01(domains.structure,0x4013);
+    plan.harmonicMotion=.30f+.48f*random01(domains.harmony,0x4014);
+    plan.finalEvolution=.50f+.34f*random01(domains.melody,0x4015);
+    plan.callResponse=.34f+.42f*random01(domains.counter,0x4016);
+
+    if(plan.emotionProfile==2)plan.brightness=juce::jmax(plan.brightness,.72f);
+    if(plan.emotionProfile==3)plan.brightness=juce::jmin(plan.brightness,.34f);
+    if(plan.emotionProfile==4){plan.space=juce::jmax(plan.space,.74f);plan.aggression=juce::jmin(plan.aggression,.42f);}
+    if(plan.emotionProfile==5)plan.aggression=juce::jmax(plan.aggression,.80f);
+
+    if(promptIntent.brightnessDirection<0)plan.brightness=juce::jmin(plan.brightness,.28f);
+    else if(promptIntent.brightnessDirection>0)plan.brightness=juce::jmax(plan.brightness,.80f);
+    if(promptIntent.spaceDirection<0)plan.space=juce::jmin(plan.space,.22f);
+    else if(promptIntent.spaceDirection>0)plan.space=juce::jmax(plan.space,.80f);
+    if(promptIntent.aggressionDirection<0)plan.aggression=juce::jmin(plan.aggression,.30f);
+    else if(promptIntent.aggressionDirection>0)plan.aggression=juce::jmax(plan.aggression,.84f);
+    if(promptIntent.harmonicMotionDirection<0)plan.harmonicMotion=juce::jmin(plan.harmonicMotion,.24f);
+    else if(promptIntent.harmonicMotionDirection>0)plan.harmonicMotion=juce::jmax(plan.harmonicMotion,.82f);
+    if(promptIntent.finalEvolutionDirection<0)plan.finalEvolution=.18f;
+    else if(promptIntent.finalEvolutionDirection>0)plan.finalEvolution=.94f;
+
+    if(plan.rhythmicFeel==1)plan.syncopation=juce::jmax(plan.syncopation,.68f);
+    else if(plan.rhythmicFeel==2)plan.syncopation=juce::jmax(plan.syncopation,.52f);
+    if(promptIntent.rhythmicFeel<0)plan.syncopation=juce::jmin(plan.syncopation,.20f);
+    if(plan.hookShape==0||p.contains("call and response")||p.contains("answer melody"))plan.callResponse=juce::jmax(plan.callResponse,.86f);
+
+    if(plan.dropCharacter==1){plan.hookStrength=juce::jmax(plan.hookStrength,.86f);plan.development=juce::jmax(plan.development,.62f);}
+    else if(plan.dropCharacter==2){plan.density=juce::jmax(plan.density,.70f);plan.drumDrive=juce::jmax(plan.drumDrive,1.02f);plan.restAmount=juce::jmin(plan.restAmount,.16f);}
+    else if(plan.dropCharacter==3){plan.hookStrength=juce::jmax(plan.hookStrength,.92f);plan.space=juce::jmax(plan.space,.70f);plan.finalEvolution=juce::jmax(plan.finalEvolution,.72f);}
+    else if(plan.dropCharacter==4){plan.aggression=juce::jmax(plan.aggression,.88f);plan.dropIntensity=juce::jmax(plan.dropIntensity,1.08f);plan.drumDrive=juce::jmax(plan.drumDrive,1.08f);plan.space=juce::jmin(plan.space,.42f);}
 }
 
 void SongArrangement::buildSections(uint64_t seed)
@@ -1333,11 +1398,21 @@ void SongArrangement::buildSectionGoals(uint64_t seed)
         const float jitter=(random01(seed,0x3600+(uint64_t)i*17ULL)-.5f)*.06f;
         g.density=juce::jlimit(.08f,1.f,g.density*.62f+plan.density*.38f+jitter);
         g.melodyActivity=juce::jlimit(.08f,1.f,g.melodyActivity*(.78f+.22f*plan.hookStrength)+jitter*.5f);
-        g.harmonicTension=juce::jlimit(.08f,1.f,g.harmonicTension+.18f*(harmonyPlan.tension-.35f));
+        g.harmonicTension=juce::jlimit(.08f,1.f,g.harmonicTension+.18f*(harmonyPlan.tension-.35f)+.12f*(plan.harmonicMotion-.5f));
         g.bassDrive=juce::jlimit(.05f,1.f,g.bassDrive*(.88f+.12f*plan.dropIntensity)+jitter*.35f);
-        g.drumDrive=juce::jlimit(.05f,1.f,g.drumDrive*(.78f+.22f*plan.drumDrive)+jitter*.35f);
-        g.space=juce::jlimit(.05f,1.f,g.space+.20f*(palettePlan.space-.5f)-jitter*.25f);
+        g.drumDrive=juce::jlimit(.05f,1.f,g.drumDrive*(.78f+.22f*plan.drumDrive)+.10f*(plan.aggression-.5f)+jitter*.35f);
+        g.space=juce::jlimit(.05f,1.f,g.space+.28f*(plan.space-.5f)-jitter*.25f);
         g.development=juce::jlimit(.08f,1.f,g.development*.70f+plan.development*.30f+jitter*.5f);
+
+        if(drop||finalHook)
+        {
+            if(plan.dropCharacter==1){g.melodyActivity=juce::jmin(1.f,g.melodyActivity+.08f);g.harmonicTension=juce::jmin(1.f,g.harmonicTension+.05f);}
+            else if(plan.dropCharacter==2){g.density=juce::jmin(1.f,g.density+.07f);g.bassDrive=juce::jmin(1.f,g.bassDrive+.07f);g.drumDrive=juce::jmin(1.f,g.drumDrive+.08f);g.space=juce::jmax(.05f,g.space-.08f);}
+            else if(plan.dropCharacter==3){g.melodyActivity=juce::jmin(1.f,g.melodyActivity+.10f);g.space=juce::jmin(1.f,g.space+.08f);g.development=juce::jmin(1.f,g.development+.06f);}
+            else if(plan.dropCharacter==4){g.harmonicTension=juce::jmin(1.f,g.harmonicTension+.08f);g.bassDrive=juce::jmin(1.f,g.bassDrive+.10f);g.drumDrive=juce::jmin(1.f,g.drumDrive+.12f);g.space=juce::jmax(.05f,g.space-.12f);}
+        }
+        if(finalHook)g.development=juce::jmax(g.development,.42f+.58f*plan.finalEvolution);
+        if(build)g.harmonicTension=juce::jmin(1.f,g.harmonicTension+.08f*plan.harmonicMotion);
 
         if(prompt.contains("more space")||prompt.contains("spacious")||prompt.contains("wide"))
             g.space=juce::jmin(1.f,g.space+.10f);
