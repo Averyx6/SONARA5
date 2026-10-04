@@ -1564,6 +1564,85 @@ int main()
     if(finalOverlap<.55)
     {std::cerr<<"v3.6 FINAL HOOK development lost the primary hook identity\n";return 155;}
 
+    // v4.0: central producer intent must create audible and persistent choices.
+    const juce::String v4EuphoricPrompt=
+        "emotional progressive house 128 BPM F minor strong hook euphoric drop "
+        "swung rhythm bright spacious moving harmony evolving final drop";
+    sonara::SongArrangement v4Euphoric;
+    v4Euphoric.generate(v4EuphoricPrompt,128.0,0x400040ULL);
+    const auto v4Summary=v4Euphoric.getProducerPlanSummary();
+    if(!v4Summary.contains("FEEL: SWUNG")
+       ||!v4Summary.contains("DROP TYPE: EUPHORIC")
+       ||!v4Summary.contains("FINAL EVOLUTION: 94%"))
+    {std::cerr<<"v4 creative-director intent was not resolved centrally\n";return 156;}
+
+    sonara::SongArrangement v4DryDriving;
+    v4DryDriving.generate(
+        "aggressive progressive house 128 BPM F minor driving drop straight rhythm "
+        "dark dry simple harmony same final drop strong hook",
+        128.0,0x400040ULL);
+    const auto drySummary=v4DryDriving.getProducerPlanSummary();
+    if(!drySummary.contains("FEEL: STRAIGHT")
+       ||!drySummary.contains("DROP TYPE: DRIVING")
+       ||!drySummary.contains("FINAL EVOLUTION: 18%"))
+    {std::cerr<<"v4 contrasting producer direction was not respected\n";return 157;}
+
+    const auto* v4Lead=findLane(v4Euphoric,"LEAD");
+    const auto* v4DryLead=findLane(v4DryDriving,"LEAD");
+    if(!v4Lead||!v4DryLead
+       ||v4Lead->sound.macroSpace<=v4DryLead->sound.macroSpace+.18f
+       ||v4Lead->sound.macroBrightness<=v4DryLead->sound.macroBrightness+.18f)
+    {std::cerr<<"v4 shared producer tone/space axes did not reach SoundDNA\n";return 158;}
+
+    const auto restoredV4=sonara::SongArrangement::fromValueTree(v4Euphoric.toValueTree());
+    if(restoredV4.getProducerPlanSummary()!=v4Euphoric.getProducerPlanSummary()
+       ||restoredV4.getSectionGoalSummary()!=v4Euphoric.getSectionGoalSummary())
+    {std::cerr<<"v4 creative-director plan did not survive persistence\n";return 159;}
+
+    sonara::SongArrangement repeatedV4;
+    repeatedV4.generate(v4EuphoricPrompt,128.0,0x400040ULL);
+    if(repeatedV4.getMelodyFingerprint()!=v4Euphoric.getMelodyFingerprint()
+       ||repeatedV4.getHarmonyFingerprint()!=v4Euphoric.getHarmonyFingerprint()
+       ||repeatedV4.getSoundPaletteFingerprint()!=v4Euphoric.getSoundPaletteFingerprint())
+    {std::cerr<<"v4 saved seed/settings are not deterministic\n";return 160;}
+
+    sonara::SongArrangement swungV4,straightV4;
+    swungV4.generateComposition(
+        "progressive house 128 BPM F minor strong hook swung rhythm",128.0,0x404040ULL);
+    straightV4.generateComposition(
+        "progressive house 128 BPM F minor strong hook straight rhythm",128.0,0x404040ULL);
+    if(firstBarOnsets(swungV4,"HATS")==firstBarOnsets(straightV4,"HATS"))
+    {std::cerr<<"v4 rhythmic-feel plan did not alter the real drum groove\n";return 161;}
+
+    auto finalFourBars=[](const sonara::SongArrangement& song,int statement)
+    {
+        std::vector<std::pair<int,int>> out;
+        const sonara::ArrangementSection* finalSection=nullptr;
+        for(const auto& section:song.getSections())if(section.name=="FINAL HOOK"){finalSection=&section;break;}
+        if(!finalSection||finalSection->bars<(statement+1)*4)return out;
+        const auto* lead=findLane(song,"LEAD");
+        if(!lead)return out;
+        const double begin=(finalSection->startBar+statement*4)*4.0;
+        const double end=begin+16.0;
+        for(const auto& n:lead->notes)
+            if(n.beat>=begin&&n.beat<end)
+                out.push_back({(int)std::llround((n.beat-begin)*8.0),n.note});
+        return out;
+    };
+
+    sonara::SongArrangement faithfulFinal;
+    faithfulFinal.generateComposition(
+        "emotional progressive house 128 BPM F minor strong hook melodic drop "
+        "straight rhythm same final drop",
+        128.0,0x400041ULL);
+    const auto faithfulA=finalFourBars(faithfulFinal,0);
+    const auto faithfulB=finalFourBars(faithfulFinal,1);
+    const auto evolvedA=finalFourBars(v4Euphoric,0);
+    const auto evolvedB=finalFourBars(v4Euphoric,1);
+    if(faithfulA.size()<4||faithfulA!=faithfulB
+       ||evolvedA.size()<4||evolvedA==evolvedB)
+    {std::cerr<<"v4 final-drop evolution is not following producer intent\n";return 162;}
+
     sonara::SongArrangement dnb;
     dnb.generate("energetic drum and bass 174 BPM D minor fast aggressive",128.0,4567ULL);
     if(std::abs(dnb.getBpm()-174.0)>.01){std::cerr<<"174 BPM prompt parse failed\n";return 20;}
