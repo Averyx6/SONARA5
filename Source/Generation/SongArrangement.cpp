@@ -342,6 +342,13 @@ void SongArrangement::buildHarmonyPlan(uint64_t seed)
     harmonyPlan.pedalIntro=random01(seed,0x3117)<(cinematic?.72f:.48f);
     harmonyPlan.pedalVerse=tech||random01(seed,0x3118)<.16f;
 
+    const float harmonicMotion=juce::jlimit(0.f,1.f,plan.harmonicMotion);
+    harmonyPlan.tension=juce::jlimit(.12f,.92f,harmonyPlan.tension+.14f*(harmonicMotion-.5f)+.10f*(plan.aggression-.5f));
+    harmonyPlan.extensionProbability=juce::jlimit(0.f,.82f,harmonyPlan.extensionProbability*(.55f+.95f*harmonicMotion));
+    harmonyPlan.suspensionProbability=juce::jlimit(0.f,.72f,harmonyPlan.suspensionProbability*(.50f+1.10f*harmonicMotion));
+    harmonyPlan.passingProbability=juce::jlimit(0.f,.62f,harmonyPlan.passingProbability*(.55f+1.25f*harmonicMotion));
+    harmonyPlan.borrowedProbability=juce::jlimit(0.f,.68f,harmonyPlan.borrowedProbability*(.62f+.95f*harmonicMotion));
+
     if(dreamy){harmonyPlan.extensionProbability=juce::jmax(harmonyPlan.extensionProbability,.28f);harmonyPlan.suspensionProbability=juce::jmax(harmonyPlan.suspensionProbability,.24f);}
     if(aggressive){harmonyPlan.extensionProbability*=.45f;harmonyPlan.tension=juce::jmax(harmonyPlan.tension,.58f);}
     if(uplifting)harmonyPlan.cadenceStyle=0;
@@ -1822,7 +1829,9 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
     if(p.contains("half time")||p.contains("halftime"))groove=1;
     if(p.contains("open hats"))hatMode=2;
     if(p.contains("closed hats"))hatMode=0;
-    const float swing = .012f + random01(seed,13) * .062f;
+    const float swing = plan.rhythmicFeel==0 ? 0.f :
+        (plan.rhythmicFeel==2 ? (.055f+random01(seed,13)*.035f)
+                              : (.014f+random01(seed,13)*.036f));
 
     for(int bar=0;bar<bars;++bar)
     {
@@ -3160,26 +3169,29 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                             {
                                 const int sourceBar=(int)std::floor(t.beat/beatsPerBar);
                                 const double beatInBar=t.beat-sourceBar*beatsPerBar;
-                                if(sourceBar==2&&n.note+12<=86)
-                                {
-                                    // Lift the complete answer bar where the
-                                    // register permits it. Multiple consecutive
-                                    // notes move together, avoiding an isolated
-                                    // random-looking high-note spike.
-                                    n.note+=12;
-                                }
-                                if(sourceBar>=3&&!rhythmDeveloped&&beatInBar>0.20
-                                   &&n.beat+.125<end)
+                                const float evolution=juce::jlimit(0.f,1.f,plan.finalEvolution);
+                                if(evolution>.38f&&sourceBar==2&&n.note+12<=86)n.note+=12;
+                                if(evolution>.58f&&sourceBar>=3&&!rhythmDeveloped&&beatInBar>0.20&&n.beat+.125<end)
                                 {
                                     n.beat+=.125;
                                     rhythmDeveloped=true;
                                 }
-
+                                if(evolution>.78f&&sourceBar==3&&ti%3==1)
+                                {
+                                    const int direction=random01(motifSeed,0x4f00+statement)>.5f?1:-1;
+                                    n.note=nearestScalePitch(n.note+direction*2,62,86);
+                                }
                                 if(block+blockBars>=section.bars)
-                                    n.velocity=juce::jmin(124,n.velocity+3);
+                                    n.velocity=juce::jmin(124,n.velocity+(int)std::lround(1.f+5.f*evolution));
                             }
 
-                            if(dropVariant)n.length=juce::jmax(.12,n.length*.86);
+                            if(dropVariant)
+                            {
+                                const float articulation=plan.dropCharacter==2?.76f:(plan.dropCharacter==4?.72f:(plan.dropCharacter==3?.92f:.88f));
+                                n.length=juce::jmax(.10,n.length*articulation);
+                                if(statement>0&&(plan.dropCharacter==2||plan.dropCharacter==4)&&ti%5==2&&n.beat+.125<end)
+                                    n.beat+=.125;
+                            }
                             n.length=juce::jmin(n.length,juce::jmax(.08,end-n.beat-.02));
                             n.velocity=juce::jlimit(48,124,n.velocity+velocityLift);
                             rebuilt.push_back(n);
