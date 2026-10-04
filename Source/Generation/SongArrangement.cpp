@@ -718,12 +718,21 @@ juce::String SongArrangement::getProducerPlanSummary() const
     static constexpr const char* chords[]={"SUSTAINED","RHYTHMIC","ANTHEM","DRY STABS"};
     static constexpr const char* pads[]={"VERSE + BREAKDOWN","BREAKDOWN ONLY","ATMOSPHERIC","OFF"};
     static constexpr const char* counters[]={"FINAL ONLY","DROP + FINAL","HOOK SECTIONS","OFF"};
+    static constexpr const char* feels[]={"STRAIGHT","SYNCOPATED","SWUNG"};
+    static constexpr const char* drops[]={"MELODIC","DRIVING","EUPHORIC","HEAVY"};
     return "STYLE: "+juce::String(genres[juce::jlimit(0,7,plan.genreFamily)])
         +" | EMOTION: "+emotions[juce::jlimit(0,5,plan.emotionProfile)]
         +" | HOOK: "+hooks[juce::jlimit(0,3,plan.hookShape)]
         +" | CHORDS: "+chords[juce::jlimit(0,3,plan.chordTexture)]
         +" | PAD: "+pads[juce::jlimit(0,3,plan.padPolicy)]
         +" | COUNTER: "+counters[juce::jlimit(0,3,plan.counterPolicy)]
+        +" | FEEL: "+feels[juce::jlimit(0,2,plan.rhythmicFeel)]
+        +" | DROP TYPE: "+drops[juce::jlimit(0,3,plan.dropCharacter-1)]
+        +" | BRIGHT: "+juce::String((int)std::llround(plan.brightness*100.f))+"%"
+        +" | SPACE: "+juce::String((int)std::llround(plan.space*100.f))+"%"
+        +" | AGGRESSION: "+juce::String((int)std::llround(plan.aggression*100.f))+"%"
+        +" | HARMONIC MOTION: "+juce::String((int)std::llround(plan.harmonicMotion*100.f))+"%"
+        +" | FINAL EVOLUTION: "+juce::String((int)std::llround(plan.finalEvolution*100.f))+"%"
         +" | DROP: "+juce::String((int)std::llround(plan.dropIntensity*100.f))+"%";
 }
 
@@ -1579,10 +1588,15 @@ void SongArrangement::finalizeSoundPalette()
     // These axes remain seed-variable, but explicit prompt intent and the shared
     // producer plan constrain them into one coherent palette.
     palettePlan.character=(int)(random01(domains.soundPalette,0x3200)*4.f)%4;
-    palettePlan.brightness=.30f+.40f*random01(domains.soundPalette,0x3201);
-    palettePlan.movement=.24f+.48f*random01(domains.soundPalette,0x3202);
-    palettePlan.space=.24f+.48f*random01(domains.soundPalette,0x3203);
-    palettePlan.impact=.30f+.45f*random01(domains.soundPalette,0x3204);
+    const float seededBrightness=.30f+.40f*random01(domains.soundPalette,0x3201);
+    const float seededMovement=.24f+.48f*random01(domains.soundPalette,0x3202);
+    const float seededSpace=.24f+.48f*random01(domains.soundPalette,0x3203);
+    const float seededImpact=.30f+.45f*random01(domains.soundPalette,0x3204);
+    palettePlan.brightness=juce::jlimit(0.f,1.f,seededBrightness*.35f+plan.brightness*.65f);
+    const float feelMovement=plan.rhythmicFeel==2?.72f:(plan.rhythmicFeel==1?.62f:.44f);
+    palettePlan.movement=juce::jlimit(0.f,1.f,seededMovement*.58f+feelMovement*.42f);
+    palettePlan.space=juce::jlimit(0.f,1.f,seededSpace*.35f+plan.space*.65f);
+    palettePlan.impact=juce::jlimit(0.f,1.f,seededImpact*.38f+plan.aggression*.62f);
     if(plan.emotionProfile==2)palettePlan.brightness=juce::jmax(.68f,palettePlan.brightness);
     if(plan.emotionProfile==3)palettePlan.brightness=juce::jmin(.36f,palettePlan.brightness);
     if(plan.emotionProfile==4)palettePlan.space=juce::jmax(.72f,palettePlan.space);
@@ -3493,7 +3507,7 @@ bool SongArrangement::writeMidiFile(const juce::File& destination) const
 juce::ValueTree SongArrangement::toValueTree() const
 {
     juce::ValueTree root("SONARA_ARRANGEMENT");
-    root.setProperty("schema",3,nullptr);root.setProperty("prompt",sourcePrompt,nullptr);root.setProperty("bpm",tempo,nullptr);root.setProperty("bars",bars,nullptr);root.setProperty("rootMidi",rootMidi,nullptr);root.setProperty("minor",minor,nullptr);
+    root.setProperty("schema",4,nullptr);root.setProperty("prompt",sourcePrompt,nullptr);root.setProperty("bpm",tempo,nullptr);root.setProperty("bars",bars,nullptr);root.setProperty("rootMidi",rootMidi,nullptr);root.setProperty("minor",minor,nullptr);
     root.setProperty("songId",juce::String::toHexString((juce::int64)masterSeed),nullptr);
     root.setProperty("harmonyId",juce::String::toHexString((juce::int64)harmonyId),nullptr);
     root.setProperty("melodyId",juce::String::toHexString((juce::int64)melodyId),nullptr);
@@ -3508,6 +3522,9 @@ juce::ValueTree SongArrangement::toValueTree() const
     songPlan.setProperty("padPolicy",plan.padPolicy,nullptr);songPlan.setProperty("counterPolicy",plan.counterPolicy,nullptr);songPlan.setProperty("hookStrength",plan.hookStrength,nullptr);songPlan.setProperty("dropIntensity",plan.dropIntensity,nullptr);songPlan.setProperty("drumDrive",plan.drumDrive,nullptr);
     songPlan.setProperty("energyContrast",plan.energyContrast,nullptr);songPlan.setProperty("energyBias",plan.energyBias,nullptr);songPlan.setProperty("transitionIntensity",plan.transitionIntensity,nullptr);
     songPlan.setProperty("density",plan.density,nullptr);songPlan.setProperty("syncopation",plan.syncopation,nullptr);songPlan.setProperty("restAmount",plan.restAmount,nullptr);songPlan.setProperty("development",plan.development,nullptr);
+    songPlan.setProperty("rhythmicFeel",plan.rhythmicFeel,nullptr);songPlan.setProperty("dropCharacter",plan.dropCharacter,nullptr);
+    songPlan.setProperty("brightness",plan.brightness,nullptr);songPlan.setProperty("space",plan.space,nullptr);songPlan.setProperty("aggression",plan.aggression,nullptr);
+    songPlan.setProperty("harmonicMotion",plan.harmonicMotion,nullptr);songPlan.setProperty("finalEvolution",plan.finalEvolution,nullptr);songPlan.setProperty("callResponse",plan.callResponse,nullptr);
     songPlan.setProperty("paletteCharacter",palettePlan.character,nullptr);songPlan.setProperty("paletteBrightness",palettePlan.brightness,nullptr);songPlan.setProperty("paletteMovement",palettePlan.movement,nullptr);songPlan.setProperty("paletteSpace",palettePlan.space,nullptr);songPlan.setProperty("paletteImpact",palettePlan.impact,nullptr);
     root.addChild(songPlan,-1,nullptr);
 
@@ -3572,6 +3589,14 @@ SongArrangement SongArrangement::fromValueTree(const juce::ValueTree& root)
         a.plan.padPolicy=juce::jlimit(0,3,(int)composition.getProperty("padPolicy",0));a.plan.counterPolicy=juce::jlimit(0,3,(int)composition.getProperty("counterPolicy",1));a.plan.hookStrength=juce::jlimit(.35f,1.f,(float)composition.getProperty("hookStrength",.72f));a.plan.dropIntensity=juce::jlimit(.55f,1.25f,(float)composition.getProperty("dropIntensity",.90f));a.plan.drumDrive=juce::jlimit(.55f,1.25f,(float)composition.getProperty("drumDrive",.90f));
         a.plan.energyContrast=juce::jlimit(.5f,1.5f,(float)composition.getProperty("energyContrast",1.f));a.plan.energyBias=juce::jlimit(-.25f,.25f,(float)composition.getProperty("energyBias",0.f));a.plan.transitionIntensity=juce::jlimit(.4f,1.6f,(float)composition.getProperty("transitionIntensity",1.f));
         a.plan.density=(float)composition.getProperty("density",.65f);a.plan.syncopation=(float)composition.getProperty("syncopation",.35f);a.plan.restAmount=(float)composition.getProperty("restAmount",.18f);a.plan.development=(float)composition.getProperty("development",.55f);
+        a.plan.rhythmicFeel=juce::jlimit(0,2,(int)composition.getProperty("rhythmicFeel",0));
+        a.plan.dropCharacter=juce::jlimit(1,4,(int)composition.getProperty("dropCharacter",1));
+        a.plan.brightness=juce::jlimit(0.f,1.f,(float)composition.getProperty("brightness",.5f));
+        a.plan.space=juce::jlimit(0.f,1.f,(float)composition.getProperty("space",.5f));
+        a.plan.aggression=juce::jlimit(0.f,1.f,(float)composition.getProperty("aggression",.5f));
+        a.plan.harmonicMotion=juce::jlimit(0.f,1.f,(float)composition.getProperty("harmonicMotion",.5f));
+        a.plan.finalEvolution=juce::jlimit(0.f,1.f,(float)composition.getProperty("finalEvolution",.65f));
+        a.plan.callResponse=juce::jlimit(0.f,1.f,(float)composition.getProperty("callResponse",.5f));
         a.palettePlan.character=juce::jlimit(0,3,(int)composition.getProperty("paletteCharacter",0));
         a.palettePlan.brightness=juce::jlimit(0.f,1.f,(float)composition.getProperty("paletteBrightness",.5f));a.palettePlan.movement=juce::jlimit(0.f,1.f,(float)composition.getProperty("paletteMovement",.5f));a.palettePlan.space=juce::jlimit(0.f,1.f,(float)composition.getProperty("paletteSpace",.5f));a.palettePlan.impact=juce::jlimit(0.f,1.f,(float)composition.getProperty("paletteImpact",.5f));
     }
