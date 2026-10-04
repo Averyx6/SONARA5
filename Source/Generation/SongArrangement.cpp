@@ -3192,7 +3192,10 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                                 }
                                 if(evolution>.78f&&sourceBar==3&&ti%3==1)
                                 {
-                                    const int direction=random01(motifSeed,0x4f00+statement)>.5f?1:-1;
+                                    const uint64_t evolutionSeed=mix64(domains.melody
+                                        ^ ((uint64_t)section.startBar+1ULL)*0x517cc1b727220a95ULL
+                                        ^ ((uint64_t)statement+1ULL)*0x94d049bb133111ebULL);
+                                    const int direction=random01(evolutionSeed,0x4f00+(uint64_t)ti)>.5f?1:-1;
                                     n.note=nearestScalePitch(n.note+direction*2,62,86);
                                 }
                                 if(block+blockBars>=section.bars)
