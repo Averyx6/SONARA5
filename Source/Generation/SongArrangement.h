@@ -100,6 +100,13 @@ private:
         int hookShape=-1;
         unsigned exclusionMask=0;
         unsigned sectionDirections=0;
+        int rhythmicFeel=0;          // -1 straight, 0 auto, 1 syncopated, 2 swung
+        int brightnessDirection=0;   // -1 dark/muted, +1 bright/open
+        int spaceDirection=0;        // -1 dry/intimate, +1 spacious/wide
+        int aggressionDirection=0;   // -1 soft/controlled, +1 aggressive/heavy
+        int dropCharacter=0;         // 0 auto, 1 melodic, 2 driving, 3 euphoric, 4 heavy
+        int harmonicMotionDirection=0; // -1 simple/static, +1 moving/colourful
+        int finalEvolutionDirection=0; // -1 faithful repeat, +1 evolved final statement
     };
 
     struct SongPlan {
@@ -138,6 +145,14 @@ private:
         float syncopation=.35f;
         float restAmount=.18f;
         float development=.55f;
+        int rhythmicFeel=0;          // 0 straight, 1 syncopated, 2 swung
+        int dropCharacter=1;         // melodic/driving/euphoric/heavy
+        float brightness=.5f;
+        float space=.5f;
+        float aggression=.5f;
+        float harmonicMotion=.5f;
+        float finalEvolution=.65f;
+        float callResponse=.5f;
     };
 
     struct SeedDomains {
