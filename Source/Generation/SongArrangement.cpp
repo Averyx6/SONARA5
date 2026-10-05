@@ -3270,6 +3270,7 @@ void SongArrangement::alignPitchedLanesToLead()
 
         const bool developedFinal=currentSection!=nullptr
             &&currentSection->name.contains("FINAL")
+            &&plan.finalEvolution>.38f
             &&bar-currentSection->startBar>=4;
         const int leadHigh=developedFinal?86:79;
 
