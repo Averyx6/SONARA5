@@ -445,7 +445,7 @@ int main()
     if(surprise.length()<40||!surprise.containsIgnoreCase("BPM"))return fail("SURPRISE ME prompt invalid");
     randomizer.generateTrack(surprise);
     auto surprised=randomizer.arrangementSnapshot();
-    if(!surprised||surprised->getLanes().size()!=12||surprised->getSections().size()!=8)return fail("SURPRISE ME arrangement incomplete");
+    if(!surprised||surprised->getLanes().size()!=12||surprised->getSections().size()!=11)return fail("SURPRISE ME arrangement incomplete");
 
     // Reference actions must fail truthfully before any reference exists and must
     // never publish a stale arrangement merely because the UI button was clicked.

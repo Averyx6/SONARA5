@@ -18,3 +18,14 @@ build and packaging before this work started.
 
 Validation: local Release arrangement and producer intelligence suites passed.
 Final release remains blocked on the exact Windows HEAD and verified ZIP.
+
+## v4.2 — developed arrangements
+
+- Eleven planned sections include a second verse/build/drop and a deconstructed outro.
+- Drops retain the chorus motif; second and final statements develop its rhythm/register.
+- Planned chord inversions now reach chord writing.
+- Endings leave a final bar for decay; low end withdraws before the final silence.
+- Preserve all original quality/novelty assertions and add hook-continuity/ending tests.
+
+Validation: local Release arrangement, producer and processor playback suites passed,
+including the unchanged real-time and multi-instance CPU budgets.

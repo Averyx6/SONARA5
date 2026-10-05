@@ -177,9 +177,9 @@ int main()
 
     if(a.getBars()<64||a.getBars()>96){std::cerr<<"Song length outside v1.1 production range\n";return 1;}
     if(std::abs(a.getBpm()-128.0)>.01){std::cerr<<"Prompt BPM was not applied\n";return 2;}
-    if(a.getSections().size()!=8){std::cerr<<"Expected 8 named song sections\n";return 3;}
+    if(a.getSections().size()!=11){std::cerr<<"Expected 11 named song sections\n";return 3;}
 
-    const juce::String expectedSections[]={"INTRO","VERSE","BUILD","CHORUS","DROP","BREAKDOWN","BUILD 2","FINAL HOOK"};
+    const juce::String expectedSections[]={"INTRO","VERSE","BUILD","CHORUS","DROP","BREAKDOWN","VERSE 2","BUILD 2","DROP 2","FINAL HOOK","OUTRO"};
     for(const auto& name:expectedSections)
         if(!hasSection(a,name)){std::cerr<<"Missing section "<<name<<"\n";return 4;}
     const auto& ordered=a.getSections();
@@ -1076,8 +1076,8 @@ int main()
     for(const auto* song:{&radioPlan,&festivalPlan,&progressivePlan,&cinematicPlan,&targetPlan})
     {
         int nextBar=0,total=0;
-        if(song->getSections().size()!=8)
-        {std::cerr<<"v2.8 SongPlan lost a complete eight-role arrangement\n";return 123;}
+        if(song->getSections().size()!=11)
+        {std::cerr<<"v2.8 SongPlan lost a complete eleven-role arrangement\n";return 123;}
         for(const auto& section:song->getSections())
         {
             if(section.startBar!=nextBar||section.bars<4||section.bars%4!=0)

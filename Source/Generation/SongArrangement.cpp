@@ -1247,8 +1247,8 @@ void SongArrangement::buildSongPlan(uint64_t seed)
 void SongArrangement::buildSections(uint64_t seed)
 {
     juce::ignoreUnused(seed);
-    std::array<juce::String,8> names;
-    std::array<int,8> lengths{};
+    std::array<juce::String,11> names;
+    std::array<int,11> lengths{};
 
     // A SongPlan selects architecture before any MIDI is emitted. All families
     // retain stable role labels for the UI/export path, but their actual order
@@ -1256,20 +1256,20 @@ void SongArrangement::buildSections(uint64_t seed)
     switch(plan.structureStyle)
     {
         case 1: // festival: two drop statements around the breakdown
-            names={"INTRO","BUILD","CHORUS","DROP","BREAKDOWN","BUILD 2","DROP 2","FINAL HOOK"};
-            lengths={8,8,8,16,8,8,16,16};
+            names={"INTRO","BUILD","CHORUS","DROP","VERSE","BREAKDOWN","VERSE 2","BUILD 2","DROP 2","FINAL HOOK","OUTRO"};
+            lengths={4,4,8,12,8,4,8,4,12,12,4};
             break;
         case 2: // progressive: patient full songwriter arc
-            names={"INTRO","VERSE","BUILD","CHORUS","DROP","BREAKDOWN","BUILD 2","FINAL HOOK"};
-            lengths={8,8,8,8,16,12,8,16};
+            names={"INTRO","VERSE","BUILD","CHORUS","DROP","BREAKDOWN","VERSE 2","BUILD 2","DROP 2","FINAL HOOK","OUTRO"};
+            lengths={4,8,4,8,12,8,8,4,12,12,4};
             break;
         case 3: // cinematic: release before the late full-impact drop
-            names={"INTRO","VERSE","BUILD","CHORUS","BREAKDOWN","BUILD 2","DROP","FINAL HOOK"};
-            lengths={8,12,8,8,12,8,12,16};
+            names={"INTRO","VERSE","BUILD","CHORUS","BREAKDOWN","VERSE 2","BUILD 2","DROP","DROP 2","FINAL HOOK","OUTRO"};
+            lengths={8,8,4,8,8,8,4,8,8,12,4};
             break;
         default: // radio/songwriter
-            names={"INTRO","VERSE","BUILD","CHORUS","DROP","BREAKDOWN","BUILD 2","FINAL HOOK"};
-            lengths={4,8,8,8,12,8,8,12};
+            names={"INTRO","VERSE","BUILD","CHORUS","DROP","BREAKDOWN","VERSE 2","BUILD 2","DROP 2","FINAL HOOK","OUTRO"};
+            lengths={4,8,4,8,8,4,8,4,8,8,4};
             break;
     }
 
@@ -1343,19 +1343,19 @@ void SongArrangement::buildSections(uint64_t seed)
     auto totalBars=[&](){int total=0;for(const int value:lengths)total+=value;return total;};
     if(requestedBars>0)
     {
-        static constexpr int priority[8]={7,4,1,5,3,6,2,0};
+        static constexpr int priority[11]={9,4,8,1,6,5,3,7,2,0,10};
         int cursor=0;
         while(totalBars()<requestedBars)
         {
-            const int i=priority[cursor++%8];
+            const int i=priority[cursor++%11];
             const bool protectedPreDrop=(promptIntent.sectionDirections&1u)!=0u
                 &&(names[(size_t)i]=="INTRO"||names[(size_t)i]=="VERSE"||names[(size_t)i]=="BUILD");
             if(!protectedPreDrop)lengths[(size_t)i]+=4;
         }
         cursor=0;
-        while(totalBars()>requestedBars&&cursor<64)
+        while(totalBars()>requestedBars&&cursor<1536)
         {
-            const int i=priority[cursor++%8];
+            const int i=priority[cursor++%11];
             if(lengths[(size_t)i]>4)lengths[(size_t)i]-=4;
         }
     }
@@ -1364,6 +1364,7 @@ void SongArrangement::buildSections(uint64_t seed)
     {
         float base=.50f;
         if(name.contains("INTRO"))base=.18f;
+        else if(name.contains("OUTRO"))base=.16f;
         else if(name.contains("BREAKDOWN"))base=.30f;
         else if(name.contains("VERSE"))base=.40f;
         else if(name.contains("BUILD 2"))base=.84f;
@@ -1508,6 +1509,27 @@ void SongArrangement::generateComposition(const juce::String& prompt, double bpm
     addMelody(domains.melody, energetic);
     alignPitchedLanesToLead();
     addFx(domains.fx);
+
+    for(auto& lane:lanes)
+    {
+        const auto& ending=sections.back();
+        if(ending.name!="OUTRO")continue;
+        const double begin=ending.startBar*beatsPerBar,end=getTotalBeats();
+        lane.notes.erase(std::remove_if(lane.notes.begin(),lane.notes.end(),[&](const ArrangementNote& n){
+            if(n.beat<begin)return false;
+            if(n.beat>=end-beatsPerBar)return true;
+            if(lane.name=="BASS"||lane.name=="SUB"||lane.name=="KICK")return n.beat>=begin+ending.bars*2.0;
+            if(lane.name=="COUNTER"||lane.name=="PLUCK")return true;
+            if(lane.drums)return std::fmod(n.beat-begin,1.0)>.05;
+            return false;
+        }),lane.notes.end());
+        for(auto& n:lane.notes)if(n.beat>=begin)
+        {
+            const float fade=(float)juce::jlimit(.25,1.0,1.0-(n.beat-begin)/(end-begin));
+            n.velocity=juce::jlimit(24,110,(int)std::lround(n.velocity*fade));
+            n.length=juce::jmin(n.length,end-beatsPerBar-n.beat);
+        }
+    }
 
     // Exclusions are semantic hard constraints. Keep lane identities stable for
     // export/UI routing, but publish no forbidden MIDI events.
@@ -2178,6 +2200,7 @@ void SongArrangement::addHarmony(uint64_t seed)
         else if(event.extension==4)third=root+5;
 
         std::array<int,4> out{root,third,fifth,colour};
+        for(int i=0;i<juce::jlimit(0,2,event.inversion);++i)out[(size_t)i]+=12;
         std::sort(out.begin(),out.end());
         for(size_t i=1;i<out.size();++i)
             while(out[i]<=out[i-1])out[i]+=12;
@@ -2659,7 +2682,8 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         // develops it. Other sections get genuinely separate theme seeds.
         // CHORUS introduces the song's primary hook. DROP and FINAL HOOK develop
         // that same identity instead of inventing another melody.
-        const int themeGroup=(chorus||drop||finalHook)?3:sectionIndex;
+        int themeGroup=(chorus||drop||finalHook)?3:sectionIndex;
+        if(verse)for(size_t si=0;si<sections.size();++si)if(sections[si].name=="VERSE"){themeGroup=(int)si;break;}
 
         // One section/theme owns a stable motif. Earlier builds re-rolled the
         // starting degree and rhythm family every bar, creating technically
@@ -3178,7 +3202,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                 auto insideHookSection=[&](double beat)
                 {
                     const auto* s=sectionForBeat(beat);
-                    return s&&(s==chorusSection||s==dropSection||s==finalSection);
+                    return s&&(s==chorusSection||s->name.contains("DROP")||s==finalSection||s->name=="OUTRO");
                 };
                 for(const auto& n:lead.notes)if(!insideHookSection(n.beat))rebuilt.push_back(n);
 
@@ -3234,6 +3258,12 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
 
                             if(dropVariant)
                             {
+                                if(section.name=="DROP 2"&&statement>0&&ti%4==3&&plan.finalEvolution>.38f)
+                                {
+                                    if(n.note+12<=86)n.note+=12;
+                                    if(n.beat+.125<end)n.beat+=.125;
+                                    n.velocity=juce::jmin(124,n.velocity+3);
+                                }
                                 const float articulation=plan.dropCharacter==2?.76f:(plan.dropCharacter==4?.72f:(plan.dropCharacter==3?.92f:.88f));
                                 n.length=juce::jmax(.10,n.length*articulation);
                                 if(statement>0&&(plan.dropCharacter==2||plan.dropCharacter==4)&&ti%5==2&&n.beat+.125<end)
@@ -3246,9 +3276,17 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                     }
                 };
 
-                writeHook(*chorusSection,0,true,false,false);
-                writeHook(*dropSection,9,false,true,false);
-                writeHook(*finalSection,11,false,false,true);
+                writeHook(*chorusSection,0,sectionFlowsIntoImpact(chorusSection),false,false);
+                for(const auto& hookSection:sections)
+                {
+                    if(hookSection.name.contains("DROP"))writeHook(hookSection,hookSection.name.contains("2")?11:9,sectionFlowsIntoImpact(&hookSection),true,false);
+                    else if(hookSection.name=="FINAL HOOK")writeHook(hookSection,11,false,false,true);
+                    else if(hookSection.name=="OUTRO")
+                    {
+                        for(const auto& t:hookTemplate)if(t.beat<8.0)
+                        {auto n=t;n.beat=hookSection.startBar*beatsPerBar+t.beat;n.velocity=juce::jmax(42,n.velocity-24);rebuilt.push_back(n);}
+                    }
+                }
                 std::sort(rebuilt.begin(),rebuilt.end(),
                           [](const ArrangementNote& a,const ArrangementNote& b){return a.beat<b.beat;});
                 lead.notes=std::move(rebuilt);

@@ -49,6 +49,23 @@ int main()
     }
     if(melodies.size()<14||harmonies.size()<12||palettes.size()!=16||structures.size()<12)
         return fail("Seeds did not change the composition and timbral world");
+    const auto& sections=first.getSections();
+    if(sections.size()!=11||sections.front().name!="INTRO"||sections.back().name!="OUTRO")
+        return fail("Developed arrangement has no complete beginning/ending");
+    const auto& hook=lane(first,"LEAD");
+    auto signature=[&](const juce::String& sectionName,int bars)
+    {
+        std::vector<int> result;
+        for(const auto& section:sections)if(section.name==sectionName)
+            for(const auto& n:hook.notes)if(n.beat>=section.startBar*4.0&&n.beat<(section.startBar+bars)*4.0)
+            {result.push_back(n.note);result.push_back((int)std::llround((n.beat-section.startBar*4.0)*8));}
+        return result;
+    };
+    if(signature("CHORUS",2).empty()||signature("CHORUS",2)!=signature("DROP",2)
+       ||signature("DROP",2)!=signature("DROP 2",2))return fail("Drops discarded the established hook");
+    if(signature("FINAL HOOK",8)==signature("DROP",8))return fail("Final hook did not develop");
+    for(const auto& l:first.getLanes())for(const auto& n:l.notes)
+        if(n.beat>=(first.getBars()-1)*4.0)return fail("Outro failed to leave decay space");
     std::cout<<"Producer prompt constraints, complete deterministic plans and seed diversity passed\n";
     return 0;
 }
