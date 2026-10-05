@@ -66,6 +66,21 @@ int main()
     if(signature("FINAL HOOK",8)==signature("DROP",8))return fail("Final hook did not develop");
     for(const auto& l:first.getLanes())for(const auto& n:l.notes)
         if(n.beat>=(first.getBars()-1)*4.0)return fail("Outro failed to leave decay space");
+    std::set<int> leadMaterials;
+    for(uint64_t seed=0;seed<32;++seed)
+    {
+        sonara::SongArrangement dark,bright;
+        dark.generate("progressive house, dark dry soft 64 bars",128,seed);
+        bright.generate("progressive house, bright spacious aggressive 64 bars",128,seed);
+        const auto& a=lane(dark,"LEAD").sound;const auto& b=lane(bright,"LEAD").sound;
+        leadMaterials.insert((int)a.oscA);
+        if(a.cutoff>4800.f||b.cutoff<7800.f||a.drive>.10f||b.drive<=a.drive||b.reverb<a.reverb)
+            return fail("SoundDNA flavour overrode explicit tone/space/aggression");
+        const auto& sub=lane(dark,"SUB").sound;
+        if(sub.oscMix!=0.f||sub.fmAmount!=0.f||sub.pitchEnv!=0.f||sub.oscAMorph!=0.f
+           ||sub.transientLevel!=0.f||sub.width!=0.f)return fail("Pure sub contains hidden modulation/upper layers");
+    }
+    if(leadMaterials.size()<4)return fail("Lead seeds did not produce different oscillator materials");
     std::cout<<"Producer prompt constraints, complete deterministic plans and seed diversity passed\n";
     return 0;
 }

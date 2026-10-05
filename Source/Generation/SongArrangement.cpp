@@ -1761,6 +1761,41 @@ void SongArrangement::finalizeSoundPalette()
         lane.sound.reverb=juce::jlimit(0.f,1.f,lane.sound.reverb*(.62f+.74f*lane.sound.macroSpace));
         lane.sound.delay=juce::jlimit(0.f,1.f,lane.sound.delay*(.62f+.74f*lane.sound.macroSpace));
 
+        // Seed selects an audible instrument identity within the producer's
+        // material family, rather than only changing a label/phase seed.
+        if(!lane.drums&&lane.name!="SUB"&&lane.name!="FX / TRANSITIONS")
+        {
+            const int material=(int)(random01(domains.soundPalette,0xb100+i*31)*4.f)%4;
+            const float envelope=random01(domains.soundPalette,0xb101+i*31);
+            const float colour=random01(domains.soundPalette,0xb102+i*31);
+            const bool harmonicBody=lane.name=="BASS"||lane.name=="CHORDS"||lane.name=="LEAD";
+            lane.sound.oscA=harmonicBody
+                ?(material==0?WaveShape::softSaw:(material==1?WaveShape::saw:(material==2?WaveShape::square:WaveShape::triangle)))
+                :(material==0?WaveShape::triangle:(material==1?WaveShape::sine:(material==2?WaveShape::softSaw:WaveShape::square)));
+            lane.sound.oscB=material%2==0?WaveShape::triangle:WaveShape::softSaw;
+            lane.sound.oscMix=.12f+.30f*colour;
+            lane.sound.oscBTranspose=material==2&&lane.name!="BASS"?12.f:0.f;
+            lane.sound.oscAMorph=.05f+.24f*colour;
+            lane.sound.oscBMorph=.05f+.18f*(1.f-colour);
+            lane.sound.fmAmount=palettePlan.character==1||palettePlan.character==3?.025f+.10f*colour:0.f;
+            lane.sound.fmRatio=material%2==0?2.f:3.f;
+            lane.sound.ringMod=palettePlan.character==3?.035f*colour:0.f;
+            lane.sound.detune=.025f+.085f*colour;
+            lane.sound.phaseRandom=.15f+.65f*envelope;
+            lane.sound.decay*=.65f+.70f*envelope;
+            lane.sound.attack*=.75f+.50f*(1.f-envelope);
+            lane.sound.cutoff=juce::jlimit(100.f,17500.f,lane.sound.cutoff*(.65f+.55f*colour));
+            lane.sound.resonance=juce::jlimit(.05f,.48f,.08f+.26f*colour+.10f*plan.aggression);
+            lane.sound.drive=juce::jlimit(0.f,.42f,.025f+.26f*plan.aggression+.08f*colour);
+            lane.sound.lfoShape=static_cast<LfoShape>(material%3);
+            lane.sound.lfoCutoff*=.60f+.65f*envelope;
+            // Explicit direction wins over seeded flavour words and genre defaults.
+            if(promptIntent.brightnessDirection<0)lane.sound.cutoff=juce::jmin(4800.f,lane.sound.cutoff);
+            if(promptIntent.brightnessDirection>0)lane.sound.cutoff=juce::jmax(7800.f,lane.sound.cutoff);
+            if(promptIntent.spaceDirection<0){lane.sound.reverb*=.20f;lane.sound.delay*=.20f;lane.sound.chorus*=.35f;}
+            if(promptIntent.aggressionDirection<0){lane.sound.drive=juce::jmin(.10f,lane.sound.drive);lane.sound.fmAmount*=.30f;}
+        }
+
         // Keep song playback lighter and cleaner than single-instrument design.
         // Each role gets a bounded unison/FX/sub budget so low notes do not stack into mud.
         if(lane.name=="BASS")
@@ -1775,7 +1810,10 @@ void SongArrangement::finalizeSoundPalette()
         else if(lane.name=="SUB")
         {
             lane.sound.oscA=WaveShape::sine; lane.sound.oscB=WaveShape::sine;
-            lane.sound.oscMix=.08f; lane.sound.unison=1; lane.sound.detune=0.f;
+            lane.sound.oscMix=0.f; lane.sound.unison=1; lane.sound.detune=0.f;
+            lane.sound.oscAMorph=lane.sound.oscBMorph=lane.sound.fmAmount=lane.sound.ringMod=0.f;
+            lane.sound.oscBTranspose=lane.sound.pitchEnv=lane.sound.transientLevel=lane.sound.bitCrush=lane.sound.downsample=0.f;
+            lane.sound.phaseRandom=0.f;
             lane.sound.width=0.f; lane.sound.subLevel=0.f; lane.sound.noiseLevel=0.f;
             lane.sound.filterMode=FilterMode::lowpass;
             lane.sound.cutoff=125.f; lane.sound.resonance=.08f; lane.sound.filterEnv=0.f;

@@ -29,3 +29,14 @@ Final release remains blocked on the exact Windows HEAD and verified ZIP.
 
 Validation: local Release arrangement, producer and processor playback suites passed,
 including the unchanged real-time and multi-instance CPU budgets.
+
+## v4.3 — audible SoundDNA identities
+
+- Seeded oscillator materials, harmonic FM, phase, envelopes and modulation now
+  vary instruments within their musical roles. Explicit tone/space/aggression wins.
+- Remove hidden low-CPU patch rewrites; stored SoundDNA is what voices receive.
+- Pure sub contains no hidden FM, pitch sweeps, morphing or transient/noise layer.
+- Restore pitch-wheel state correctly on each voice start; schedule MIDI at one-sample precision.
+
+Validation: local Release producer, arrangement and full processor acceptance passed;
+original CPU limits and musical safety assertions unchanged.

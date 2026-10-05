@@ -35,12 +35,13 @@ float SonaraVoice::morphedWave(WaveShape shape,float morph,double phase,double i
 static float evaluateLfo(LfoShape shape,float phase) noexcept {const float twoPi=juce::MathConstants<float>::twoPi;float p=phase/twoPi;p-=std::floor(p);switch(shape){case LfoShape::triangle:return 1.f-4.f*std::abs(p-.5f);case LfoShape::sawUp:return 2.f*p-1.f;case LfoShape::sawDown:return 1.f-2.f*p;case LfoShape::square:return p<.5f?1.f:-1.f;default:return std::sin(phase);}}
 float SonaraVoice::nextNoise() noexcept { noiseState ^= noiseState << 13; noiseState ^= noiseState >> 7; noiseState ^= noiseState << 17; return (float)((noiseState >> 40) & 0xFFFFFF) * (2.0f / 16777215.0f) - 1.0f; }
 void SonaraVoice::prepare(double sampleRate,int maximumBlockSize,int numChannels) noexcept {const juce::dsp::ProcessSpec spec{juce::jmax(8000.0,sampleRate),(juce::uint32)juce::jmax(1,maximumBlockSize),(juce::uint32)juce::jmax(1,numChannels)};filterL.prepare(spec);filterR.prepare(spec);filterL.reset();filterR.reset();adsr.setSampleRate(spec.sampleRate);}
-void SonaraVoice::startNote(int midi,float velocity,juce::SynthesiserSound*,int){noteHz=juce::MidiMessage::getMidiNoteInHertz(midi);auto sr=getSampleRate();
+void SonaraVoice::startNote(int midi,float velocity,juce::SynthesiserSound*,int initialPitchWheel){pitchBendRatio=1.f;noteHz=juce::MidiMessage::getMidiNoteInHertz(midi);auto sr=getSampleRate();
 const float voiceComplexity=dna.fmAmount*1.5f+dna.ringMod*1.2f+std::abs(dna.lfoMorphA)+std::abs(dna.lfoMorphB)+dna.lfoCutoff*.8f+dna.noiseLevel*.4f;
 int requestedUnison=juce::jmin(dna.unison,runtimeUnisonCap);
 if(voiceComplexity>2.0f)requestedUnison=juce::jmin(requestedUnison,3);
 else if(voiceComplexity>1.25f)requestedUnison=juce::jmin(requestedUnison,4);
 voices=juce::jlimit(1,maxUnison,requestedUnison);level=velocity;for(int i=0;i<voices;++i){const float pos=voices==1?0.f:(2.f*i/(voices-1.f)-1.f);const double cents=pos*dna.detune*100.0;const double ratio=std::pow(2.0,cents/1200.0);incA[i]=juce::MathConstants<double>::twoPi*noteHz*ratio/sr;incB[i]=juce::MathConstants<double>::twoPi*noteHz*ratio*std::pow(2.0,dna.oscBTranspose/12.0)/sr;const uint64_t h=dna.seed+(uint64_t)i*0x9e3779b97f4a7c15ULL;phaseA[i]=dna.phaseRandom*juce::MathConstants<double>::twoPi*((h>>8)&65535)/65535.0;phaseB[i]=dna.phaseRandom*juce::MathConstants<double>::twoPi*((h>>24)&65535)/65535.0;const float pan=pos*dna.width;panL[i]=std::sqrt(.5f*(1.f-pan));panR[i]=std::sqrt(.5f*(1.f+pan));}subPhase=0.0;subInc=juce::MathConstants<double>::twoPi*noteHz*std::pow(2.0,(double)dna.subOctave)/sr;noiseState=dna.seed^((uint64_t)(midi+1)*0x9e3779b97f4a7c15ULL);if(noiseState==0)noiseState=1;
+pitchWheelMoved(initialPitchWheel);
 ageSamples=0;holdCounter=0;heldL=heldR=0.f;env={dna.attack,dna.decay,dna.sustain,dna.release};adsr.setSampleRate(sr);adsr.setParameters(env);adsr.noteOn();lfoPhase=0.f;
 pitchEnvState=dna.pitchEnv;pitchEnvMul=std::exp(-1.f/(float)(sr*juce::jmax(.005f,dna.pitchEnvDecay)));
 transientState=dna.transientLevel;transientMul=std::exp(-1.f/(float)(sr*juce::jmax(.001f,dna.transientDecay)));
@@ -72,7 +73,7 @@ void SonaraVoice::renderNextBlock(juce::AudioBuffer<float>& out,int start,int co
         float l=0.f,r=0.f;
         for(int i=0;i<voices;++i){
             const double pitchMod=juce::jlimit(.35,2.4,(1.0+dna.lfoPitch*lfo*.01)*pitchEnvelopeRatio);
-            const double stepA=incA[i]*pitchMod,stepB=incB[i]*pitchMod*dna.fmRatio;
+            const double stepA=incA[i]*pitchMod,stepB=incB[i]*pitchMod*(dna.fmAmount>.0001f?dna.fmRatio:1.f);
             const float b=morphedWave(dna.oscB,morphB,phaseB[i],stepB);
             const float a=morphedWave(dna.oscA,morphA,phaseA[i]+(double)b*dna.fmAmount*4.0,stepA);
             float x=(1.f-dna.oscMix)*a+dna.oscMix*b;
@@ -99,7 +100,7 @@ void SonaraVoice::renderNextBlock(juce::AudioBuffer<float>& out,int start,int co
     }
     if(!adsr.isActive())clearCurrentNote();
 }
-SonaraEngine::SonaraEngine(){for(int i=0;i<8;++i)synth.addVoice(new SonaraVoice());synth.addSound(new SonaraSound());audioDNA.copyDSPFrom(dna);pendingDNA=dna;patchPending=true;}
+SonaraEngine::SonaraEngine(){synth.setMinimumRenderingSubdivisionSize(1,true);for(int i=0;i<8;++i)synth.addVoice(new SonaraVoice());synth.addSound(new SonaraSound());audioDNA.copyDSPFrom(dna);pendingDNA=dna;patchPending=true;}
 void SonaraEngine::rebuildVoices(){synth.allNotesOff(0,false);synth.clearVoices();const int count=lowCpuMode?juce::jmin(requestedVoices,4):requestedVoices;for(int i=0;i<juce::jlimit(1,8,count);++i)synth.addVoice(new SonaraVoice());}
 void SonaraEngine::setLowCpuMode(bool enabled){if(lowCpuMode==enabled)return;lowCpuMode=enabled;rebuildVoices();}
 void SonaraEngine::setRuntimeEcoMode(bool enabled) noexcept
@@ -111,9 +112,9 @@ void SonaraEngine::setRuntimeEcoMode(bool enabled) noexcept
         if(auto* v=dynamic_cast<SonaraVoice*>(synth.getVoice(i)))v->setRuntimeUnisonCap(cap);
 }
 void SonaraEngine::setVoiceLimit(int voices){const int next=juce::jlimit(1,8,voices);if(requestedVoices==next)return;requestedVoices=next;rebuildVoices();}
-void SonaraEngine::prepare(double sampleRate,int maximumBlockSize,int numChannels){sr=juce::jmax(8000.0,sampleRate);synth.setCurrentPlaybackSampleRate(sr);for(int i=0;i<synth.getNumVoices();++i)if(auto*v=dynamic_cast<SonaraVoice*>(synth.getVoice(i))){v->prepare(sr,maximumBlockSize,numChannels);v->setRuntimeUnisonCap(runtimeEcoMode?2:9);}reverb.reset();chorusBuffer.setSize(2,lowCpuMode?8:juce::jmax(8,(int)std::ceil(sr*.06)+4),false,false,true);chorusBuffer.clear();chorusWrite=0;chorusPhase=0.f;delayBuffer.setSize(2,lowCpuMode?4:juce::jmax(4,(int)std::ceil(sr*.45)+2),false,false,true);delayBuffer.clear();delayWrite=0;}
+void SonaraEngine::prepare(double sampleRate,int maximumBlockSize,int numChannels){sr=juce::jmax(8000.0,sampleRate);synth.setCurrentPlaybackSampleRate(sr);for(int i=0;i<synth.getNumVoices();++i)if(auto*v=dynamic_cast<SonaraVoice*>(synth.getVoice(i))){v->prepare(sr,maximumBlockSize,numChannels);v->setRuntimeUnisonCap(runtimeEcoMode?2:9);}reverb.reset();chorusBuffer.setSize(2,juce::jmax(8,(int)std::ceil(sr*.06)+4),false,false,true);chorusBuffer.clear();chorusWrite=0;chorusPhase=0.f;delayBuffer.setSize(2,juce::jmax(4,(int)std::ceil(sr*.45)+2),false,false,true);delayBuffer.clear();delayWrite=0;}
 bool SonaraEngine::hasActiveVoices() noexcept {for(int i=0;i<synth.getNumVoices();++i)if(auto* v=synth.getVoice(i);v!=nullptr&&v->isVoiceActive())return true;return false;}
-void SonaraEngine::setPatch(const SoundDNA& d){dna=d;auto next=d;if(lowCpuMode){next.unison=juce::jlimit(1,2,next.unison);next.chorus=0.f;next.reverb=0.f;next.delay=0.f;next.release=juce::jmin(.52f,next.release);next.noiseLevel=juce::jmin(.05f,next.noiseLevel);}const juce::SpinLock::ScopedLockType lock(pendingLock);pendingDNA=next;patchPending=true;}
+void SonaraEngine::setPatch(const SoundDNA& d){dna=d;auto next=d;const juce::SpinLock::ScopedLockType lock(pendingLock);pendingDNA=next;patchPending=true;}
 void SonaraEngine::applyPendingPatch() noexcept {juce::SpinLock::ScopedTryLockType lock(pendingLock);if(!lock.isLocked()||!patchPending)return;audioDNA.copyDSPFrom(pendingDNA);patchPending=false;for(int i=0;i<synth.getNumVoices();++i)if(auto*v=dynamic_cast<SonaraVoice*>(synth.getVoice(i)))v->setDNA(audioDNA);reverbParams.roomSize=.2f+audioDNA.reverb*.65f;reverbParams.wetLevel=audioDNA.reverb*.35f;reverbParams.dryLevel=1.f-reverbParams.wetLevel*.25f;reverbParams.width=audioDNA.width;reverb.setParameters(reverbParams);}
 float SonaraEngine::readFractional(const juce::AudioBuffer<float>& b,int channel,int writeIndex,float delaySamples) noexcept {const int size=b.getNumSamples();if(size<2)return 0.f;float pos=(float)writeIndex-juce::jlimit(1.f,(float)(size-2),delaySamples);while(pos<0.f)pos+=(float)size;const int i0=(int)pos%size,i1=(i0+1)%size;const float frac=pos-std::floor(pos);const float* d=b.getReadPointer(juce::jlimit(0,b.getNumChannels()-1,channel));return d[i0]+(d[i1]-d[i0])*frac;}
 void SonaraEngine::processChorus(juce::AudioBuffer<float>& a,int numSamples) noexcept {if(audioDNA.chorus<=0.0001f||chorusBuffer.getNumSamples()<2||a.getNumChannels()==0)return;const int samples=juce::jlimit(0,a.getNumSamples(),numSamples);const float wet=juce::jlimit(0.f,.42f,audioDNA.chorus*.42f),rate=juce::jlimit(.02f,8.f,audioDNA.chorusRate),depth=juce::jlimit(0.f,1.f,audioDNA.chorusDepth);const float base=(float)sr*.012f,sweep=(float)sr*(.0015f+.0085f*depth),phaseInc=juce::MathConstants<float>::twoPi*rate/(float)sr;const int size=chorusBuffer.getNumSamples();for(int i=0;i<samples;++i){const float inL=a.getSample(0,i),inR=a.getNumChannels()>1?a.getSample(1,i):inL;chorusBuffer.setSample(0,chorusWrite,inL);chorusBuffer.setSample(1,chorusWrite,inR);const float modL=.5f+.5f*std::sin(chorusPhase),modR=.5f+.5f*std::sin(chorusPhase+juce::MathConstants<float>::halfPi);const float outL=readFractional(chorusBuffer,0,chorusWrite,base+sweep*modL),outR=readFractional(chorusBuffer,1,chorusWrite,base+sweep*modR);a.setSample(0,i,inL*(1.f-wet)+outL*wet);if(a.getNumChannels()>1)a.setSample(1,i,inR*(1.f-wet)+outR*wet);if(++chorusWrite>=size)chorusWrite=0;chorusPhase+=phaseInc;if(chorusPhase>=juce::MathConstants<float>::twoPi)chorusPhase-=juce::MathConstants<float>::twoPi;}}
@@ -126,8 +127,6 @@ void SonaraEngine::render(juce::AudioBuffer<float>& a,juce::MidiBuffer& m,int nu
     if(samples<=0)return;
     applyPendingPatch();
     synth.renderNextBlock(a,m,0,samples);
-    if(lowCpuMode)
-        return;
 
     if(!runtimeEcoMode)
     {
