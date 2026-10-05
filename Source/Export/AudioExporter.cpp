@@ -78,6 +78,7 @@ bool AudioExporter::renderReferenceMelody(const ReferenceAnalysis& reference,con
 
     for(int64_t start=0;start<total;start+=blockSize)
     {
+        if(cancel&&cancel->load()){writer.reset();destination.deleteFile();return false;}
         const int n=(int)std::min<int64_t>(blockSize,total-start);
         block.clear();
         juce::AudioBuffer<float> view(block.getArrayOfWritePointers(),2,0,n);
@@ -115,6 +116,7 @@ bool AudioExporter::renderSong(const SongArrangement& a,const juce::File& file,d
     const auto total=(int64_t)std::llround(a.getTotalBeats()*sr*60.0/a.getBpm()+sr*4.0);
     for(int64_t start=0;start<total;start+=blockSize)
     {
+        if(cancel&&cancel->load()){writer.reset();file.deleteFile();return false;}
         const int n=(int)std::min<int64_t>(blockSize,total-start);
         renderer.render(a,block,start,n,mix,lane);
         if(!writer->writeFromAudioSampleBuffer(block,0,n)){writer.reset();file.deleteFile();return false;}

@@ -556,6 +556,26 @@ int main()
         const int expectedTracks=1+(int)surprised->getLanes().size(); // conductor + every arrangement lane
         if(fullFile.getNumTracks()!=expectedTracks)
             return fail("full song MIDI does not contain every generated lane as a separate track");
+        const auto exported=randomizer.arrangementSnapshot();
+        if(fullFile.getTimeFormat()!=960)return fail("MIDI resolution changed");
+        for(int lane=0;lane<12;++lane)
+        {
+            const auto& expected=exported->getLanes()[(size_t)lane];const auto* track=fullFile.getTrack(lane+1);
+            if(!track)return fail("named MIDI lane missing");
+            std::vector<const juce::MidiMessageSequence::MidiEventHolder*> ons;
+            bool named=false;
+            for(int e=0;e<track->getNumEvents();++e){const auto* event=track->getEventPointer(e);if(event->message.isNoteOn())ons.push_back(event);if(event->message.isTrackNameEvent()&&event->message.getTextFromTextMetaEvent()==expected.name)named=true;}
+            if(!named||ons.size()!=expected.notes.size())return fail("MIDI track names/note count differ from plan");
+            for(size_t n=0;n<ons.size();++n)
+            {
+                const auto& note=expected.notes[n];const auto* event=ons[n];const auto* off=event->noteOffObject;
+                if(!off||event->message.getNoteNumber()!=note.note||event->message.getVelocity()!=note.velocity
+                   ||std::abs(event->message.getTimeStamp()-note.beat*960)>1.01
+                   ||std::abs(off->message.getTimeStamp()-(note.beat+note.length)*960)>1.01)
+                    return fail("MIDI pitch, start, duration or velocity differs from plan: "+expected.name);
+            }
+            if(std::abs(track->getEndTime()-exported->getTotalBeats()*960)>1.01)return fail("MIDI lost outro/section duration");
+        }
         const auto* conductor=fullFile.getTrack(0);
         if(conductor==nullptr||conductor->getNumEvents()==0)
             return fail("full song MIDI conductor/tempo track missing");

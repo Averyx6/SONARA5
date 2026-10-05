@@ -7,6 +7,7 @@
 #include <deque>
 #include "Engine/SonaraEngine.h"
 #include "Engine/SongRenderEngine.h"
+#include "Engine/GenerationStatus.h"
 #include "Generation/PromptGenerator.h"
 #include "Generation/SongArrangement.h"
 #include "Integration/CyanoryxBridge.h"
@@ -89,7 +90,7 @@ public:
     void setLaneMix(int laneIndex,LaneMixParameter,float value) noexcept;
     LaneMixState getLaneMix(int laneIndex) const noexcept;
     bool setSelectedLaneSound(const juce::String& prompt,bool automatic=false);
-    const sonara::SoundDNA& currentPatch()const{return engine.patch();}
+    sonara::SoundDNA currentPatch()const{return engine.patchSnapshot();}
     sonara::MutationLocks& mutationLocks() noexcept { return locks; }
     const sonara::MutationLocks& mutationLocks() const noexcept { return locks; }
 
@@ -101,7 +102,8 @@ public:
     bool importPatchFromCyanoryx(const juce::String& payload);
     juce::String makeCyanoryxRequest(const sonara::CyanoryxSoundRequest& request) const { return cyanoryx.serializeRequest(request); }
 
-    std::atomic<float> generationProgress{0}; juce::String generationStatus{"Ready"};
+    std::atomic<float> generationProgress{0}; sonara::GenerationStatus generationStatus;
+    std::atomic<bool> backgroundCancel{false};
 
 private:
     static constexpr int firstMusicalLane=4, musicalLaneCount=8;

@@ -2,6 +2,8 @@
 #include <JuceHeader.h>
 #include <array>
 #include <memory>
+#include <thread>
+#include <map>
 #include "PluginProcessor.h"
 
 class SonaraAudioProcessorEditor final : public juce::AudioProcessorEditor,
@@ -26,10 +28,11 @@ private:
         enum class Kind { previewMidi, fullMidi, laneMidi, leadMidi, referenceMidi, referenceAudio, fullMixAudio, laneAudio, leadAudio, stemsAudio };
         ExternalDragButton(SonaraAudioProcessorEditor& o, const juce::String& text, Kind k)
             : juce::TextButton(text), owner(o), kind(k) {}
+        void mouseDown(const juce::MouseEvent& e) override {gestureStarted=false;juce::TextButton::mouseDown(e);}
         void mouseDrag(const juce::MouseEvent& e) override;
     private:
         SonaraAudioProcessorEditor& owner;
-        Kind kind;
+        Kind kind;bool gestureStarted=false;
     };
 
     class SoundDNAView final : public juce::Component {
@@ -66,6 +69,11 @@ private:
     void syncMixControls();
     void syncLockButtons();
     void beginExternalDrag(ExternalDragButton::Kind);
+    juce::StringArray prepareDragFiles(ExternalDragButton::Kind);
+    juce::String dragCacheKey(ExternalDragButton::Kind) const;
+    void launchFileDrag(const juce::StringArray&);
+    void runWork(std::function<void()>,std::function<void()> finished={});
+    void chooseExportMidi(bool selected);
     void updateModeVisibility();
     void chooseReferenceAudio();
     void chooseMidiImport();
@@ -87,6 +95,7 @@ private:
 
     juce::TextButton loadReference{"LOAD AUDIO"}, importMidi{"IMPORT MIDI"}, resound{"RESOUND"}, rebuildReference{"REBUILD TRACK"};
     juce::TextButton saveSoundButton{"SAVE SOUND"}, loadSoundButton{"LOAD SOUND"}, saveProjectButton{"SAVE PROJECT"}, loadProjectButton{"LOAD PROJECT"};
+    juce::TextButton exportFullMidiButton{"EXPORT FULL MIDI"},exportLaneMidiButton{"EXPORT SELECTED MIDI"};
     juce::TextButton exportMixButton{"EXPORT MIX"}, exportStemsButton{"EXPORT STEMS"};
 
     ExternalDragButton dragPreviewMidi{*this,"SOUND MIDI",ExternalDragButton::Kind::previewMidi};
@@ -126,7 +135,11 @@ private:
     juce::File dragFile;
     std::unique_ptr<juce::FileChooser> fileChooser;
     float pulse = 0.f;
-    int activeTab = 0;
+    int activeTab = 1;
+    bool busy=false,dragActive=false;
+    std::thread worker;
+    struct PreparedDrag {juce::String key;juce::StringArray files;};
+    std::map<int,PreparedDrag> dragCache;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SonaraAudioProcessorEditor)
 };

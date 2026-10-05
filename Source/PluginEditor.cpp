@@ -39,7 +39,7 @@ void SonaraAudioProcessorEditor::SonaraLookAndFeel::drawRotarySlider(juce::Graph
     g.setColour(text.withAlpha(.65f));g.setFont(10.f);g.drawText(s.getName(),x,y+h-18,w,14,juce::Justification::centred);
 }
 
-void SonaraAudioProcessorEditor::ExternalDragButton::mouseDrag(const juce::MouseEvent& e){if(e.getDistanceFromDragStart()>6)owner.beginExternalDrag(kind);}
+void SonaraAudioProcessorEditor::ExternalDragButton::mouseDrag(const juce::MouseEvent& e){if(!gestureStarted&&e.getDistanceFromDragStart()>6){gestureStarted=true;owner.beginExternalDrag(kind);}}
 
 void SonaraAudioProcessorEditor::SoundDNAView::paint(juce::Graphics& g){
     auto r=getLocalBounds().toFloat().reduced(12.f);const auto& d=processor.currentPatch();
@@ -338,6 +338,8 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
         &loadReference,&importMidi,&resound,&rebuildReference,&saveSoundButton,&loadSoundButton,&saveProjectButton,&loadProjectButton,&exportMixButton,&exportStemsButton,
         &applyLaneSound,&autoLaneSound};
     for(auto* b:buttons){addAndMakeVisible(*b);styleButton(*b,b==&generateSound||b==&generateTrack||b==&generateDrums||b==&randomizeEverythingButton||b==&surpriseMe||b==&playSong||b==&playChorus||b==&playDrop||b==&resound||b==&rebuildReference||b==&exportMixButton||b==&exportStemsButton);}
+    for(auto* button:{&exportFullMidiButton,&exportLaneMidiButton}){addAndMakeVisible(*button);styleButton(*button);}
+    exportFullMidiButton.onClick=[this]{chooseExportMidi(false);};exportLaneMidiButton.onClick=[this]{chooseExportMidi(true);};
     dragLaneMidi.setTooltip("Selected lane notes for FL Piano Roll. Drop onto a SONARA channel to use that lane's SoundDNA; other instruments will sound different.");
     dragLeadMidi.setTooltip("Always exports only the generated LEAD notes for FL Piano Roll. No BASS, SUB, CHORDS, PAD or drum notes are included.");
     dragFullMidi.setTooltip("Drag the WHOLE generated song as multitrack MIDI: drums, bass, sub, chords, pluck, pad, lead, counter and FX stay on separate named tracks with full song timing.");
@@ -347,6 +349,11 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     dragReferenceAudio.setTooltip("Rendered extracted reference melody using the current RESOUND SoundDNA. Drag to FL Playlist for the actual resounded audio.");
     dragFullAudio.setTooltip("Rendered full mix using the same SONARA song mixer as preview. Drag to FL Playlist for preview-matched sound.");
 
+    dragFullAudio.onClick=[this]{const auto kind=ExternalDragButton::Kind::fullMixAudio;const auto it=dragCache.find((int)kind);if(it!=dragCache.end()&&it->second.key==dragCacheKey(kind))showStatus("Audio ready • drag this button to the FL Playlist");else beginExternalDrag(kind);};
+    dragLaneAudio.onClick=[this]{const auto kind=ExternalDragButton::Kind::laneAudio;const auto it=dragCache.find((int)kind);if(it!=dragCache.end()&&it->second.key==dragCacheKey(kind))showStatus("Audio ready • drag this button to the FL Playlist");else beginExternalDrag(kind);};
+    dragLeadAudio.onClick=[this]{const auto kind=ExternalDragButton::Kind::leadAudio;const auto it=dragCache.find((int)kind);if(it!=dragCache.end()&&it->second.key==dragCacheKey(kind))showStatus("Audio ready • drag this button to the FL Playlist");else beginExternalDrag(kind);};
+    dragStems.onClick=[this]{const auto kind=ExternalDragButton::Kind::stemsAudio;const auto it=dragCache.find((int)kind);if(it!=dragCache.end()&&it->second.key==dragCacheKey(kind))showStatus("Audio ready • drag this button to the FL Playlist");else beginExternalDrag(kind);};
+    dragReferenceAudio.onClick=[this]{const auto kind=ExternalDragButton::Kind::referenceAudio;const auto it=dragCache.find((int)kind);if(it!=dragCache.end()&&it->second.key==dragCacheKey(kind))showStatus("Audio ready • drag this button to the FL Playlist");else beginExternalDrag(kind);};
     juce::TextButton* tabs[]={&tabInstrument,&tabSong,&tabDrums,&tabFx,&tabReference,&tabMidi,&tabExport};
     for(auto* t:tabs){addAndMakeVisible(*t);styleButton(*t);}
     tabInstrument.onClick=[this]{setTab(0);};tabSong.onClick=[this]{setTab(1);};tabDrums.onClick=[this]{setTab(2);p.setSelectedLane(0);};
@@ -431,30 +438,10 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
         if(!p.setSelectedLaneSound({},true))
             showStatus("Select a lane first");
     };
-    generateTrack.onClick=[this]{
-        if(p.generateTrack(songPrompt.getText()))
-        {
-            bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);setTab(1);
-        }
-        else showStatus(p.generationStatus);
-    };
+    generateTrack.onClick=[this]{const auto prompt=songPrompt.getText();runWork([this,prompt]{p.generateTrack(prompt);},[this]{bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);setTab(1);});};
     generateDrums.onClick=[this]{p.regenerateDrums(songPrompt.getText());p.setSelectedLane(0);setTab(2);};
-    randomizeEverythingButton.onClick=[this]{
-        if(p.randomizeEverything(songPrompt.getText().trim().isEmpty()?juce::String("fresh modern EDM"):songPrompt.getText()))
-        {
-            bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);
-            setTab(1);
-        }
-    };
-    surpriseMe.onClick=[this]{
-        const auto q=p.makeSurprisePrompt();
-        songPrompt.setText(q);
-        if(p.randomizeEverything(q))
-        {
-            bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);
-            setTab(1);
-        }
-    };
+    randomizeEverythingButton.onClick=[this]{const auto prompt=songPrompt.getText().trim().isEmpty()?juce::String("fresh modern EDM"):songPrompt.getText();runWork([this,prompt]{p.randomizeEverything(prompt);},[this]{bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);setTab(1);});};
+    surpriseMe.onClick=[this]{const auto q=p.makeSurprisePrompt();songPrompt.setText(q);runWork([this,q]{p.randomizeEverything(q);},[this]{bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);setTab(1);});};
     similar.onClick=[this]{p.generateSimilarPatch();};mutate.onClick=[this]{p.mutatePatch();};randomize.onClick=[this]{p.randomizePatch();};undo.onClick=[this]{p.undoPatch();};redo.onClick=[this]{p.redoPatch();};
     variation1.onClick=[this]{p.generateVariation(1);};variation2.onClick=[this]{p.generateVariation(2);};variation3.onClick=[this]{p.generateVariation(3);};variation4.onClick=[this]{p.generateVariation(4);};
     captureA.onClick=[this]{p.captureA();};captureB.onClick=[this]{p.captureB();};recallA.onClick=[this]{p.recallA();};recallB.onClick=[this]{p.recallB();};
@@ -466,7 +453,7 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     };
     playChorus.onClick=[this]{p.startChorusPreview();};
     playDrop.onClick=[this]{p.startDropPreview();};
-    stop.onClick=[this]{p.stopPreview();p.stopSongPreview();};bpm.onValueChange=[this]{p.setPreviewBpm(bpm.getValue());};
+    stop.onClick=[this]{if(busy){p.backgroundCancel.store(true);showStatus("Cancelling operation...");}else{p.stopPreview();p.stopSongPreview();}};bpm.onValueChange=[this]{p.setPreviewBpm(bpm.getValue());};
     connect.onClick=[this]{const auto packet=p.exportProjectForCyanoryx();if(packet.isNotEmpty())juce::SystemClipboard::copyTextToClipboard(packet);showStatus(packet.isNotEmpty()?"Cyanoryx protocol bundle copied to clipboard":"Cyanoryx bundle unavailable");};
     loadReference.onClick=[this]{chooseReferenceAudio();};importMidi.onClick=[this]{chooseMidiImport();};
     resound.onClick=[this]{if(!p.resoundReference(songPrompt.getText()))showStatus(p.generationStatus);};
@@ -486,10 +473,10 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     mixFx.onValueChange=[this]{p.setLaneMix(p.getSelectedLane(),SonaraAudioProcessor::LaneMixParameter::fxSend,(float)mixFx.getValue());};
     lockOsc.onClick=[this]{p.mutationLocks().oscillators=lockOsc.getToggleState();};lockUnison.onClick=[this]{p.mutationLocks().unison=lockUnison.getToggleState();};lockEnv.onClick=[this]{p.mutationLocks().ampEnvelope=lockEnv.getToggleState();};lockFilter.onClick=[this]{p.mutationLocks().filter=lockFilter.getToggleState();};lockMod.onClick=[this]{p.mutationLocks().modulation=lockMod.getToggleState();};lockSources.onClick=[this]{p.mutationLocks().sources=lockSources.getToggleState();};lockTone.onClick=[this]{p.mutationLocks().tone=lockTone.getToggleState();};lockFx.onClick=[this]{p.mutationLocks().spatialFx=lockFx.getToggleState();};
 
-    const auto& d=p.currentPatch();macroBrightness.setValue(d.macroBrightness,juce::dontSendNotification);macroMovement.setValue(d.macroMovement,juce::dontSendNotification);macroSpace.setValue(d.macroSpace,juce::dontSendNotification);macroImpact.setValue(d.macroImpact,juce::dontSendNotification);syncLockButtons();setTab(0);startTimerHz(15);
+    const auto& d=p.currentPatch();macroBrightness.setValue(d.macroBrightness,juce::dontSendNotification);macroMovement.setValue(d.macroMovement,juce::dontSendNotification);macroSpace.setValue(d.macroSpace,juce::dontSendNotification);macroImpact.setValue(d.macroImpact,juce::dontSendNotification);syncLockButtons();setTab(1);startTimerHz(15);
 }
 
-SonaraAudioProcessorEditor::~SonaraAudioProcessorEditor(){fileChooser.reset();setLookAndFeel(nullptr);}
+SonaraAudioProcessorEditor::~SonaraAudioProcessorEditor(){stopTimer();p.backgroundCancel.store(true);if(worker.joinable())worker.join();fileChooser.reset();setLookAndFeel(nullptr);}
 void SonaraAudioProcessorEditor::styleButton(juce::Button& b,bool accent){b.setColour(juce::TextButton::buttonColourId,accent?juce::Colour(0xff39256f):juce::Colour(0xff101a2c));b.setColour(juce::TextButton::buttonOnColourId,purple);}
 void SonaraAudioProcessorEditor::configureMacro(juce::Slider& s,const juce::String& name){s.setRange(0,1,.001);s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s.setName(name);addAndMakeVisible(s);}
 void SonaraAudioProcessorEditor::configureMixSlider(juce::Slider& s,double min,double max,const juce::String& suffix)
@@ -505,7 +492,7 @@ void SonaraAudioProcessorEditor::syncMixControls()
 {
     const int lane=p.getSelectedLane();
     const auto state=p.getLaneMix(lane);
-    const bool enabled=lane>=4;
+    const bool enabled=lane>=0;
     for(auto* s:{&mixLevel,&mixPan,&mixWidth,&mixFx})s->setEnabled(enabled);
     mixLevel.setValue(state.level,juce::dontSendNotification);
     mixPan.setValue(state.pan,juce::dontSendNotification);
@@ -516,79 +503,156 @@ void SonaraAudioProcessorEditor::syncMixControls()
 void SonaraAudioProcessorEditor::syncLockButtons(){const auto& l=p.mutationLocks();lockOsc.setToggleState(l.oscillators,juce::dontSendNotification);lockUnison.setToggleState(l.unison,juce::dontSendNotification);lockEnv.setToggleState(l.ampEnvelope,juce::dontSendNotification);lockFilter.setToggleState(l.filter,juce::dontSendNotification);lockMod.setToggleState(l.modulation,juce::dontSendNotification);lockSources.setToggleState(l.sources,juce::dontSendNotification);lockTone.setToggleState(l.tone,juce::dontSendNotification);lockFx.setToggleState(l.spatialFx,juce::dontSendNotification);}
 void SonaraAudioProcessorEditor::showStatus(const juce::String& s){p.generationStatus=s;statusLine.setText(s,juce::dontSendNotification);}
 
+void SonaraAudioProcessorEditor::runWork(std::function<void()> work,std::function<void()> finished)
+{
+    if(busy||dragActive)return;
+    if(worker.joinable())worker.join();
+    busy=true;p.backgroundCancel.store(false);p.generationProgress.store(0.f);
+    for(int i=0;i<getNumChildComponents();++i)getChildComponent(i)->setEnabled(getChildComponent(i)==&stop);
+    stop.setButtonText("CANCEL");
+    juce::Component::SafePointer<SonaraAudioProcessorEditor> self(this);
+    worker=std::thread([this,self,work=std::move(work),finished=std::move(finished)]() mutable
+    {
+        try{work();}catch(const std::exception&){p.generationStatus="Operation failed • no output was published";p.generationProgress.store(0);}
+        juce::MessageManager::callAsync([self,finished=std::move(finished)]() mutable
+        {
+            if(!self)return;
+            self->busy=false;self->p.backgroundCancel.store(false);
+            for(int i=0;i<self->getNumChildComponents();++i)self->getChildComponent(i)->setEnabled(true);
+            self->stop.setButtonText("STOP");self->updateModeVisibility();
+            if(finished)finished();self->timerCallback();
+        });
+    });
+}
+
+juce::String SonaraAudioProcessorEditor::dragCacheKey(ExternalDragButton::Kind kind) const
+{
+    auto song=p.arrangementSnapshot();
+    juce::String key=juce::String((int)kind)+":"+juce::String::toHexString((juce::int64)(uintptr_t)song.get())
+        +":"+juce::String(p.getSelectedLane())+":"+juce::String(p.currentPatch().seed)+":"+juce::String(p.getPreviewBpm(),4);
+    for(int i=0;i<12;++i){const auto m=p.getLaneMix(i);key+=":"+juce::String(m.level,6)+":"+juce::String(m.pan,6)+":"+juce::String(m.width,6)+":"+juce::String(m.fxSend,6);}
+    return key;
+}
+
 void SonaraAudioProcessorEditor::beginExternalDrag(ExternalDragButton::Kind kind)
 {
-    const auto temp=juce::File::getSpecialLocation(juce::File::tempDirectory);
+    if(busy||dragActive)return;
+    const bool audio=kind==ExternalDragButton::Kind::referenceAudio||kind==ExternalDragButton::Kind::fullMixAudio
+        ||kind==ExternalDragButton::Kind::laneAudio||kind==ExternalDragButton::Kind::leadAudio||kind==ExternalDragButton::Kind::stemsAudio;
+    if(!audio){launchFileDrag(prepareDragFiles(kind));return;}
+    const auto key=dragCacheKey(kind);auto it=dragCache.find((int)kind);
+    if(it!=dragCache.end()&&it->second.key==key&&!it->second.files.isEmpty())
+    {
+        bool exists=true;for(const auto& file:it->second.files)exists=exists&&juce::File(file).existsAsFile();
+        if(exists){launchFileDrag(it->second.files);return;}
+    }
+    auto files=std::make_shared<juce::StringArray>();
+    showStatus("Preparing audio transfer • progress below • drag again when ready");
+    runWork([this,kind,files]{*files=prepareDragFiles(kind);},[this,kind,key,files]
+    {
+        if(files->isEmpty()){showStatus("Audio transfer failed or cancelled");return;}
+        dragCache[(int)kind]={key,*files};showStatus("AUDIO READY • drag the same WAV/stems button into FL Studio");
+    });
+}
+
+void SonaraAudioProcessorEditor::launchFileDrag(const juce::StringArray& files)
+{
+    if(files.isEmpty())return;
+    dragActive=true;showStatus("DRAGGING • release over FL Studio's Piano Roll or Playlist");repaint();
+    juce::Component::SafePointer<SonaraAudioProcessorEditor> self(this);
+    const bool started=juce::DragAndDropContainer::performExternalDragDropOfFiles(files,false,this,[self]
+    {if(self){self->dragActive=false;self->showStatus("Drag ended • check the target's imported content");self->repaint();}});
+    if(!started){dragActive=false;showStatus("Drag could not start • use MIDI/WAV export controls");repaint();}
+}
+
+void SonaraAudioProcessorEditor::chooseExportMidi(bool selected)
+{
+    fileChooser=std::make_unique<juce::FileChooser>(selected?"Export selected lane MIDI":"Export full arrangement MIDI",
+        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile(selected?"SONARA-Selected.mid":"SONARA-Full.mid"),"*.mid");
+    juce::Component::SafePointer<SonaraAudioProcessorEditor> self(this);
+    fileChooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[self,selected](const juce::FileChooser& chooser)
+    {
+        if(!self)return;auto f=chooser.getResult();if(f==juce::File{})return;
+        if(f.getFileExtension().isEmpty())f=f.withFileExtension(".mid");
+        const bool ok=selected?self->p.writeSelectedLaneMidiFile(f):self->p.writeArrangementMidiFile(f);
+        self->showStatus(ok?"MIDI exported • notes/timing only; use WAV for SONARA audio":"MIDI export failed");
+    });
+}
+
+juce::StringArray SonaraAudioProcessorEditor::prepareDragFiles(ExternalDragButton::Kind kind)
+{
+    const auto temp=juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("SONARA/Transfers");
+    if(!temp.createDirectory())return {};
     bool ok=false;
     juce::String status;
     juce::StringArray files;
 
     if(kind==ExternalDragButton::Kind::previewMidi)
     {
-        showStatus("Preparing SOUND MIDI...");
+        p.generationStatus=juce::String("Preparing SOUND MIDI...");
         dragFile=temp.getNonexistentChildFile("SONARA-Sound",".mid");
         ok=p.writePreviewMidiFile(dragFile);
         status="SOUND MIDI ready • drop on SONARA for the same SoundDNA";
     }
     else if(kind==ExternalDragButton::Kind::fullMidi)
     {
-        showStatus("Preparing FULL SONG MIDI...");
+        p.generationStatus=juce::String("Preparing FULL SONG MIDI...");
         dragFile=temp.getNonexistentChildFile("SONARA-Full-Arrangement",".mid");
         ok=p.writeArrangementMidiFile(dragFile);
         status="FULL SONG MIDI ready • separate generated tracks + complete timing";
     }
     else if(kind==ExternalDragButton::Kind::laneMidi)
     {
-        showStatus("Preparing SELECTED MIDI...");
+        p.generationStatus=juce::String("Preparing SELECTED MIDI...");
         dragFile=temp.getNonexistentChildFile("SONARA-Selected-Lane",".mid");
         ok=p.writeSelectedLaneMidiFile(dragFile);
         status="SELECTED MIDI ready • current lane only";
     }
     else if(kind==ExternalDragButton::Kind::leadMidi)
     {
-        showStatus("Preparing LEAD MIDI...");
+        p.generationStatus=juce::String("Preparing LEAD MIDI...");
         dragFile=temp.getNonexistentChildFile("SONARA-Lead",".mid");
         ok=p.writeLeadMidiFile(dragFile);
         status="LEAD MIDI ready • main melody only";
     }
     else if(kind==ExternalDragButton::Kind::referenceMidi)
     {
-        showStatus("Preparing REFERENCE MIDI...");
+        p.generationStatus=juce::String("Preparing REFERENCE MIDI...");
         dragFile=temp.getNonexistentChildFile("SONARA-Reference-Melody",".mid");
         ok=p.writeReferenceMidiFile(dragFile);
         status="REFERENCE MIDI ready • extracted melody";
     }
     else if(kind==ExternalDragButton::Kind::referenceAudio)
     {
-        showStatus("Rendering RESOUND WAV...");
+        p.generationStatus=juce::String("Rendering RESOUND WAV...");
         dragFile=temp.getNonexistentChildFile("SONARA-Resound",".wav");
         ok=p.exportReferenceAudio(dragFile);
         status="RESOUND WAV ready • extracted melody + current SoundDNA";
     }
     else if(kind==ExternalDragButton::Kind::fullMixAudio)
     {
-        showStatus("Rendering FULL MIX WAV...");
+        p.generationStatus=juce::String("Rendering FULL MIX WAV...");
         dragFile=temp.getNonexistentChildFile("SONARA-Full-Mix",".wav");
         ok=p.exportFullMix(dragFile);
         status="FULL MIX WAV ready • preview-matched 24-bit audio";
     }
     else if(kind==ExternalDragButton::Kind::laneAudio)
     {
-        showStatus("Rendering SELECTED WAV...");
+        p.generationStatus=juce::String("Rendering SELECTED WAV...");
         dragFile=temp.getNonexistentChildFile("SONARA-Selected-Lane",".wav");
         ok=p.exportSelectedLaneAudio(dragFile);
         status="SELECTED WAV ready • current lane SoundDNA preserved";
     }
     else if(kind==ExternalDragButton::Kind::leadAudio)
     {
-        showStatus("Rendering LEAD WAV...");
+        p.generationStatus=juce::String("Rendering LEAD WAV...");
         dragFile=temp.getNonexistentChildFile("SONARA-Lead",".wav");
         ok=p.exportLeadAudio(dragFile);
         status="LEAD WAV ready • LEAD SoundDNA preserved";
     }
     else
     {
-        showStatus("Rendering STEMS...");
+        p.generationStatus=juce::String("Rendering STEMS...");
         dragFile=temp.getNonexistentChildFile("SONARA-Stems","");
         ok=dragFile.createDirectory()&&p.exportAllStems(dragFile);
         status="STEMS ready • rendered 24-bit lanes";
@@ -606,13 +670,10 @@ void SonaraAudioProcessorEditor::beginExternalDrag(ExternalDragButton::Kind kind
 
     if(!ok||files.isEmpty())
     {
-        showStatus("Export unavailable • required generated/reference content is missing");
-        return;
+        p.generationStatus=juce::String("Export unavailable • required generated/reference content is missing");
+        return {};
     }
-
-    showStatus(status);
-    juce::DragAndDropContainer::performExternalDragDropOfFiles(files,false,this,
-        [this]{showStatus("Drag finished • file handed to FL Studio/target");});
+    return files;
 }
 
 void SonaraAudioProcessorEditor::chooseReferenceAudio()
@@ -663,8 +724,8 @@ void SonaraAudioProcessorEditor::chooseSaveSound(){fileChooser=std::make_unique<
 void SonaraAudioProcessorEditor::chooseLoadSound(){fileChooser=std::make_unique<juce::FileChooser>("Load SoundDNA",juce::File{},"*.sonara");fileChooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[this](const juce::FileChooser& c){const auto f=c.getResult();if(f.existsAsFile()){const bool ok=p.loadSound(f);if(ok&&p.currentPatch().sourcePrompt.isNotEmpty())soundPrompt.setText(p.currentPatch().sourcePrompt);showStatus(ok?"SoundDNA loaded":"SoundDNA load failed");}fileChooser.reset();});}
 void SonaraAudioProcessorEditor::chooseSaveProject(){fileChooser=std::make_unique<juce::FileChooser>("Save SONARA project",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("SONARA-Project.sonaraproject"),"*.sonaraproject");fileChooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[this](const juce::FileChooser& c){auto f=c.getResult();if(f!=juce::File{}){if(f.getFileExtension().isEmpty())f=f.withFileExtension(".sonaraproject");showStatus(p.saveProject(f)?"Project saved":"Project save failed");}fileChooser.reset();});}
 void SonaraAudioProcessorEditor::chooseLoadProject(){fileChooser=std::make_unique<juce::FileChooser>("Load SONARA project",juce::File{},"*.sonaraproject");fileChooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[this](const juce::FileChooser& c){const auto f=c.getResult();if(f.existsAsFile()&&p.loadProject(f)){bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);const auto song=p.getCurrentSongPrompt();if(song.isNotEmpty())songPrompt.setText(song);const auto sound=p.currentPatch().sourcePrompt;if(sound.isNotEmpty())soundPrompt.setText(sound);syncLockButtons();setTab(p.arrangementSnapshot()?1:0);}else if(f.existsAsFile())showStatus("Project load failed");fileChooser.reset();});}
-void SonaraAudioProcessorEditor::chooseExportMix(){fileChooser=std::make_unique<juce::FileChooser>("Export 24-bit full mix",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("SONARA-Full-Mix.wav"),"*.wav");fileChooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[this](const juce::FileChooser& c){auto f=c.getResult();if(f!=juce::File{}){if(f.getFileExtension().isEmpty())f=f.withFileExtension(".wav");p.exportFullMix(f);}fileChooser.reset();});}
-void SonaraAudioProcessorEditor::chooseExportStems(){fileChooser=std::make_unique<juce::FileChooser>("Choose folder for SONARA stems",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),"*");fileChooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectDirectories,[this](const juce::FileChooser& c){const auto d=c.getResult();if(d.isDirectory())p.exportAllStems(d);fileChooser.reset();});}
+void SonaraAudioProcessorEditor::chooseExportMix(){fileChooser=std::make_unique<juce::FileChooser>("Export 24-bit full mix",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("SONARA-Full-Mix.wav"),"*.wav");fileChooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[this](const juce::FileChooser& c){auto f=c.getResult();if(f!=juce::File{}){if(f.getFileExtension().isEmpty())f=f.withFileExtension(".wav");runWork([this,f]{p.exportFullMix(f);});}fileChooser.reset();});}
+void SonaraAudioProcessorEditor::chooseExportStems(){fileChooser=std::make_unique<juce::FileChooser>("Choose folder for SONARA stems",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),"*");fileChooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectDirectories,[this](const juce::FileChooser& c){const auto d=c.getResult();if(d.isDirectory())runWork([this,d]{p.exportAllStems(d);});fileChooser.reset();});}
 
 void SonaraAudioProcessorEditor::setTab(int index)
 {
@@ -707,6 +768,7 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     laneSoundPrompt.setVisible(mixTab);
     for(auto& b:promptSuggestions)b.setVisible(songTab);
 
+    exportFullMidiButton.setVisible(midiTab||exportTab);exportLaneMidiButton.setVisible(midiTab||exportTab);
     generateSound.setVisible(instrumentTab);
     similar.setVisible(instrumentTab);
     mutate.setVisible(instrumentTab);
@@ -753,6 +815,7 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
 
 void SonaraAudioProcessorEditor::timerCallback()
 {
+    if(busy){statusLine.setText(juce::String(p.generationStatus),juce::dontSendNotification);playbackProgress=p.generationProgress.load();playbackBar.repaint();repaint();return;}
     playbackProgress=p.isSongPlaying()?p.songPosition01():p.previewPosition01();
     pulse+=.045f;if(pulse>juce::MathConstants<float>::twoPi)pulse=0.f;
     soundView.animation=pulse;
@@ -779,6 +842,7 @@ void SonaraAudioProcessorEditor::timerCallback()
     dragFullMidi.setEnabled(hasArrangement);
     dragFullAudio.setEnabled(hasArrangement);
     dragStems.setEnabled(hasArrangement);
+    exportFullMidiButton.setEnabled(hasArrangement);exportLaneMidiButton.setEnabled(selectedReady);
     exportMixButton.setEnabled(hasArrangement);
     exportStemsButton.setEnabled(hasArrangement);
     dragLaneMidi.setEnabled(selectedReady);
@@ -810,6 +874,7 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
     auto r=getLocalBounds().toFloat();
     juce::ColourGradient b(bg0,0,0,bg1,r.getWidth(),r.getHeight(),false);
     g.setGradientFill(b);g.fillAll();
+    if(dragActive){g.setColour(cyan);g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(3),14.f,4.f);}
 
     g.setColour(purple.withAlpha(.07f+.025f*std::sin(pulse)));
     g.fillEllipse(r.getCentreX()-360,r.getCentreY()-330,720,660);
@@ -1044,8 +1109,10 @@ void SonaraAudioProcessorEditor::resized()
         case 3: layoutRow({&applyLaneSound,&autoLaneSound},184); break;
         case 4: layoutRow({&loadReference,&importMidi,&resound,&rebuildReference},184); break;
         case 6: layoutRow({&saveSoundButton,&loadSoundButton,&saveProjectButton,&loadProjectButton,&exportMixButton,&exportStemsButton},184); break;
+        case 5: layoutRow({&exportFullMidiButton,&exportLaneMidiButton},184);break;
         default: break;
     }
+    if(activeTab==6)layoutRow({&exportFullMidiButton,&exportLaneMidiButton},228,30);
 
     if(activeTab==1)
     {
@@ -1058,7 +1125,7 @@ void SonaraAudioProcessorEditor::resized()
         }
     }
 
-    const int upperY=activeTab==1?300:232;
+    const int upperY=activeTab==1?300:(activeTab==6?268:232);
     const int upperH=juce::jlimit(230,320,(int)(h*.34f));
     soundView.setBounds(cx,upperY,cw,upperH);
     timeline.setBounds(cx,upperY,cw,upperH);

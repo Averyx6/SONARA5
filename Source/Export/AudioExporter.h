@@ -11,6 +11,7 @@ namespace sonara {
 
 class AudioExporter {
 public:
+    void setCancelFlag(const std::atomic<bool>* value) noexcept {cancel=value;}
     using Progress = std::function<void(float,const juce::String&)>;
     using MixState=SongMixState;
     using MixArray=SongMixArray;
@@ -21,6 +22,7 @@ public:
     bool renderAllStems(const SongArrangement&, const juce::File& directory, double sampleRate = 44100.0, Progress = {}, const MixArray* mix = nullptr) const;
 
 private:
+    const std::atomic<bool>* cancel=nullptr;
     bool renderSong(const SongArrangement&,const juce::File&,double,Progress,const MixArray*,int) const;
     static bool createWavWriter(const juce::File&, double, std::unique_ptr<juce::AudioFormatWriter>&);
     static void injectLaneMidi(const ArrangementLane&, juce::MidiBuffer&, int64_t startSample, int numSamples, double bpm, double sampleRate);

@@ -56,3 +56,19 @@ original CPU limits and musical safety assertions unchanged.
 
 Validation: local Release processor acceptance passed, including original CPU,
 DSP safety and loudness assertions and new sample parity checks (2e-6 tolerance).
+
+## v4.5 — FL Studio transfer workflow
+
+- Guard external drag once per gesture, show DRAGGING and handle OS drag failure
+  without claiming a DAW imported the file. Audio preparation runs off the GUI
+  thread; cached transfers are ready on the next drag with progress/cancellation.
+- Keep transferred audio in SONARA/Transfers so closing the plugin does not
+  invalidate DAW file references. Add full/selected MIDI save controls.
+- Canonicalise same-pitch overlaps and duplicate hits in the shared note plan,
+  fixing JUCE MIDI pairing that previously changed exported drum lengths.
+- Export section markers, meter and complete outro duration; verify actual MIDI
+  lane names, pitches, positions, lengths and velocities against the plan.
+- Make generation/render status and SoundDNA GUI reads thread safe.
+
+Validation: local Release plugin UI compiled; arrangement, producer and full
+processor suites passed, including stronger MIDI round-trip and WAV parity tests.

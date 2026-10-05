@@ -8,6 +8,28 @@
 
 namespace sonara {
 namespace {
+void canonicaliseLane(ArrangementLane& lane,double total)
+{
+    std::stable_sort(lane.notes.begin(),lane.notes.end(),[](const ArrangementNote& a,const ArrangementNote& b){return a.beat<b.beat;});
+    std::array<int,128> previous{};previous.fill(-1);
+    std::vector<ArrangementNote> notes;notes.reserve(lane.notes.size());
+    for(auto n:lane.notes)
+    {
+        if(!std::isfinite(n.beat)||!std::isfinite(n.length)||n.beat<0||n.beat>=total||n.length<=0||n.note<0||n.note>127)continue;
+        n.length=std::min(n.length,total-n.beat);
+        const int index=previous[(size_t)n.note];
+        if(index>=0)
+        {
+            auto& last=notes[(size_t)index];
+            if(std::abs(last.beat-n.beat)<.00001){last.velocity=std::max(last.velocity,n.velocity);last.length=std::max(last.length,n.length);continue;}
+            if(last.beat+last.length>n.beat)last.length=n.beat-last.beat;
+        }
+        previous[(size_t)n.note]=(int)notes.size();notes.push_back(n);
+    }
+    lane.notes=std::move(notes);
+}
+}
+namespace {
 constexpr double tpq = 960.0;
 
 void addNote(ArrangementLane& lane, int note, double beat, double length, int velocity)
@@ -1550,7 +1572,7 @@ void SongArrangement::generateComposition(const juce::String& prompt, double bpm
         if(excluded||otherExcluded)lane.notes.clear();
         // Writers may append fills after a bar's main hits. Publish one canonical
         // event order for the realtime scheduler, MIDI and project round-trip.
-        std::stable_sort(lane.notes.begin(),lane.notes.end(),[](const ArrangementNote& a,const ArrangementNote& b){return a.beat<b.beat;});
+        canonicaliseLane(lane,getTotalBeats());
         for(auto& n:lane.notes)n.length=juce::jmin(n.length,getTotalBeats()-n.beat);
     }
 
@@ -3622,6 +3644,7 @@ bool SongArrangement::writeMidiFile(const juce::File& destination) const
         auto marker = juce::MidiMessage::textMetaEvent(6, section.name);
         marker.setTimeStamp(section.startBar * beatsPerBar * tpq); conductor.addEvent(marker);
     }
+    auto end=juce::MidiMessage::endOfTrack();end.setTimeStamp(getTotalBeats()*tpq);conductor.addEvent(end);
     midi.addTrack(conductor);
 
     for (const auto& lane : lanes)
@@ -3635,6 +3658,7 @@ bool SongArrangement::writeMidiFile(const juce::File& destination) const
             on.setTimeStamp(n.beat * tpq); off.setTimeStamp((n.beat + n.length) * tpq);
             seq.addEvent(on); seq.addEvent(off);
         }
+        auto end=juce::MidiMessage::endOfTrack();end.setTimeStamp(getTotalBeats()*tpq);seq.addEvent(end);
         seq.updateMatchedPairs(); midi.addTrack(seq);
     }
 
@@ -3785,6 +3809,7 @@ SongArrangement SongArrangement::fromValueTree(const juce::ValueTree& root)
         a.buildSectionGoals(a.masterSeed!=0?a.masterSeed:0x360036ULL);
     }
     auto lt=root.getChildWithName("LANES");for(int i=0;i<lt.getNumChildren();++i){auto l=lt.getChild(i);ArrangementLane lane;lane.name=l.getProperty("name","Lane").toString();lane.midiChannel=juce::jlimit(1,16,(int)l.getProperty("channel",1));lane.drums=(bool)l.getProperty("drums",false);auto dna=l.getChildWithName("SoundDNA");if(dna.isValid())lane.sound=SoundDNA::fromValueTree(dna);auto notes=l.getChildWithName("NOTES");for(int j=0;j<notes.getNumChildren();++j){auto n=notes.getChild(j);lane.notes.push_back({juce::jlimit(0,127,(int)n.getProperty("note",60)),juce::jlimit(1,127,(int)n.getProperty("velocity",100)),juce::jmax(0.0,(double)n.getProperty("beat",0.0)),juce::jmax(.03,(double)n.getProperty("length",.5))});}std::sort(lane.notes.begin(),lane.notes.end(),[](const ArrangementNote&x,const ArrangementNote&y){return x.beat<y.beat;});a.lanes.push_back(std::move(lane));}
+    for(auto& lane:a.lanes)canonicaliseLane(lane,a.getTotalBeats());
     return a;
 }
 

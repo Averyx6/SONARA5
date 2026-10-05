@@ -654,6 +654,7 @@ sonara::ReferenceAnalysis referenceFromTree(const juce::ValueTree& root,bool& me
 SonaraAudioProcessor::SonaraAudioProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
+    audioExporter.setCancelFlag(&backgroundCancel);
     gSonaraInstanceCount.fetch_add(1,std::memory_order_relaxed);
     engine.setVoiceLimit(4);
     sessionSalt = static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64())
@@ -891,6 +892,7 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     constexpr int maxAttempts=48;
     for(int attempt=0;attempt<maxAttempts;++attempt)
     {
+        if(backgroundCancel.load()){generationStatus="Generation cancelled";generationProgress.store(0);return false;}
         const uint64_t entropy=static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64())
                              ^ static_cast<uint64_t>(juce::Time::getHighResolutionTicks())
                              ^ ((uint64_t)(attempt+1)*0xd1342543de82ef95ULL);
@@ -1335,11 +1337,14 @@ bool SonaraAudioProcessor::writeSelectedLaneMidiFile(const juce::File& destinati
     juce::MidiFile mf; mf.setTicksPerQuarterNote(960); juce::MidiMessageSequence seq;
     auto tempo = juce::MidiMessage::tempoMetaEvent((int)std::llround(60000000.0 / a->getBpm())); tempo.setTimeStamp(0); seq.addEvent(tempo);
     auto name = juce::MidiMessage::textMetaEvent(3, lane.name); name.setTimeStamp(0); seq.addEvent(name);
+    auto timeSig=juce::MidiMessage::timeSignatureMetaEvent(4,4);timeSig.setTimeStamp(0);seq.addEvent(timeSig);
+    for(const auto& section:a->getSections()){auto marker=juce::MidiMessage::textMetaEvent(6,section.name);marker.setTimeStamp(section.startBar*4.0*960);seq.addEvent(marker);}
     for (const auto& n : lane.notes)
     {
         auto on=juce::MidiMessage::noteOn(lane.midiChannel,n.note,(juce::uint8)n.velocity); on.setTimeStamp(n.beat*960.0); seq.addEvent(on);
         auto off=juce::MidiMessage::noteOff(lane.midiChannel,n.note); off.setTimeStamp((n.beat+n.length)*960.0); seq.addEvent(off);
     }
+    auto end=juce::MidiMessage::endOfTrack();end.setTimeStamp(a->getTotalBeats()*960);seq.addEvent(end);
     seq.updateMatchedPairs(); mf.addTrack(seq); destination.deleteFile(); juce::FileOutputStream out(destination);
     return out.openedOk() && mf.writeTo(out);
 }
