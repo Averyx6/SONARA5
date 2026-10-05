@@ -658,10 +658,6 @@ SonaraAudioProcessor::SonaraAudioProcessor()
     engine.setVoiceLimit(4);
     sessionSalt = static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64())
                 ^ static_cast<uint64_t>(juce::Time::getHighResolutionTicks());
-    for(auto& e:songEngines)e.setLowCpuMode(true);
-    // Lane order after drums: BASS, SUB, CHORDS, PLUCK, PAD, LEAD, COUNTER, FX.
-    static constexpr int voiceBudget[musicalLaneCount]={1,1,3,2,3,3,2,1};
-    for(int i=0;i<musicalLaneCount;++i)songEngines[(size_t)i].setVoiceLimit(voiceBudget[i]);
     for(int i=0;i<12;++i){laneMixLevel[(size_t)i].store(1.f);laneMixPan[(size_t)i].store(0.f);laneMixWidth[(size_t)i].store(1.f);laneMixFx[(size_t)i].store(1.f);}
     patchHistory.push_back(engine.patch());
     historyIndex = 0;
@@ -679,31 +675,8 @@ void SonaraAudioProcessor::prepareToPlay(double sr, int bs)
     previewLengthSamples = (int64_t) std::llround(previewSampleRate * (60.0 / previewBpm) * 16.0);
 
     engine.prepare(sr, maximumBlockSize, getTotalNumOutputChannels());
-    for (auto& e : songEngines) e.prepare(sr, maximumBlockSize, getTotalNumOutputChannels());
-    drumSynth.prepare(sr);
-    songReverb.reset();
-    juce::Reverb::Parameters rp;
-    rp.roomSize=.31f;rp.damping=.52f;rp.wetLevel=.22f;rp.dryLevel=0.f;rp.width=.82f;
-    songReverb.setParameters(rp);
-
-    const int channels = juce::jmax(1, getTotalNumOutputChannels());
-    for (auto& b : songScratch)
-    {
-        b.setSize(channels, maximumBlockSize, false, false, true);
-        b.clear();
-    }
-    songFxBus.setSize(channels,maximumBlockSize,false,false,true);
-    songFxBus.clear();
-    songDrumBus.setSize(channels,maximumBlockSize,false,false,true);
-    songDrumBus.clear();
-    songDuckEnvelope.assign((size_t)maximumBlockSize,0.f);
-    songDuckState=0.f;
-    for (auto& m : songMidi) m.ensureSize(16384);
-    for (auto& x : laneHpX) x.fill(0.f);
-    for (auto& y : laneHpY) y.fill(0.f);
-    for (auto& x : laneLpState) x.fill(0.f);
-    for (auto& x : laneToneState) x.fill(0.f);
-    masterHpX.fill(0.f); masterHpY.fill(0.f);
+    songRenderer.prepare(sr,maximumBlockSize);
+    if(auto a=arrangementSnapshot())songRenderer.configure(*a);
 }
 
 bool SonaraAudioProcessor::isBusesLayoutSupported(const BusesLayout& l) const
@@ -887,7 +860,7 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
 
     // Invalidate the displayed/exportable output before any attempt. A failed
     // request can never masquerade as success by leaving the previous song live.
-    std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>{},std::memory_order_release);
+    storeArrangement(std::shared_ptr<const sonara::SongArrangement>{});
     lastSongSeed.store(0,std::memory_order_relaxed);
     const auto preparedPrompt=sonara::ProducerPrompt::parse(prompt);
     if(prompt.trim().isEmpty()||prompt.length()>8192||preparedPrompt.exclusions==4095u)
@@ -1074,19 +1047,10 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     generationStatus="Loading fresh SoundDNA palette into the new composition";
 
     const auto& lanes=made->getLanes();
-    if(lanes.size()>=4)drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
-    for(int i=0;i<musicalLaneCount;++i)
-    {
-        const int laneIndex=firstMusicalLane+i;
-        if(juce::isPositiveAndBelow(laneIndex,(int)lanes.size()))
-        {
-            songEngines[(size_t)i].allNotesOff();
-            songEngines[(size_t)i].setPatch(lanes[(size_t)laneIndex].sound);
-        }
-    }
+    
 
     previewBpm=made->getBpm();
-    std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(made),std::memory_order_release);
+    storeArrangement(std::shared_ptr<const sonara::SongArrangement>(made));
     setSelectedLane(lanes.size()>9?9:0);
     generationProgress.store(1.f);
     generationStatus="NEW SONG READY • whole "+juce::String((1.f-wholeSimilarityMax)*100.f,0)
@@ -1100,22 +1064,17 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
 void SonaraAudioProcessor::publishSong(std::shared_ptr<sonara::SongArrangement> made)
 {
     const auto& lanes=made->getLanes();
-    drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
-    for(int i=0;i<musicalLaneCount;++i)
-    {
-        songEngines[(size_t)i].allNotesOff();
-        songEngines[(size_t)i].setPatch(lanes[(size_t)(firstMusicalLane+i)].sound);
-    }
+    
     previewBpm=made->getBpm();
     lastSongSeed.store(made->getSongId(),std::memory_order_relaxed);
-    std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(made),std::memory_order_release);
+    storeArrangement(std::shared_ptr<const sonara::SongArrangement>(made));
     setSelectedLane(9);
 }
 
 bool SonaraAudioProcessor::generateTrackWithSeed(const juce::String& prompt,uint64_t seed)
 {
     stopPreview();stopSongPreview();
-    std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>{},std::memory_order_release);
+    storeArrangement(std::shared_ptr<const sonara::SongArrangement>{});
     lastSongSeed.store(0,std::memory_order_relaxed);
     generationProgress.store(.04f);
     if(prompt.trim().isEmpty()||prompt.length()>8192)
@@ -1228,12 +1187,8 @@ void SonaraAudioProcessor::regenerateDrums(const juce::String& prompt)
         updated->generate(prompt+" drums only tight punchy fills transitions",previewBpm,seed);
     }
 
-    auto& dst=updated->editLanes();
-    if(dst.size()>=4)drumSynth.configureKit(dst[0].sound,dst[1].sound,dst[2].sound,dst[3].sound);
 
-    std::atomic_store_explicit(&arrangement,
-        std::shared_ptr<const sonara::SongArrangement>(updated),
-        std::memory_order_release);
+    storeArrangement(std::shared_ptr<const sonara::SongArrangement>(updated));
     selectedLane.store(0);
     generationProgress.store(1.f);
     generationStatus = current
@@ -1276,76 +1231,34 @@ void SonaraAudioProcessor::startDropPreview()
 
 void SonaraAudioProcessor::startSongPreviewAtBar(int bar)
 {
-    auto a=arrangementSnapshot();
-    if(!a||a->isEmpty()){generationStatus="Generate a full track first";return;}
-
+    const juce::ScopedLock lock(getCallbackLock());
+    auto a=arrangementSnapshot();if(!a||a->isEmpty()){generationStatus="Generate a full track first";return;}
     stopPreview();
-    const auto& lanes=a->getLanes();
-    if(lanes.size()>=4)drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
-
-    const int safeBar=juce::jlimit(0,juce::jmax(0,a->getBars()-1),bar);
-    const double spb=previewSampleRate*60.0/a->getBpm();
-    const int64_t start=(int64_t)std::llround((double)safeBar*sonara::SongArrangement::beatsPerBar*spb);
-
-    drumSynth.reset();songReverb.reset();songDuckState=0.f;
-    for(auto& e:songEngines)e.allNotesOff();
-    for(auto& x:laneHpX)x.fill(0.f);
-    for(auto& y:laneHpY)y.fill(0.f);
-    for(auto& x:laneLpState)x.fill(0.f);
-    for(auto& x:laneToneState)x.fill(0.f);
-    masterHpX.fill(0.f);masterHpY.fill(0.f);
-    if(songFxBus.getNumSamples()>0)songFxBus.clear();
-    songFadeRemaining.store(128,std::memory_order_release);
-
-    songSample.store(start);
-    songPlaying.store(true);
-
-    juce::String section="SONG";
-    for(const auto& s:a->getSections())
-        if(safeBar>=s.startBar&&safeBar<s.startBar+s.bars){section=s.name;break;}
-    generationStatus="Playing "+section+" • bar "+juce::String(safeBar+1);
+    const int safe=juce::jlimit(0,a->getBars()-1,bar);
+    const auto start=(int64_t)std::llround(safe*4.0*previewSampleRate*60.0/a->getBpm());
+    songRenderer.reset(start);songSample.store(start);songPlaying.store(true);
+    generationStatus="Playing "+currentSectionName()+" • bar "+juce::String(safe+1);
 }
-
 void SonaraAudioProcessor::pauseSongPreview()
 {
+    const juce::ScopedLock lock(getCallbackLock());
     if(!songPlaying.exchange(false))return;
-    drumSynth.reset();songReverb.reset();songDuckState=0.f;
-    for(auto& e:songEngines)e.allNotesOff();
-    songFadeRemaining.store(0,std::memory_order_release);
     generationStatus="Song preview paused • bar "+juce::String(currentSongBar()+1);
 }
-
 void SonaraAudioProcessor::resumeSongPreview()
 {
-    auto a=arrangementSnapshot();
-    if(!a||a->isEmpty()){generationStatus="Generate a full track first";return;}
-
-    const double spb=previewSampleRate*60.0/a->getBpm();
-    const int64_t total=(int64_t)std::llround(a->getTotalBeats()*spb);
-    auto pos=songSample.load();
-    if(pos<=0||pos>=total){startSongPreviewAtBar(0);return;}
-
-    const auto& lanes=a->getLanes();
-    if(lanes.size()>=4)drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
-    drumSynth.reset();songReverb.reset();songDuckState=0.f;
-    for(auto& e:songEngines)e.allNotesOff();
-    for(auto& x:laneHpX)x.fill(0.f);for(auto& y:laneHpY)y.fill(0.f);for(auto& x:laneLpState)x.fill(0.f);for(auto& x:laneToneState)x.fill(0.f);
-    masterHpX.fill(0.f);masterHpY.fill(0.f);
-    songFadeRemaining.store(128,std::memory_order_release);
-    songPlaying.store(true,std::memory_order_release);
-    generationStatus="Song preview resumed • "+currentSectionName()+" • bar "+juce::String(currentSongBar()+1);
+    const juce::ScopedLock lock(getCallbackLock());
+    auto a=arrangementSnapshot();if(!a)return;
+    const auto total=(int64_t)std::llround(a->getTotalBeats()*previewSampleRate*60.0/a->getBpm());
+    const auto position=songSample.load();
+    if(position<=0||position>=total){startSongPreviewAtBar(0);return;}
+    // Pausing retains envelopes, FX and note state at the same sample.
+    songPlaying.store(true);generationStatus="Song preview resumed • "+currentSectionName();
 }
-
 void SonaraAudioProcessor::stopSongPreview()
 {
-    songPlaying.store(false);songSample.store(0);drumSynth.reset();songReverb.reset();songDuckState=0.f;
-    for(auto& e:songEngines)e.allNotesOff();
-    for(auto& x:laneHpX)x.fill(0.f);
-    for(auto& y:laneHpY)y.fill(0.f);
-    for(auto& x:laneLpState)x.fill(0.f);
-    for(auto& x:laneToneState)x.fill(0.f);
-    masterHpX.fill(0.f);masterHpY.fill(0.f);
-    songFadeRemaining.store(0,std::memory_order_release);
+    const juce::ScopedLock lock(getCallbackLock());
+    songPlaying.store(false);songSample.store(0);songRenderer.reset(0);
 }
 
 double SonaraAudioProcessor::songPosition01() const noexcept
@@ -1384,272 +1297,29 @@ juce::String SonaraAudioProcessor::currentSectionName() const
     return {};
 }
 
-void SonaraAudioProcessor::injectSongLaneMidi(const sonara::ArrangementLane& lane, juce::MidiBuffer& dest, int64_t startSample, int numSamples, double bpm) noexcept
+sonara::SongMixArray SonaraAudioProcessor::songMixSnapshot() const noexcept
 {
-    dest.clear();
-    const double spb = previewSampleRate * 60.0 / bpm;
-    const double startBeat = (double)startSample / spb;
-    const double endBeat = (double)(startSample + numSamples) / spb;
-    auto it = std::lower_bound(lane.notes.begin(), lane.notes.end(), startBeat - 4.2,
-                               [](const sonara::ArrangementNote& n, double beat){ return n.beat < beat; });
-    for (; it != lane.notes.end() && it->beat <= endBeat; ++it)
-    {
-        const double onS = it->beat * spb, offS = (it->beat + it->length) * spb;
-        if (onS >= startSample && onS < startSample + numSamples)
-            dest.addEvent(juce::MidiMessage::noteOn(lane.midiChannel, it->note, (juce::uint8)it->velocity), (int)(onS - startSample));
-        if (offS >= startSample && offS < startSample + numSamples)
-            dest.addEvent(juce::MidiMessage::noteOff(lane.midiChannel, it->note), (int)(offS - startSample));
-    }
+    sonara::SongMixArray mix{};for(int i=0;i<12;++i){const auto s=getLaneMix(i);mix[(size_t)i]={s.level,s.pan,s.width,s.fxSend};}return mix;
 }
-
-int SonaraAudioProcessor::collectDrumTriggers(const sonara::SongArrangement& a, int64_t startSample, int numSamples) noexcept
+void SonaraAudioProcessor::storeArrangement(std::shared_ptr<const sonara::SongArrangement> made)
 {
-    const auto& lanes = a.getLanes();
-    const double spb = previewSampleRate * 60.0 / a.getBpm();
-    const double startBeat = (double)startSample / spb;
-    const double endBeat = (double)(startSample + numSamples) / spb;
-    int count = 0;
-
-    for (int laneIndex = 0; laneIndex < juce::jmin(firstMusicalLane, (int)lanes.size()); ++laneIndex)
-    {
-        const auto& lane = lanes[(size_t)laneIndex];
-        auto it = std::lower_bound(lane.notes.begin(), lane.notes.end(), startBeat,
-                                   [](const sonara::ArrangementNote& n, double beat){ return n.beat < beat; });
-        for (; it != lane.notes.end() && it->beat < endBeat && count < (int)drumTriggers.size(); ++it)
-        {
-            const int offset = juce::jlimit(0, numSamples - 1, (int)std::llround(it->beat * spb - startSample));
-            drumTriggers[(size_t)count++] = { offset, it->note, it->velocity / 127.f };
-        }
-    }
-
-    std::sort(drumTriggers.begin(), drumTriggers.begin() + count,
-              [](const sonara::DrumTrigger& x, const sonara::DrumTrigger& y){ return x.sampleOffset < y.sampleOffset; });
-    return count;
+    const juce::ScopedLock lock(getCallbackLock());
+    if(made){songRenderer.configure(*made);songRenderer.reset(songSample.load());lastSongSeed.store(made->getSongId());}
+    else {songPlaying.store(false);songRenderer.reset(0);lastSongSeed.store(0);}
+    std::atomic_store_explicit(&arrangement,std::move(made),std::memory_order_release);
 }
-
 void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int numSamples)
 {
-    auto a=arrangementSnapshot();
-    if(!a||numSamples<=0){songPlaying.store(false);return;}
-
-    const int renderSamples=juce::jmin(numSamples,maximumBlockSize);
-    const auto& lanes=a->getLanes();
-    const int64_t start=songSample.load();
-    const double spb=previewSampleRate*60.0/a->getBpm();
-    const int64_t total=(int64_t)std::llround(a->getTotalBeats()*spb);
-    const double blockBeat=(double)start/spb;
-    const int blockBar=juce::jlimit(0,juce::jmax(0,a->getBars()-1),(int)std::floor(blockBeat/4.0));
-    juce::String blockSection;
-    float sectionEnergy=.5f;
-    for(const auto& s:a->getSections())
-        if(blockBar>=s.startBar&&blockBar<s.startBar+s.bars)
-        {blockSection=s.name;sectionEnergy=juce::jlimit(0.f,1.f,s.energy);break;}
-    const bool mixIntro=blockSection=="INTRO";
-    const bool mixVerse=blockSection=="VERSE";
-    const bool mixBuild=blockSection.contains("BUILD");
-    const bool mixChorus=blockSection=="CHORUS";
-    const bool mixDrop=blockSection.contains("DROP");
-    const bool mixBreakdown=blockSection=="BREAKDOWN";
-    const bool mixFinal=blockSection=="FINAL HOOK";
-
-    out.clear();
-    songFxBus.clear(0,renderSamples);
-
-    // Build a lightweight kick-triggered sidechain envelope before musical lanes
-    // are mixed. This gives festival drops room for the kick without running a
-    // compressor per lane.
-    const int drumCount=collectDrumTriggers(*a,start,renderSamples);
-    jassert((int)songDuckEnvelope.size()>=renderSamples);
-    const float duckRelease=std::exp(-1.f/(float)(previewSampleRate*.18));
-    float duck=songDuckState;
-    int duckTriggerIndex=0;
-    for(int s=0;s<renderSamples;++s)
-    {
-        while(duckTriggerIndex<drumCount&&drumTriggers[(size_t)duckTriggerIndex].sampleOffset<=s)
-        {
-            const auto& trigger=drumTriggers[(size_t)duckTriggerIndex];
-            if(trigger.midiNote==36)
-                duck=juce::jmax(duck,.65f+.35f*trigger.velocity);
-            ++duckTriggerIndex;
-        }
-        songDuckEnvelope[(size_t)s]=duck;
-        duck*=duckRelease;
-    }
-    songDuckState=duck;
-
-    for(int i=0;i<musicalLaneCount;++i)
-    {
-        const int laneIndex=firstMusicalLane+i;
-        if(!juce::isPositiveAndBelow(laneIndex,(int)lanes.size()))continue;
-
-        auto& midi=songMidi[(size_t)i];
-        auto& scratch=songScratch[(size_t)i];
-        injectSongLaneMidi(lanes[(size_t)laneIndex],midi,start,renderSamples,a->getBpm());
-
-        const bool active=songEngines[(size_t)i].hasActiveVoices();
-        if(midi.isEmpty()&&!active)continue;
-
-        scratch.clear(0,renderSamples);
-        songEngines[(size_t)i].render(scratch,midi,renderSamples);
-
-        const float rc=1.f/(juce::MathConstants<float>::twoPi*sonara::mixpolicy::highPassHz(i));
-        const float dt=1.f/(float)previewSampleRate;
-        const float hpAlpha=rc/(rc+dt);
-
-        for(int ch=0;ch<scratch.getNumChannels()&&ch<2;++ch)
-        {
-            auto* d=scratch.getWritePointer(ch);
-            float x1=laneHpX[(size_t)i][(size_t)ch];
-            float y1=laneHpY[(size_t)i][(size_t)ch];
-            for(int s=0;s<renderSamples;++s)
-            {
-                const float x=std::isfinite(d[s])?d[s]:0.f;
-                const float y=hpAlpha*(y1+x-x1);
-                x1=x;y1=y;d[s]=y;
-            }
-            laneHpX[(size_t)i][(size_t)ch]=x1;
-            laneHpY[(size_t)i][(size_t)ch]=y1;
-        }
-
-        const auto mix=getLaneMix(laneIndex);
-
-        // BASS low end stays near-mono.
-        if(i==0&&scratch.getNumChannels()>=2)
-        {
-            auto* l=scratch.getWritePointer(0);
-            auto* r=scratch.getWritePointer(1);
-            for(int s=0;s<renderSamples;++s)
-            {
-                const float mid=.5f*(l[s]+r[s]);
-                const float side=sonara::mixpolicy::bassStereoFraction();
-                l[s]=mid*(1.f-side)+l[s]*side;
-                r[s]=mid*(1.f-side)+r[s]*side;
-            }
-        }
-
-        // SUB is mono and low-passed. It never enters the shared reverb bus.
-        if(i==1)
-        {
-            const float lpRc=1.f/(juce::MathConstants<float>::twoPi*sonara::mixpolicy::subLowPassHz());
-            const float lpA=dt/(lpRc+dt);
-            auto* l=scratch.getWritePointer(0);
-            auto* r=scratch.getNumChannels()>1?scratch.getWritePointer(1):l;
-            float state=laneLpState[(size_t)i][0];
-            for(int s=0;s<renderSamples;++s)
-            {
-                const float mono=.5f*(l[s]+r[s]);
-                state+=lpA*(mono-state);
-                l[s]=state;
-                r[s]=state;
-            }
-            laneLpState[(size_t)i][0]=state;
-            laneLpState[(size_t)i][1]=state;
-        }
-
-        // The stored curve is audible: calmer sections are darker, while high
-        // energy opens the musical/FX lanes. One state per lane/channel keeps
-        // this allocation-free and makes fast section seeks click-safe.
-        if(i>=2)
-        {
-            const float toneHz=sonara::mixpolicy::toneCutoffHz(sectionEnergy);
-            const float toneRc=1.f/(juce::MathConstants<float>::twoPi*toneHz);
-            const float toneA=dt/(toneRc+dt);
-            for(int ch=0;ch<scratch.getNumChannels()&&ch<2;++ch)
-            {
-                auto* d=scratch.getWritePointer(ch);
-                float state=laneToneState[(size_t)i][(size_t)ch];
-                for(int s=0;s<renderSamples;++s){state+=toneA*(d[s]-state);d[s]=state;}
-                laneToneState[(size_t)i][(size_t)ch]=state;
-            }
-        }
-
-        if(scratch.getNumChannels()>=2)
-        {
-            auto* l=scratch.getWritePointer(0);
-            auto* r=scratch.getWritePointer(1);
-            const float requestedWidth=juce::jlimit(0.f,1.5f,mix.width);
-            const float width=sonara::mixpolicy::stereoWidth(i,requestedWidth,sectionEnergy);
-            const float pan=juce::jlimit(-1.f,1.f,mix.pan);
-            const float panL=pan>0.f?1.f-pan:1.f;
-            const float panR=pan<0.f?1.f+pan:1.f;
-            for(int s=0;s<renderSamples;++s)
-            {
-                const float mid=.5f*(l[s]+r[s]);
-                const float side=.5f*(l[s]-r[s])*width;
-                l[s]=(mid+side)*panL;
-                r[s]=(mid-side)*panR;
-            }
-        }
-
-        // Duck only the layers that mask a festival kick. Lead/pluck/counter/FX
-        // stay forward, while BASS/SUB duck most and CHORDS/PAD more gently.
-        const float duckDepth=sonara::mixpolicy::duckDepth(i);
-        if(duckDepth>0.f)
-        {
-            for(int ch=0;ch<scratch.getNumChannels();++ch)
-            {
-                auto* d=scratch.getWritePointer(ch);
-                for(int s=0;s<renderSamples;++s)
-                    d[s]*=1.f-duckDepth*songDuckEnvelope[(size_t)s];
-            }
-        }
-
-        const float sectionGain=sonara::mixpolicy::sectionGain(i,blockSection);
-        const float energyGain=sonara::mixpolicy::energyGain(i,sectionEnergy);
-        const float mixedGain=sonara::mixpolicy::baseGain(i)*sectionGain*energyGain*mix.level;
-        const float sendGain=sonara::mixpolicy::baseFxSend(i)*mix.fxSend
-                           *sonara::mixpolicy::energySpace(sectionEnergy);
-        for(int ch=0;ch<out.getNumChannels();++ch)
-        {
-            out.addFrom(ch,0,scratch,ch,0,renderSamples,mixedGain);
-            if(sendGain>0.f)
-                songFxBus.addFrom(ch,0,scratch,ch,0,renderSamples,mixedGain*sendGain);
-        }
-    }
-
-    songDrumBus.clear(0,renderSamples);
-    drumSynth.render(songDrumBus,drumTriggers.data(),drumCount);
-    // Section-level drum contrast makes the DROP obvious even when it reuses
-    // the song's hook identity. Builds pull back; drops/final hooks hit harder.
-    const float drumSectionGain=sonara::mixpolicy::drumGain(blockSection,sectionEnergy);
-    for(int ch=0;ch<out.getNumChannels();++ch)
-        out.addFrom(ch,0,songDrumBus,ch,0,renderSamples,drumSectionGain);
-
-    // One shared wet-only reverb bus; drums/BASS/SUB stay dry.
-    if(songFxBus.getNumChannels()>=2)
-        songReverb.processStereo(songFxBus.getWritePointer(0),songFxBus.getWritePointer(1),renderSamples);
-    else if(songFxBus.getNumChannels()==1)
-        songReverb.processMono(songFxBus.getWritePointer(0),renderSamples);
-    for(int ch=0;ch<out.getNumChannels();++ch)
-        out.addFrom(ch,0,songFxBus,ch,0,renderSamples,.66f);
-
-    const int fadeStart=songFadeRemaining.load(std::memory_order_acquire);
-    for(int ch=0;ch<out.getNumChannels()&&ch<2;++ch)
-    {
-        auto* d=out.getWritePointer(ch);
-        float x1=masterHpX[(size_t)ch],y1=masterHpY[(size_t)ch];
-        for(int s=0;s<renderSamples;++s)
-        {
-            float y=sonara::mixpolicy::processMasterSample(d[s],x1,y1,previewSampleRate);
-            if(fadeStart>s)
-            {
-                const int remaining=fadeStart-s;
-                y*=juce::jlimit(0.f,1.f,(128.f-(float)remaining)/128.f);
-            }
-            d[s]=y;
-        }
-        masterHpX[(size_t)ch]=x1;masterHpY[(size_t)ch]=y1;
-    }
-    songFadeRemaining.store(juce::jmax(0,fadeStart-renderSamples),std::memory_order_release);
-
-    const int64_t next=start+renderSamples;
-    songSample.store(next);
-    if(next>=total)
-    {
-        songPlaying.store(false);songSample.store(total);
-        for(auto& e:songEngines)e.allNotesOff();
-    }
+    auto a=arrangementSnapshot();if(!a){songPlaying.store(false);return;}
+    sonara::SongMixArray mix{};
+    for(int i=0;i<12;++i){const auto m=getLaneMix(i);mix[(size_t)i]={m.level,m.pan,m.width,m.fxSend};}
+    const auto start=songSample.load();
+    songRenderer.render(*a,out,start,numSamples,&mix);
+    const auto total=(int64_t)std::llround(a->getTotalBeats()*previewSampleRate*60.0/a->getBpm()+previewSampleRate*4.0);
+    songSample.store(std::min<int64_t>(total,start+numSamples));
+    if(start+numSamples>=total)songPlaying.store(false);
 }
+
 bool SonaraAudioProcessor::writeArrangementMidiFile(const juce::File& destination) const
 {
     auto a = arrangementSnapshot(); return a ? a->writeMidiFile(destination) : false;
@@ -1841,17 +1511,9 @@ bool SonaraAudioProcessor::rebuildInstrumentalFromReference(const juce::String& 
         (uint64_t)prompt.hashCode64()^(++generationCounter*0x94d049bb133111ebULL));
     applyLaneSoundCpuBudget("LEAD",lead.sound);
 
-    for(int i=0;i<musicalLaneCount;++i)
-    {
-        const int laneIndex=firstMusicalLane+i;
-        if(juce::isPositiveAndBelow(laneIndex,(int)lanes.size()))
-        {
-            songEngines[(size_t)i].allNotesOff();
-            songEngines[(size_t)i].setPatch(lanes[(size_t)laneIndex].sound);
-        }
-    }
+    
 
-    std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(rebuilt),std::memory_order_release);
+    storeArrangement(std::shared_ptr<const sonara::SongArrangement>(rebuilt));
     setSelectedLane(leadIndex);
     generationProgress.store(1.f);
     generationStatus="REFERENCE REBUILT • "+reference.keyName+" • "+juce::String(reference.estimatedBpm,1)
@@ -1901,7 +1563,7 @@ bool SonaraAudioProcessor::loadProject(const juce::File& file)
     stopPreview();stopSongPreview();
     resetLaneMix(*this);
     reference={};referenceLoaded=false;referenceMelodyPreview=false;
-    std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>{},std::memory_order_release);
+    storeArrangement(std::shared_ptr<const sonara::SongArrangement>{});
     selectedLane.store(9);
 
     setPatchWithHistory(sonara::SoundDNA::fromValueTree(dna));
@@ -1932,17 +1594,8 @@ bool SonaraAudioProcessor::loadProject(const juce::File& file)
         if(!made->isEmpty())
         {
             const auto& lanes=made->getLanes();
-            if(lanes.size()>=4)drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
-            for(int i=0;i<musicalLaneCount;++i)
-            {
-                const int laneIndex=firstMusicalLane+i;
-                if(juce::isPositiveAndBelow(laneIndex,(int)lanes.size()))
-                {
-                    songEngines[(size_t)i].allNotesOff();
-                    songEngines[(size_t)i].setPatch(lanes[(size_t)laneIndex].sound);
-                }
-            }
-            std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(made),std::memory_order_release);
+                    
+            storeArrangement(std::shared_ptr<const sonara::SongArrangement>(made));
             setSelectedLane(juce::jlimit(0,(int)lanes.size()-1,(int)root.getProperty("selectedLane",9)));
         }
     }
@@ -1966,7 +1619,7 @@ bool SonaraAudioProcessor::exportFullMix(const juce::File& file)
     }
 
     const bool ok=audioExporter.renderFullMix(
-        *a,file,44100.0,
+        *a,file,previewSampleRate,
         [this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;},
         &mix);
 
@@ -1977,7 +1630,7 @@ bool SonaraAudioProcessor::exportFullMix(const juce::File& file)
 
 bool SonaraAudioProcessor::exportSelectedLaneAudio(const juce::File& file)
 {
-    auto a=arrangementSnapshot();if(!a)return false;const bool ok=audioExporter.renderSelectedLane(*a,selectedLane.load(),file,44100.0,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;});generationProgress.store(ok?1.f:0.f);generationStatus=ok?"Selected lane WAV ready • "+file.getFullPathName():"Lane export failed";return ok;
+    auto a=arrangementSnapshot();if(!a)return false;const auto mix=songMixSnapshot();const bool ok=audioExporter.renderSelectedLane(*a,selectedLane.load(),file,previewSampleRate,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;},&mix);generationProgress.store(ok?1.f:0.f);generationStatus=ok?"Selected lane WAV ready • "+file.getFullPathName():"Lane export failed";return ok;
 }
 
 bool SonaraAudioProcessor::exportLeadAudio(const juce::File& file)
@@ -1987,8 +1640,9 @@ bool SonaraAudioProcessor::exportLeadAudio(const juce::File& file)
     int leadIndex=-1;
     for(int i=0;i<(int)lanes.size();++i)if(lanes[(size_t)i].name=="LEAD"){leadIndex=i;break;}
     if(leadIndex<0)return false;
-    const bool ok=audioExporter.renderSelectedLane(*a,leadIndex,file,44100.0,
-        [this](float x,const juce::String& status){generationProgress.store(x);generationStatus=status;});
+    const auto mix=songMixSnapshot();
+    const bool ok=audioExporter.renderSelectedLane(*a,leadIndex,file,previewSampleRate,
+        [this](float x,const juce::String& status){generationProgress.store(x);generationStatus=status;},&mix);
     generationProgress.store(ok?1.f:0.f);
     generationStatus=ok?"LEAD WAV ready • "+file.getFullPathName():"LEAD WAV export failed";
     return ok;
@@ -2018,7 +1672,8 @@ bool SonaraAudioProcessor::exportReferenceAudio(const juce::File& file)
 
 bool SonaraAudioProcessor::exportAllStems(const juce::File& directory)
 {
-    auto a=arrangementSnapshot();if(!a)return false;const bool ok=audioExporter.renderAllStems(*a,directory,44100.0,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;});generationProgress.store(ok?1.f:0.f);generationStatus=ok?"All 24-bit stems ready • "+directory.getFullPathName():"Stem export failed";return ok;
+    auto a=arrangementSnapshot();if(!a)return false;const auto mix=songMixSnapshot();
+    const bool ok=audioExporter.renderAllStems(*a,directory,previewSampleRate,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;},&mix);generationProgress.store(ok?1.f:0.f);generationStatus=ok?"All 24-bit stems ready • "+directory.getFullPathName():"Stem export failed";return ok;
 }
 
 void SonaraAudioProcessor::setLaneMix(int laneIndex,LaneMixParameter parameter,float value) noexcept
@@ -2114,16 +1769,9 @@ bool SonaraAudioProcessor::setSelectedLaneSound(const juce::String& prompt,bool 
     if(automatic)
         applyLaneSoundCpuBudget(lanes[(size_t)laneIndex].name,lanes[(size_t)laneIndex].sound);
 
-    if(laneIndex<4&&lanes.size()>=4)
-        drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
-    else if(laneIndex>=firstMusicalLane&&laneIndex<firstMusicalLane+musicalLaneCount)
-    {
-        songEngines[(size_t)(laneIndex-firstMusicalLane)].setPatch(lanes[(size_t)laneIndex].sound);
-        engine.setPatch(lanes[(size_t)laneIndex].sound);
-    }
+    if(laneIndex>=4)engine.setPatch(lanes[(size_t)laneIndex].sound);
 
-    std::atomic_store_explicit(&arrangement,
-        std::shared_ptr<const sonara::SongArrangement>(updated),std::memory_order_release);
+    storeArrangement(std::shared_ptr<const sonara::SongArrangement>(updated));
     generationProgress.store(1.f);
     generationStatus=juce::String(automatic?"AUTO FIT • ":"CUSTOM SOUND • ")+lanes[(size_t)laneIndex].name;
     return true;
@@ -2181,7 +1829,7 @@ void SonaraAudioProcessor::setStateInformation(const void* data,int bytes)
         {
             resetLaneMix(*this);
             reference={};referenceLoaded=false;referenceMelodyPreview=false;
-            std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>{},std::memory_order_release);
+            storeArrangement(std::shared_ptr<const sonara::SongArrangement>{});
             selectedLane.store(9);
             setPatchWithHistory(sonara::SoundDNA::fromValueTree(state));
             locks={};generationCounter=1;generationStatus="Legacy preset restored";return;
@@ -2191,7 +1839,7 @@ void SonaraAudioProcessor::setStateInformation(const void* data,int bytes)
 
         resetLaneMix(*this);
         reference={};referenceLoaded=false;referenceMelodyPreview=false;
-        std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>{},std::memory_order_release);
+        storeArrangement(std::shared_ptr<const sonara::SongArrangement>{});
         selectedLane.store(9);
 
         engine.setPatch(sonara::SoundDNA::fromValueTree(dna));
@@ -2222,17 +1870,8 @@ void SonaraAudioProcessor::setStateInformation(const void* data,int bytes)
             if(!made->isEmpty())
             {
                 const auto& lanes=made->getLanes();
-                if(lanes.size()>=4)drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
-                for(int i=0;i<musicalLaneCount;++i)
-                {
-                    const int laneIndex=firstMusicalLane+i;
-                    if(juce::isPositiveAndBelow(laneIndex,(int)lanes.size()))
-                    {
-                        songEngines[(size_t)i].allNotesOff();
-                        songEngines[(size_t)i].setPatch(lanes[(size_t)laneIndex].sound);
-                    }
-                }
-                std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(made),std::memory_order_release);
+                            
+                storeArrangement(std::shared_ptr<const sonara::SongArrangement>(made));
                 setSelectedLane(juce::jlimit(0,(int)lanes.size()-1,(int)state.getProperty("selectedLane",9)));
             }
         }

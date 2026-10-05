@@ -16,6 +16,7 @@ class DrumSynth {
 public:
     void prepare(double sampleRate) noexcept { sr=juce::jmax(8000.0,sampleRate); reset(); }
     void configureKit(const SoundDNA& kick, const SoundDNA& snare, const SoundDNA& hats, const SoundDNA& perc) noexcept;
+    void setNoiseSalt(uint64_t salt) noexcept { kitSeed^=salt*0x9e3779b97f4a7c15ULL;noiseState=kitSeed; }
     void reset() noexcept {
         kickEnv=snareEnv=hatEnv=clapEnv=percEnv=crashEnv=0.f;
         kickPhase=snarePhase=percPhase=crashPhase=0.0;

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(SONARA VERSION 4.3.0)
+project(SONARA VERSION 4.4.0)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -31,7 +31,7 @@ target_sources(SONARA PRIVATE
     Source/PluginProcessor.cpp Source/PluginProcessor.h
     Source/PluginEditor.cpp Source/PluginEditor.h
     Source/Engine/SoundDNA.cpp Source/Engine/SoundDNA.h
-    Source/Engine/SonaraEngine.cpp Source/Engine/SonaraEngine.h Source/Engine/MixPolicy.h
+    Source/Engine/SonaraEngine.cpp Source/Engine/SonaraEngine.h Source/Engine/MixPolicy.h Source/Engine/SongRenderEngine.h
     Source/Generation/PromptGenerator.cpp Source/Generation/PromptGenerator.h
     Source/Generation/SongArrangement.cpp Source/Generation/SongArrangement.h
     Source/Integration/CyanoryxBridge.h

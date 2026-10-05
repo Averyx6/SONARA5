@@ -6,6 +6,7 @@
 #include <vector>
 #include <deque>
 #include "Engine/SonaraEngine.h"
+#include "Engine/SongRenderEngine.h"
 #include "Generation/PromptGenerator.h"
 #include "Generation/SongArrangement.h"
 #include "Integration/CyanoryxBridge.h"
@@ -105,16 +106,15 @@ public:
 private:
     static constexpr int firstMusicalLane=4, musicalLaneCount=8;
     void injectPreviewMidi(juce::MidiBuffer&,int);
-    void injectSongLaneMidi(const sonara::ArrangementLane&, juce::MidiBuffer&, int64_t startSample, int numSamples, double bpm) noexcept;
-    int collectDrumTriggers(const sonara::SongArrangement&, int64_t startSample, int numSamples) noexcept;
+    sonara::SongMixArray songMixSnapshot() const noexcept;
+    void storeArrangement(std::shared_ptr<const sonara::SongArrangement>);
     void renderSongBlock(juce::AudioBuffer<float>&, int numSamples);
     void setPatchWithHistory(const sonara::SoundDNA&);
     void publishSong(std::shared_ptr<sonara::SongArrangement>);
 
     sonara::SonaraEngine engine;
-    std::array<sonara::SonaraEngine,musicalLaneCount> songEngines;
-    juce::Reverb songReverb;
-    sonara::PromptGenerator generator; sonara::CyanoryxBridge cyanoryx; sonara::MutationLocks locks; sonara::DrumSynth drumSynth;
+    sonara::SongRenderEngine songRenderer;
+    sonara::PromptGenerator generator; sonara::CyanoryxBridge cyanoryx; sonara::MutationLocks locks;
     sonara::ReferenceAnalyzer referenceAnalyzer; sonara::ReferenceAnalysis reference; bool referenceLoaded=false, referenceMelodyPreview=false;
     sonara::AudioExporter audioExporter;
     uint64_t generationCounter=1;
@@ -125,20 +125,10 @@ private:
     std::atomic<float> lastSongNovelty{1.f};
     std::deque<std::vector<int>> melodyHistory;
     std::deque<std::vector<int>> harmonyHistory,bassHistory,drumHistory,pluckHistory,structureHistory;
-    std::atomic<bool> previewPlaying{false}; std::atomic<int64_t> previewSample{0}; std::atomic<bool> songPlaying{false}; std::atomic<int64_t> songSample{0}; std::atomic<int> songFadeRemaining{0}; std::atomic<int> selectedLane{9};
+    std::atomic<bool> previewPlaying{false}; std::atomic<int64_t> previewSample{0}; std::atomic<bool> songPlaying{false}; std::atomic<int64_t> songSample{0}; std::atomic<int> selectedLane{9};
     double previewSampleRate=44100.0,previewBpm=128.0; int64_t previewLengthSamples=1; int maximumBlockSize=512;
     std::shared_ptr<const sonara::SongArrangement> arrangement;
     std::array<std::atomic<float>,12> laneMixLevel{},laneMixPan{},laneMixWidth{},laneMixFx{};
-    std::array<juce::AudioBuffer<float>,musicalLaneCount> songScratch;
-    juce::AudioBuffer<float> songFxBus,songDrumBus;
-    std::array<juce::MidiBuffer,musicalLaneCount> songMidi;
-    std::array<std::array<float,2>,musicalLaneCount> laneHpX{},laneHpY{};
-    std::array<std::array<float,2>,musicalLaneCount> laneLpState{};
-    std::array<std::array<float,2>,musicalLaneCount> laneToneState{};
-    std::array<float,2> masterHpX{},masterHpY{};
-    std::vector<float> songDuckEnvelope;
-    float songDuckState=0.f;
-    std::array<sonara::DrumTrigger,256> drumTriggers{};
     std::vector<sonara::SoundDNA> patchHistory; int historyIndex=-1; sonara::SoundDNA patchA,patchB; bool hasA=false,hasB=false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SonaraAudioProcessor)
 };

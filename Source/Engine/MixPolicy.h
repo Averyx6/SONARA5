@@ -75,8 +75,8 @@ inline float stereoWidth(int lane,float requested,float energy) noexcept
 
 inline float sectionGain(int lane,const juce::String& section) noexcept
 {
-    const bool intro=section=="INTRO";
-    const bool verse=section=="VERSE";
+    const bool intro=section=="INTRO"||section=="OUTRO";
+    const bool verse=section.startsWith("VERSE");
     const bool build=section.contains("BUILD");
     const bool chorus=section=="CHORUS";
     const bool drop=section.contains("DROP");
@@ -98,8 +98,8 @@ inline float sectionGain(int lane,const juce::String& section) noexcept
 
 inline float drumGain(const juce::String& section,float energy) noexcept
 {
-    const bool intro=section=="INTRO";
-    const bool verse=section=="VERSE";
+    const bool intro=section=="INTRO"||section=="OUTRO";
+    const bool verse=section.startsWith("VERSE");
     const bool build=section.contains("BUILD");
     const bool chorus=section=="CHORUS";
     const bool drop=section.contains("DROP");

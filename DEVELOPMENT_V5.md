@@ -40,3 +40,19 @@ including the unchanged real-time and multi-instance CPU budgets.
 
 Validation: local Release producer, arrangement and full processor acceptance passed;
 original CPU limits and musical safety assertions unchanged.
+
+## v4.4 — one playback/render path
+
+- Extract the existing musical mixer into a single bounded renderer shared by
+  processor preview, full mix and isolated stems; preserve SoundDNA and mix state.
+- Cache complete sample-timed on/off schedules off the audio thread: long pads/FX
+  no longer lose note-offs through different preview/export lookback windows.
+- Use independent deterministic drum voices per lane and apply drum level/pan.
+- Share seek fade, section-boundary automation, host sample rate and four-second
+  decay tail; pause preserves state and restart clears voices and all FX buffers.
+- Serialize renderer reconfiguration/seek with the JUCE callback lock.
+- Verify actual host preview against exported PCM, isolated sub against its stem,
+  held note termination and repeat-start DSP reset.
+
+Validation: local Release processor acceptance passed, including original CPU,
+DSP safety and loudness assertions and new sample parity checks (2e-6 tolerance).

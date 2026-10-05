@@ -717,6 +717,77 @@ int main()
     stems.deleteRecursively();wav.deleteFile();
     if(wavCount!=12)return fail("stem export did not produce 12 lane WAVs");
 
+    // Exercise the host processor against actual 24-bit files, including long
+    // held notes, fractional sample times, all mix controls and section boundaries.
+    {
+        sonara::SongArrangement fixture;fixture.generate("progressive house 137 BPM F minor, spacious",137,0x440044);
+        for(auto& l:fixture.editLanes())l.notes.clear();
+        auto& lanes=fixture.editLanes();
+        for(int b=0;b<16;++b)
+        {
+            lanes[0].notes.push_back({36,100,b+.013,.15});
+            if(b%2==1)lanes[1].notes.push_back({38,85,b+.031,.15});
+            lanes[2].notes.push_back({42,60,b+.5,.12});
+        }
+        for(int i=4;i<12;++i)
+            lanes[(size_t)i].notes.push_back({i<6?36:65,82,.125+i*.01,i==8||i==11?10.75:1.5});
+        auto tree=fixture.toValueTree();tree.setProperty("bars",4,nullptr);
+        auto sections=tree.getChildWithName("SECTIONS");sections.removeAllChildren(nullptr);
+        for(int i=0;i<2;++i){juce::ValueTree section("SECTION");section.setProperty("name",i==0?"INTRO":"DROP",nullptr);section.setProperty("startBar",i*2,nullptr);section.setProperty("bars",2,nullptr);section.setProperty("energy",i==0?.2f:.95f,nullptr);sections.addChild(section,-1,nullptr);}
+        tree.getChildWithName("SECTION_GOALS").removeAllChildren(nullptr);
+        fixture=sonara::SongArrangement::fromValueTree(tree);
+        if(!fixture.validate())return fail("render parity fixture is invalid");
+        const auto temp=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-v5-parity","");temp.createDirectory();
+        juce::ValueTree project("SONARA_PROJECT");project.addChild(fixture.getLanes()[9].sound.toValueTree(),-1,nullptr);project.addChild(fixture.toValueTree(),-1,nullptr);
+        const auto projectPath=temp.getChildFile("fixture.sonara");projectPath.replaceWithText(project.createXml()->toString());
+        SonaraAudioProcessor live;if(!live.loadProject(projectPath))return fail("parity fixture could not load into host");
+        live.prepareToPlay(44100,256);
+        sonara::SongMixArray mix{};
+        for(int i=0;i<12;++i)
+        {
+            mix[(size_t)i]={.65f+i*.025f,i==5?0.f:(i%2==0?-.18f:.15f),.8f,.7f};
+            const auto m=mix[(size_t)i];
+            live.setLaneMix(i,SonaraAudioProcessor::LaneMixParameter::level,m.level);
+            live.setLaneMix(i,SonaraAudioProcessor::LaneMixParameter::pan,m.pan);
+            live.setLaneMix(i,SonaraAudioProcessor::LaneMixParameter::width,m.width);
+            live.setLaneMix(i,SonaraAudioProcessor::LaneMixParameter::fxSend,m.fxSend);
+        }
+        const auto file=temp.getChildFile("full.wav");
+        if(!live.exportFullMix(file))return fail("host full mix export failed");
+        juce::AudioFormatManager formats;formats.registerBasicFormats();std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
+        if(!reader||reader->sampleRate!=44100)return fail("export did not retain host sample rate");
+        live.startSongPreview();
+        juce::AudioBuffer<float> block(2,256),readback(2,256);juce::MidiBuffer midi;
+        float maxError=0.f;
+        for(int64_t start=0;start<reader->lengthInSamples;start+=256)
+        {
+            live.processBlock(block,midi);const int n=(int)std::min<int64_t>(256,reader->lengthInSamples-start);
+            if(!reader->read(&readback,0,n,start,true,true))return fail("parity WAV read failed");
+            for(int ch=0;ch<2;++ch)for(int s=0;s<n;++s)maxError=juce::jmax(maxError,std::abs(block.getSample(ch,s)-readback.getSample(ch,s)));
+        }
+        if(maxError>2.0e-6f)return fail("preview/full WAV sample parity failed: "+juce::String(maxError,9));
+        if(live.isSongPlaying())return fail("preview did not stop after the common decay tail");
+        live.startSongPreview();live.processBlock(block,midi);
+        reader->read(&readback,0,256,0,true,true);
+        for(int ch=0;ch<2;++ch)for(int s=0;s<256;++s)
+            if(std::abs(block.getSample(ch,s)-readback.getSample(ch,s))>2.0e-6f)return fail("restarting preview retained old DSP energy");
+        sonara::SongRenderEngine solo;solo.prepare(44100,256);solo.configure(fixture);
+        const auto stem=temp.getChildFile("sub.wav");
+        if(!exporter.renderSelectedLane(fixture,5,stem,44100,{},&mix))return fail("isolated SUB export failed");
+        reader.reset(formats.createReaderFor(stem));if(!reader)return fail("isolated SUB could not read");
+        for(int64_t start=0;start<reader->lengthInSamples;start+=256)
+        {
+            const int n=(int)std::min<int64_t>(256,reader->lengthInSamples-start);
+            solo.render(fixture,block,start,n,&mix,5);reader->read(&readback,0,n,start,true,true);
+            for(int s=0;s<n;++s)
+                if(std::abs(readback.getSample(0,s)-readback.getSample(1,s))>1.0e-7f
+                   ||std::abs(block.getSample(0,s)-readback.getSample(0,s))>2.0e-6f)
+                    return fail("SUB stem differs from isolated preview or is not mono");
+        }
+        if(solo.hasActiveVoices())return fail("held note missed its scheduled note-off");
+        reader.reset();temp.deleteRecursively();
+    }
+
     std::cout<<"SONARA processor playback, CPU, seek, randomize, surprise and export tests passed\n";
     return 0;
 }
