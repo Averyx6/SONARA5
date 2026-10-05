@@ -1,0 +1,49 @@
+name: SONARA v4 register-intent source fix
+on:
+  push:
+    branches: [ v3.5-development ]
+    paths: [ '.github/workflows/v4-register-fix.yml' ]
+permissions:
+  contents: write
+jobs:
+  patch-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v3.5-development
+          fetch-depth: 0
+      - name: Make final-hook register development follow producer intent
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('Source/Generation/SongArrangement.cpp')
+          text = p.read_text(encoding='utf-8')
+          old = '''        const bool developedFinal=currentSection!=nullptr
+              &&currentSection->name.contains("FINAL")
+              &&bar-currentSection->startBar>=4;'''
+          new = '''        const bool developedFinal=currentSection!=nullptr
+              &&currentSection->name.contains("FINAL")
+              &&plan.finalEvolution>.38f
+              &&bar-currentSection->startBar>=4;'''
+          if new in text:
+              print('Source already patched')
+          elif old in text:
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+              print('Patched SongArrangement.cpp')
+          else:
+              raise SystemExit('Expected alignment source block not found')
+          PY
+      - name: Commit source fix
+        shell: bash
+        run: |
+          if git diff --quiet -- Source/Generation/SongArrangement.cpp; then
+            echo "No source change needed"
+            exit 0
+          fi
+          git config user.name "SONARA CI Maintainer"
+          git config user.email "actions@users.noreply.github.com"
+          git add Source/Generation/SongArrangement.cpp
+          git commit -m "Respect final evolution intent in register alignment"
+          git push origin HEAD:v3.5-development
