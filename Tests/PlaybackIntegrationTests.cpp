@@ -527,7 +527,7 @@ int main()
     auto resoundReader=resoundFormats.createReaderFor(resoundWav);
     if(!resoundReader||resoundReader->lengthInSamples<1024)
         return fail("RESOUND WAV could not be reopened");
-    juce::AudioBuffer<float> resoundAudio(2,(int)juce::jmin<juce::int64>(resoundReader->lengthInSamples,44100*4));
+    juce::AudioBuffer<float> resoundAudio(2,(int)std::min<juce::int64>(resoundReader->lengthInSamples,44100*4));
     resoundAudio.clear();
     if(!resoundReader->read(&resoundAudio,0,resoundAudio.getNumSamples(),0,true,true))
         return fail("RESOUND WAV readback failed");
@@ -694,7 +694,7 @@ int main()
     juce::AudioFormatManager exportFormats;exportFormats.registerBasicFormats();
     auto mixReader=exportFormats.createReaderFor(wav);
     if(!mixReader)return fail("full mix WAV could not be reopened");
-    const int inspectSamples=(int)juce::jmin<juce::int64>(mixReader->lengthInSamples,44100*12);
+    const int inspectSamples=(int)std::min<juce::int64>(mixReader->lengthInSamples,44100*12);
     juce::AudioBuffer<float> renderedMix(2,juce::jmax(1,inspectSamples));
     renderedMix.clear();
     if(!mixReader->read(&renderedMix,0,inspectSamples,0,true,true))

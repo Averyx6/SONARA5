@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "Engine/MixPolicy.h"
+#include "Generation/ProducerPrompt.h"
 #ifndef SONARA_HEADLESS_TEST
 #include "PluginEditor.h"
 #endif
@@ -783,11 +784,11 @@ void SonaraAudioProcessor::injectPreviewMidi(juce::MidiBuffer& m, int numSamples
     else
     {
         const int notes[] = {60,63,67,70,72,70,67,63,60,63,67,75,74,70,67,63};
-        const int64_t step = juce::jmax<int64_t>(1, previewLengthSamples / 16);
+        const int64_t step = std::max<int64_t>(1, previewLengthSamples / 16);
         for (int i = 0; i < 16; ++i)
         {
             const int64_t on = (int64_t) i * step;
-            const int64_t off = juce::jmin<int64_t>(previewLengthSamples - 1, on + (step * 3) / 4);
+            const int64_t off = std::min<int64_t>(previewLengthSamples - 1, on + (step * 3) / 4);
             if (on >= start && on < end) m.addEvent(juce::MidiMessage::noteOn(1, notes[i], (juce::uint8)108), (int)(on - start));
             if (off >= start && off < end) m.addEvent(juce::MidiMessage::noteOff(1, notes[i]), (int)(off - start));
         }
@@ -884,6 +885,18 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     const auto previousPluck=previous?lanePatternFingerprint(*previous,"PLUCK"):std::vector<int>{};
     const auto previousStructure=previous?previous->getStructureFingerprint():std::vector<int>{};
 
+    // Invalidate the displayed/exportable output before any attempt. A failed
+    // request can never masquerade as success by leaving the previous song live.
+    std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>{},std::memory_order_release);
+    lastSongSeed.store(0,std::memory_order_relaxed);
+    const auto preparedPrompt=sonara::ProducerPrompt::parse(prompt);
+    if(prompt.trim().isEmpty()||prompt.length()>8192||preparedPrompt.exclusions==4095u)
+    {
+        generationProgress.store(0.f);
+        generationStatus="Generation failed • enter a prompt with at least one instrument";
+        return false;
+    }
+
     std::shared_ptr<sonara::SongArrangement> made;
     std::shared_ptr<sonara::SongArrangement> bestCandidate;
     std::vector<int> acceptedFingerprint,acceptedHarmony,acceptedBass,acceptedDrums,acceptedPluck,acceptedStructure;
@@ -920,6 +933,7 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
         // full palette is generated exactly once, after the winning composition
         // plan has passed prompt, quality and whole-song novelty scoring.
         candidate->generateComposition(prompt,previewBpm,candidateSeed);
+        if(!candidate->validate())continue;
         auto fingerprint=melodyFingerprint(*candidate);
         auto harmony=candidate->getHarmonyFingerprint();
         auto bass=lanePatternFingerprint(*candidate,"BASS");
@@ -947,9 +961,11 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
               harmonySim*.35f+melodySim*.25f+rhythmSim*.12f+bassSim*.10f
              +drumSim*.08f+pluckSim*.05f+structureSim*.05f);
 
-        const float melodyQuality=melodyQualityScore(*candidate);
+        const bool leadExcluded=(candidate->getExclusions()&sonara::ProducerPrompt::lead)!=0u;
+        const bool drumsExcluded=(candidate->getExclusions()&sonara::ProducerPrompt::kick)!=0u;
+        const float melodyQuality=leadExcluded?1.f:melodyQualityScore(*candidate);
         const float harmonyQuality=harmonyQualityScore(*candidate);
-        const float productionQuality=productionQualityScore(*candidate);
+        const float productionQuality=(leadExcluded||drumsExcluded)?.82f:productionQualityScore(*candidate);
         const bool melodyClear=melodyQuality>=.68f;
         const float quality=melodyQuality*.42f+harmonyQuality*.20f+productionQuality*.38f;
         const float promptMatch=promptCompositionMatch(prompt,*candidate);
@@ -962,7 +978,7 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
         // fallback could publish a high-quality but familiar hook after the strict
         // gate missed; that is how repeated "same song" generations slipped out.
         const bool noveltySafe=melodySim<.55f&&harmonySim<.86f&&wholeSim<.64f;
-        if(!fingerprint.empty()&&!harmony.empty()&&noveltySafe&&melodyClear
+        if((!fingerprint.empty()||leadExcluded)&&!harmony.empty()&&noveltySafe&&melodyClear
            &&quality>=.66f&&promptMatch>=.64f&&combined>bestCombined)
         {
             bestCombined=combined;
@@ -985,7 +1001,7 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
 
         // Harmony and melody both have hard identity gates. This prevents a tiny
         // lead reroll from hiding a recycled chord/root skeleton.
-        if(!fingerprint.empty()&&!harmony.empty()&&melodySim<.55f&&harmonySim<.86f
+        if((!fingerprint.empty()||leadExcluded)&&!harmony.empty()&&melodySim<.55f&&harmonySim<.86f
            &&wholeSim<.64f&&melodyQuality>=.72f&&quality>=.75f&&promptMatch>=.68f)
         {
             made=std::move(candidate);
@@ -1032,7 +1048,7 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     if(!made)
     {
         generationProgress.store(0.f);
-        generationStatus="Song generation failed to create a valid melody • previous song left unchanged";
+        generationStatus="Generation failed • no valid new song was published";
         return false;
     }
 
@@ -1078,6 +1094,41 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
                    +"% • melody "+juce::String((1.f-melodySimilarityMax)*100.f,0)
                    +"% • quality "+juce::String(bestQuality*100.f,0)
                    +"% • prompt "+juce::String(bestPromptMatch*100.f,0)+"%";
+    return true;
+}
+
+void SonaraAudioProcessor::publishSong(std::shared_ptr<sonara::SongArrangement> made)
+{
+    const auto& lanes=made->getLanes();
+    drumSynth.configureKit(lanes[0].sound,lanes[1].sound,lanes[2].sound,lanes[3].sound);
+    for(int i=0;i<musicalLaneCount;++i)
+    {
+        songEngines[(size_t)i].allNotesOff();
+        songEngines[(size_t)i].setPatch(lanes[(size_t)(firstMusicalLane+i)].sound);
+    }
+    previewBpm=made->getBpm();
+    lastSongSeed.store(made->getSongId(),std::memory_order_relaxed);
+    std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>(made),std::memory_order_release);
+    setSelectedLane(9);
+}
+
+bool SonaraAudioProcessor::generateTrackWithSeed(const juce::String& prompt,uint64_t seed)
+{
+    stopPreview();stopSongPreview();
+    std::atomic_store_explicit(&arrangement,std::shared_ptr<const sonara::SongArrangement>{},std::memory_order_release);
+    lastSongSeed.store(0,std::memory_order_relaxed);
+    generationProgress.store(.04f);
+    if(prompt.trim().isEmpty()||prompt.length()>8192)
+    {generationStatus="Generation failed • enter a valid prompt";generationProgress.store(0.f);return false;}
+    generationStatus="Planning the requested seed";
+    auto made=std::make_shared<sonara::SongArrangement>();
+    made->generate(prompt,previewBpm,seed);
+    juce::String reason;
+    if(!made->validate(&reason))
+    {generationStatus="Generation failed • "+reason;generationProgress.store(0.f);return false;}
+    publishSong(std::move(made));
+    generationStatus="Song ready • reproduced seed "+juce::String::toHexString((juce::int64)seed);
+    generationProgress.store(1.f);
     return true;
 }
 
@@ -1857,7 +1908,7 @@ bool SonaraAudioProcessor::loadProject(const juce::File& file)
     auto lockTree=root.getChildWithName("MUTATION_LOCKS");
     locks=lockTree.isValid()?sonara::MutationLocks::fromValueTree(lockTree):sonara::MutationLocks{};
     applyLaneMixTree(*this,root.getChildWithName("LANE_MIX"));
-    generationCounter=(uint64_t)juce::jmax<juce::int64>(1,
+    generationCounter=(uint64_t)std::max<juce::int64>(1,
         root.getProperty("generationCounter","1").toString().getLargeIntValue());
     previewBpm=juce::jlimit(60.0,200.0,(double)root.getProperty("bpm",128.0));
 
@@ -2147,7 +2198,7 @@ void SonaraAudioProcessor::setStateInformation(const void* data,int bytes)
         const auto lockState=state.getChildWithName("MUTATION_LOCKS");
         locks=lockState.isValid()?sonara::MutationLocks::fromValueTree(lockState):sonara::MutationLocks{};
         applyLaneMixTree(*this,state.getChildWithName("LANE_MIX"));
-        generationCounter=(uint64_t)juce::jmax<juce::int64>(1,
+        generationCounter=(uint64_t)std::max<juce::int64>(1,
             state.getProperty("generationCounter","1").toString().getLargeIntValue());
         previewBpm=juce::jlimit(60.0,200.0,(double)state.getProperty("bpm",128.0));
 

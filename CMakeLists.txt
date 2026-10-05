@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(SONARA VERSION 4.0.0)
+project(SONARA VERSION 4.1.0)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -113,6 +113,20 @@ if(BUILD_TESTING)
         juce::juce_audio_utils juce::juce_dsp
         juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
     add_test(NAME sonara_arrangement_generation COMMAND SONARA_ArrangementTests)
+
+    juce_add_console_app(SONARA_ProducerTests PRODUCT_NAME "SONARA Producer Intelligence Tests")
+    juce_generate_juce_header(SONARA_ProducerTests)
+    target_sources(SONARA_ProducerTests PRIVATE
+        Tests/ProducerIntelligenceTests.cpp
+        Source/Generation/SongArrangement.cpp Source/Generation/SongArrangement.h
+        Source/Generation/ProducerPrompt.h
+        Source/Generation/PromptGenerator.cpp Source/Generation/PromptGenerator.h
+        Source/Engine/SoundDNA.cpp Source/Engine/SoundDNA.h)
+    target_compile_definitions(SONARA_ProducerTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(SONARA_ProducerTests PRIVATE
+        juce::juce_audio_utils juce::juce_dsp
+        juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+    add_test(NAME sonara_producer_intelligence COMMAND SONARA_ProducerTests)
 
     juce_add_console_app(SONARA_PlaybackTests PRODUCT_NAME "SONARA Playback Acceptance Tests")
     juce_generate_juce_header(SONARA_PlaybackTests)

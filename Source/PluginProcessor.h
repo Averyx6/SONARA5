@@ -34,6 +34,7 @@ public:
     bool writePreviewMidiFile(const juce::File&) const;
 
     bool generateTrack(const juce::String& prompt);
+    bool generateTrackWithSeed(const juce::String& prompt,uint64_t seed);
     bool randomizeEverything(const juce::String& prompt);
     juce::String makeSurprisePrompt();
     void regenerateDrums(const juce::String& prompt);
@@ -108,6 +109,7 @@ private:
     int collectDrumTriggers(const sonara::SongArrangement&, int64_t startSample, int numSamples) noexcept;
     void renderSongBlock(juce::AudioBuffer<float>&, int numSamples);
     void setPatchWithHistory(const sonara::SoundDNA&);
+    void publishSong(std::shared_ptr<sonara::SongArrangement>);
 
     sonara::SonaraEngine engine;
     std::array<sonara::SonaraEngine,musicalLaneCount> songEngines;

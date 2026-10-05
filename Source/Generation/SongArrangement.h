@@ -76,6 +76,8 @@ public:
     juce::String getSectionGoalSummary() const;
     juce::String getPromptIntentSummary() const;
     const juce::String& getSourcePrompt() const noexcept { return sourcePrompt; }
+    unsigned getExclusions() const noexcept { return promptIntent.exclusionMask; }
+    bool validate(juce::String* reason=nullptr) const;
     juce::String getSoundPaletteSummary() const;
     std::vector<int> getSoundPaletteFingerprint() const;
     std::vector<int> getProgressionFingerprint() const;
@@ -221,7 +223,7 @@ private:
     void alignPitchedLanesToLead();
     void addFx(uint64_t seed);
 
-    juce::String sourcePrompt;
+    juce::String sourcePrompt, resolvedPrompt;
     PromptIntent promptIntent;
     double tempo = 128.0;
     int bars = defaultBars;

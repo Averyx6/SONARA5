@@ -30,7 +30,7 @@ ReferenceAnalysis ReferenceAnalyzer::analyseAudio(const juce::File& file) const
     out.sampleRate = reader->sampleRate;
     out.durationSeconds = reader->sampleRate > 0.0 ? (double) reader->lengthInSamples / reader->sampleRate : 0.0;
     const int64_t maxSamples = (int64_t) std::llround(reader->sampleRate * 90.0); // bounded, fast analysis
-    const int64_t inspectSamples = juce::jmin<int64_t>(reader->lengthInSamples, maxSamples);
+    const int64_t inspectSamples = std::min<int64_t>(reader->lengthInSamples, maxSamples);
     if (inspectSamples <= 0 || inspectSamples > (int64_t) std::numeric_limits<int>::max()) return out;
 
     const int channels = juce::jlimit(1, 2, (int) reader->numChannels);

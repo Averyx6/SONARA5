@@ -46,7 +46,7 @@ bool AudioExporter::renderSelectedLane(const SongArrangement& a,int laneIndex,co
     SonaraEngine synth;DrumSynth drums;if(lane.drums){drums.prepare(sampleRate);drums.configureKit(lane.sound,lane.sound,lane.sound,lane.sound);}else{synth.prepare(sampleRate,blockSize,2);synth.setPatch(lane.sound);}
     for(int64_t start=0;start<total;start+=blockSize)
     {
-        const int n=(int)juce::jmin<int64_t>(blockSize,total-start);
+        const int n=(int)std::min<int64_t>(blockSize,total-start);
         block.clear();
         juce::AudioBuffer<float> view(block.getArrayOfWritePointers(),block.getNumChannels(),0,n);
         if(lane.drums)
@@ -102,7 +102,7 @@ bool AudioExporter::renderReferenceMelody(const ReferenceAnalysis& reference,con
 
     for(int64_t start=0;start<total;start+=blockSize)
     {
-        const int n=(int)juce::jmin<int64_t>(blockSize,total-start);
+        const int n=(int)std::min<int64_t>(blockSize,total-start);
         block.clear();
         juce::AudioBuffer<float> view(block.getArrayOfWritePointers(),2,0,n);
         injectLaneMidi(lane,midi,start,n,bpm,sampleRate);
@@ -119,7 +119,7 @@ bool AudioExporter::renderReferenceMelody(const ReferenceAnalysis& reference,con
 
         if(!writer->writeFromAudioSampleBuffer(block,0,n))return false;
         if(cb&&start%(blockSize*64)==0)
-            cb((float)start/(float)juce::jmax<int64_t>(1,total),"Rendering RESOUND WAV");
+            cb((float)start/(float)std::max<int64_t>(1,total),"Rendering RESOUND WAV");
     }
 
     if(cb)cb(1.f,"RESOUND WAV ready");
@@ -179,7 +179,7 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& des
 
     for(int64_t startSample=0;startSample<total;startSample+=blockSize)
     {
-        const int n=(int)juce::jmin<int64_t>(blockSize,total-startSample);
+        const int n=(int)std::min<int64_t>(blockSize,total-startSample);
         block.clear();fxBus.clear();drumBus.clear();
 
         const double blockBeat=(double)startSample/spb;

@@ -1,5 +1,6 @@
 #include "SongArrangement.h"
 #include "PromptGenerator.h"
+#include "ProducerPrompt.h"
 #include <cmath>
 #include <algorithm>
 #include <array>
@@ -64,9 +65,9 @@ SongArrangement::PromptIntent SongArrangement::parsePromptIntent(const juce::Str
     PromptIntent result;
     result.tempo=juce::jlimit(60.0,200.0,fallbackBpm);
 
-    auto normalized=raw.toLowerCase()
-        .replace(juce::String::fromUTF8("\xe2\x99\xaf"),"#")
-        .replace(juce::String::fromUTF8("\xe2\x99\xad"),"b");
+    const auto prepared=ProducerPrompt::parse(raw);
+    auto normalized=prepared.positive;
+    result.exclusionMask=prepared.exclusions;
     juce::StringArray tokens;
     tokens.addTokens(normalized," ,;:/\t\r\n()[]{}","\"'");
     tokens.trim();tokens.removeEmptyStrings();
@@ -193,8 +194,10 @@ SongArrangement::PromptIntent SongArrangement::parsePromptIntent(const juce::Str
         if(tokens[i+1].startsWithIgnoreCase("bar"))
         {
             const int value=tokens[i].getIntValue();
-            if(value>=48&&value<=160){result.targetBars=4*((value+2)/4);break;}
+            if(value>=48&&value<=512){result.targetBars=4*((value+2)/4);break;}
         }
+    if(result.targetBars==0&&prepared.durationSeconds>0.0)
+        result.targetBars=juce::jlimit(48,512,4*(int)std::llround(prepared.durationSeconds*result.tempo/960.0));
 
     if(positive("rising motif")||positive("rising hook")||positive("rising melody"))result.hookShape=1;
     else if(positive("falling motif")||positive("falling hook")||positive("falling melody"))result.hookShape=2;
@@ -318,7 +321,7 @@ std::array<int,4> SongArrangement::chordTonesFor(const HarmonyEvent& event) cons
 void SongArrangement::buildHarmonyPlan(uint64_t seed)
 {
     harmonyPlan=HarmonyPlan{};
-    const auto p=sourcePrompt.toLowerCase();
+    const auto p=resolvedPrompt.toLowerCase();
     const bool tech=p.contains("tech house")||p.contains("minimal house");
     const bool cinematic=p.contains("cinematic")||p.contains("film");
     const bool pop=p.contains("pop")||p.contains("radio");
@@ -543,7 +546,7 @@ void SongArrangement::buildHarmonyTimeline(uint64_t seed)
 {
     harmonyEvents.clear();
     const int n=juce::jmax(1,harmonyPlan.progressionLength);
-    const auto prompt=sourcePrompt.toLowerCase();
+    const auto prompt=resolvedPrompt.toLowerCase();
     const bool explicitBorrowed=prompt.contains("borrowed chord")||prompt.contains("modal interchange");
     const bool explicitExtended=prompt.contains("7th chord")||prompt.contains("extended chord");
     bool placedBorrowedColour=false,placedExtendedColour=false;
@@ -700,6 +703,8 @@ juce::String SongArrangement::getPromptIntentSummary() const
     if((promptIntent.exclusionMask&4u)!=0u)excluded.add("ARP");
     if((promptIntent.exclusionMask&8u)!=0u)excluded.add("FX");
     if((promptIntent.exclusionMask&16u)!=0u)excluded.add("HATS");
+    static constexpr const char* otherNames[]={"BASS","SUB","CHORDS","LEAD","KICK","SNARE","PERCUSSION"};
+    for(int i=0;i<7;++i)if((promptIntent.exclusionMask&(32u<<i))!=0u)excluded.add(otherNames[i]);
     if(!excluded.isEmpty())exclusions=excluded.joinIntoString(",");
     return "TEMPO: "+juce::String(promptIntent.tempo,1)
         +" | KEY: "+pitchNames[((promptIntent.rootMidi%12)+12)%12]+" "+(promptIntent.minor?"MINOR":"MAJOR")
@@ -975,7 +980,7 @@ int SongArrangement::parseRootMidi(const juce::String& raw, bool& minorOut)
 void SongArrangement::buildSongPlan(uint64_t seed)
 {
     juce::ignoreUnused(seed);
-    const auto p=sourcePrompt.toLowerCase();
+    const auto p=resolvedPrompt.toLowerCase();
     plan.structureVariant=(int)(random01(domains.structure,0x1001)*8.f)%8;
     plan.structureStyle=plan.structureVariant%4;
     // Structure families: radio/songwriter, festival, progressive and cinematic.
@@ -1232,6 +1237,11 @@ void SongArrangement::buildSongPlan(uint64_t seed)
     else if(plan.dropCharacter==2){plan.density=juce::jmax(plan.density,.70f);plan.drumDrive=juce::jmax(plan.drumDrive,1.02f);plan.restAmount=juce::jmin(plan.restAmount,.16f);}
     else if(plan.dropCharacter==3){plan.hookStrength=juce::jmax(plan.hookStrength,.92f);plan.space=juce::jmax(plan.space,.70f);plan.finalEvolution=juce::jmax(plan.finalEvolution,.72f);}
     else if(plan.dropCharacter==4){plan.aggression=juce::jmax(plan.aggression,.88f);plan.dropIntensity=juce::jmax(plan.dropIntensity,1.08f);plan.drumDrive=juce::jmax(plan.drumDrive,1.08f);plan.space=juce::jmin(plan.space,.42f);}
+    if(promptIntent.densityDirection<0){plan.density=juce::jmin(plan.density,.48f);plan.restAmount=juce::jmax(plan.restAmount,.30f);}
+    if(promptIntent.spaceDirection<0)plan.space=juce::jmin(plan.space,.22f);
+    else if(promptIntent.spaceDirection>0)plan.space=juce::jmax(plan.space,.80f);
+    if(promptIntent.aggressionDirection<0)plan.aggression=juce::jmin(plan.aggression,.30f);
+    if(promptIntent.finalEvolutionDirection<0)plan.finalEvolution=.18f;
 }
 
 void SongArrangement::buildSections(uint64_t seed)
@@ -1295,7 +1305,7 @@ void SongArrangement::buildSections(uint64_t seed)
     }
     if(plan.structureVariant&4)setMin("BREAKDOWN",12);
 
-    const auto p=sourcePrompt.toLowerCase();
+    const auto p=resolvedPrompt.toLowerCase();
     const bool festival=p.contains("festival")||p.contains("mainstage")||p.contains("big room");
     if(festival)
     {
@@ -1384,7 +1394,7 @@ void SongArrangement::buildSectionGoals(uint64_t seed)
 {
     sectionGoals.clear();
     sectionGoals.reserve(sections.size());
-    const auto prompt=sourcePrompt.toLowerCase();
+    const auto prompt=resolvedPrompt.toLowerCase();
 
     for(size_t i=0;i<sections.size();++i)
     {
@@ -1478,6 +1488,7 @@ void SongArrangement::generateComposition(const juce::String& prompt, double bpm
 {
     clear();
     sourcePrompt = prompt;
+    resolvedPrompt=ProducerPrompt::parse(prompt).positive;
     promptIntent=parsePromptIntent(prompt,bpm);
     tempo=promptIntent.tempo;
     rootMidi=promptIntent.rootMidi;
@@ -1507,7 +1518,18 @@ void SongArrangement::generateComposition(const juce::String& prompt, double bpm
             ||(lane.name=="PLUCK"&&(promptIntent.exclusionMask&4u)!=0u)
             ||(lane.name=="FX / TRANSITIONS"&&(promptIntent.exclusionMask&8u)!=0u)
             ||(lane.name=="HATS"&&(promptIntent.exclusionMask&16u)!=0u);
-        if(excluded)lane.notes.clear();
+        const bool otherExcluded=(lane.name=="BASS"&&(promptIntent.exclusionMask&32u)!=0u)
+            ||(lane.name=="SUB"&&(promptIntent.exclusionMask&64u)!=0u)
+            ||(lane.name=="CHORDS"&&(promptIntent.exclusionMask&128u)!=0u)
+            ||(lane.name=="LEAD"&&(promptIntent.exclusionMask&256u)!=0u)
+            ||(lane.name=="KICK"&&(promptIntent.exclusionMask&512u)!=0u)
+            ||(lane.name=="SNARE / CLAP"&&(promptIntent.exclusionMask&1024u)!=0u)
+            ||(lane.name=="PERCUSSION"&&(promptIntent.exclusionMask&2048u)!=0u);
+        if(excluded||otherExcluded)lane.notes.clear();
+        // Writers may append fills after a bar's main hits. Publish one canonical
+        // event order for the realtime scheduler, MIDI and project round-trip.
+        std::stable_sort(lane.notes.begin(),lane.notes.end(),[](const ArrangementNote& a,const ArrangementNote& b){return a.beat<b.beat;});
+        for(auto& n:lane.notes)n.length=juce::jmin(n.length,getTotalBeats()-n.beat);
     }
 
     harmonyId=computeHarmonyId();
@@ -1520,6 +1542,7 @@ void SongArrangement::regenerateDrumsOnly(const juce::String& drumPrompt, uint64
 
     const auto preservedLanes=lanes;
     const auto originalPrompt=sourcePrompt;
+    const auto originalResolved=resolvedPrompt;
     const auto originalPlan=plan;
     const auto originalDomains=domains;
 
@@ -1527,12 +1550,13 @@ void SongArrangement::regenerateDrumsOnly(const juce::String& drumPrompt, uint64
     // generation domains and drum-specific plan fields are refreshed.
     const auto extra=drumPrompt.trim();
     sourcePrompt=originalPrompt+(extra.isNotEmpty()?juce::String(", ")+extra:juce::String());
+    resolvedPrompt=ProducerPrompt::parse(sourcePrompt).positive;
     domains.drums=mix64(seed^0x4452554d5f4e4557ULL);
     domains.soundPalette=mix64(seed^0x4452554d5f534e44ULL);
     plan.drumGroove=(int)(random01(domains.drums,0x1002)*6.f)%6;
     plan.hatMode=(int)(random01(domains.drums,0x1003)*4.f)%4;
 
-    const auto p=sourcePrompt.toLowerCase();
+    const auto p=resolvedPrompt.toLowerCase();
     const bool energetic=p.contains("energetic")||p.contains("powerful")
         ||p.contains("festival")||p.contains("hard")||p.contains("edm");
 
@@ -1545,6 +1569,7 @@ void SongArrangement::regenerateDrumsOnly(const juce::String& drumPrompt, uint64
     {
         lanes=preservedLanes;
         sourcePrompt=originalPrompt;
+        resolvedPrompt=originalResolved;
         plan=originalPlan;
         domains=originalDomains;
         return;
@@ -1562,6 +1587,7 @@ void SongArrangement::regenerateDrumsOnly(const juce::String& drumPrompt, uint64
     const int newGroove=plan.drumGroove;
     const int newHatMode=plan.hatMode;
     sourcePrompt=originalPrompt;
+    resolvedPrompt=originalResolved;
     plan=originalPlan;
     plan.drumGroove=newGroove;
     plan.hatMode=newHatMode;
@@ -1573,7 +1599,7 @@ void SongArrangement::finalizeSoundPalette()
 {
     if(lanes.empty())return;
     PromptGenerator designer;
-    const auto productionPrompt=sourcePrompt.toLowerCase();
+    const auto productionPrompt=resolvedPrompt.toLowerCase();
     const bool festival=productionPrompt.contains("festival")||productionPrompt.contains("mainstage")||productionPrompt.contains("big room");
     const bool progressive=productionPrompt.contains("progressive house")||productionPrompt.contains("melodic house");
     const bool tech=productionPrompt.contains("tech house")||productionPrompt.contains("minimal house");
@@ -1611,7 +1637,7 @@ void SongArrangement::finalizeSoundPalette()
     for (size_t i = 0; i < lanes.size(); ++i)
     {
         auto& lane = lanes[i];
-        juce::String soundPrompt = sourcePrompt + " " + lane.name + " ";
+        juce::String soundPrompt = resolvedPrompt + " " + lane.name + " ";
         // Drum synthesis has its own material vocabulary; applying e.g. the
         // generic "digital" family after the kick rule could relabel and reshape
         // a kick as a melodic digital patch. Drums share palette impact/macros,
@@ -1830,7 +1856,7 @@ std::vector<int> SongArrangement::getSoundPaletteFingerprint() const
 void SongArrangement::addDrums(uint64_t seed, bool energetic)
 {
     ArrangementLane kick{"KICK",10,true}, snare{"SNARE / CLAP",10,true}, hats{"HATS",10,true}, perc{"PERCUSSION",10,true};
-    const auto p = sourcePrompt.toLowerCase();
+    const auto p = resolvedPrompt.toLowerCase();
     const bool trance = p.contains("trance");
     const bool house = p.contains("house") || p.contains("future rave") || p.contains("edm") || trance;
     const bool tech = p.contains("tech house") || p.contains("minimal house");
@@ -2083,7 +2109,7 @@ void SongArrangement::addHarmony(uint64_t seed)
 {
     ArrangementLane bass{"BASS",2,false}, sub{"SUB",3,false}, chords{"CHORDS",4,false}, pluck{"PLUCK",5,false}, pad{"PAD",6,false};
 
-    const auto productionPrompt=sourcePrompt.toLowerCase();
+    const auto productionPrompt=resolvedPrompt.toLowerCase();
     const bool mainstreamSong=productionPrompt.contains("progressive house")
         ||productionPrompt.contains("melodic house")||productionPrompt.contains("edm")
         ||productionPrompt.contains("pop")||productionPrompt.contains("trance")
@@ -2535,7 +2561,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
     };
     static constexpr int rhythmCount[10]={4,4,5,3,8,5,3,6,5,6};
 
-    const auto p=sourcePrompt.toLowerCase();
+    const auto p=resolvedPrompt.toLowerCase();
     const bool tech=p.contains("tech house")||p.contains("minimal house");
     const bool dnb=p.contains("drum and bass")||p.contains("dnb");
     const bool cinematic=p.contains("cinematic")||p.contains("film");
@@ -3237,7 +3263,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
 
 void SongArrangement::alignPitchedLanesToLead()
 {
-    const auto p=sourcePrompt.toLowerCase();
+    const auto p=resolvedPrompt.toLowerCase();
     const bool songMode=p.contains("progressive house")||p.contains("melodic house")
         ||p.contains("edm")||p.contains("pop")||p.contains("trance")
         ||p.contains("festival")||p.contains("mainstage")||p.contains("future rave");
@@ -3368,7 +3394,7 @@ void SongArrangement::alignPitchedLanesToLead()
 void SongArrangement::addFx(uint64_t seed)
 {
     ArrangementLane fx{"FX / TRANSITIONS",8,false};
-    const auto prompt=sourcePrompt.toLowerCase();
+    const auto prompt=resolvedPrompt.toLowerCase();
     const bool festival=prompt.contains("festival")||prompt.contains("mainstage")
         ||prompt.contains("big room")||prompt.contains("powerful drop")
         ||prompt.contains("massive drop");
@@ -3474,6 +3500,37 @@ void SongArrangement::addFx(uint64_t seed)
     lanes.push_back(std::move(fx));
 }
 
+bool SongArrangement::validate(juce::String* reason) const
+{
+    auto fail=[&](const juce::String& why){if(reason)*reason=why;return false;};
+    if(!std::isfinite(tempo)||tempo<60.0||tempo>200.0||bars<1||bars>512)
+        return fail("Invalid tempo or duration");
+    if(lanes.size()!=12||sections.empty()||sectionGoals.size()!=sections.size())
+        return fail("Incomplete producer plan");
+    int boundary=0;
+    for(const auto& s:sections)
+    {
+        if(s.startBar!=boundary||s.bars<=0||!std::isfinite(s.energy))return fail("Invalid section timing");
+        boundary+=s.bars;
+    }
+    if(boundary!=bars)return fail("Sections do not cover the song");
+    size_t count=0;
+    for(const auto& lane:lanes)
+    {
+        double previous=-1.0;
+        for(const auto& n:lane.notes)
+        {
+            if(!std::isfinite(n.beat)||!std::isfinite(n.length)||n.beat<0.0||n.beat<previous
+               ||n.beat>=getTotalBeats()||n.length<=0.0||n.beat+n.length>getTotalBeats()+.001
+               ||n.note<0||n.note>127||n.velocity<1||n.velocity>127)return fail("Invalid MIDI event");
+            previous=n.beat;
+            if(++count>200000)return fail("Arrangement exceeds event budget");
+        }
+    }
+    if(count==0)return fail("The prompt excludes every instrument");
+    return true;
+}
+
 bool SongArrangement::writeMidiFile(const juce::File& destination) const
 {
     if (lanes.empty()) return false;
@@ -3515,7 +3572,7 @@ bool SongArrangement::writeMidiFile(const juce::File& destination) const
 juce::ValueTree SongArrangement::toValueTree() const
 {
     juce::ValueTree root("SONARA_ARRANGEMENT");
-    root.setProperty("schema",4,nullptr);root.setProperty("prompt",sourcePrompt,nullptr);root.setProperty("bpm",tempo,nullptr);root.setProperty("bars",bars,nullptr);root.setProperty("rootMidi",rootMidi,nullptr);root.setProperty("minor",minor,nullptr);
+    root.setProperty("schema",5,nullptr);root.setProperty("prompt",sourcePrompt,nullptr);root.setProperty("resolvedPrompt",resolvedPrompt,nullptr);root.setProperty("exclusions",(int)promptIntent.exclusionMask,nullptr);root.setProperty("bpm",tempo,nullptr);root.setProperty("bars",bars,nullptr);root.setProperty("rootMidi",rootMidi,nullptr);root.setProperty("minor",minor,nullptr);
     root.setProperty("songId",juce::String::toHexString((juce::int64)masterSeed),nullptr);
     root.setProperty("harmonyId",juce::String::toHexString((juce::int64)harmonyId),nullptr);
     root.setProperty("melodyId",juce::String::toHexString((juce::int64)melodyId),nullptr);
@@ -3582,6 +3639,8 @@ SongArrangement SongArrangement::fromValueTree(const juce::ValueTree& root)
     SongArrangement a;
     if(!root.isValid()||root.getType().toString()!="SONARA_ARRANGEMENT")return a;
     a.sourcePrompt=root.getProperty("prompt","").toString();a.tempo=juce::jlimit(60.0,200.0,(double)root.getProperty("bpm",128.0));a.bars=juce::jlimit(1,512,(int)root.getProperty("bars",defaultBars));a.rootMidi=juce::jlimit(0,127,(int)root.getProperty("rootMidi",53));a.minor=(bool)root.getProperty("minor",true);a.promptIntent=parsePromptIntent(a.sourcePrompt,a.tempo);a.promptIntent.tempo=a.tempo;a.promptIntent.rootMidi=a.rootMidi;a.promptIntent.minor=a.minor;a.sections.clear();a.lanes.clear();
+    a.resolvedPrompt=root.getProperty("resolvedPrompt",ProducerPrompt::parse(a.sourcePrompt).positive).toString();
+    a.promptIntent.exclusionMask=(unsigned)(int)root.getProperty("exclusions",(int)a.promptIntent.exclusionMask);
     a.masterSeed=(uint64_t)root.getProperty("songId","0").toString().getHexValue64();
     a.harmonyId=(uint64_t)root.getProperty("harmonyId","0").toString().getHexValue64();
     a.melodyId=(uint64_t)root.getProperty("melodyId","0").toString().getHexValue64();

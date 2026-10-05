@@ -1,0 +1,4 @@
+/build*/
+/DIST/
+*.user
+*.log
