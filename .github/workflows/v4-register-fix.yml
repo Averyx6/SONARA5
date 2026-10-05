@@ -20,20 +20,15 @@ jobs:
           from pathlib import Path
           p = Path('Source/Generation/SongArrangement.cpp')
           text = p.read_text(encoding='utf-8')
-          old = '''        const bool developedFinal=currentSection!=nullptr
-              &&currentSection->name.contains("FINAL")
-              &&bar-currentSection->startBar>=4;'''
-          new = '''        const bool developedFinal=currentSection!=nullptr
-              &&currentSection->name.contains("FINAL")
-              &&plan.finalEvolution>.38f
-              &&bar-currentSection->startBar>=4;'''
-          if new in text:
+          needle = '            &&bar-currentSection->startBar>=4;'
+          inserted = '            &&plan.finalEvolution>.38f\n' + needle
+          if inserted in text:
               print('Source already patched')
-          elif old in text:
-              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+          elif text.count(needle) == 1:
+              p.write_text(text.replace(needle, inserted, 1), encoding='utf-8')
               print('Patched SongArrangement.cpp')
           else:
-              raise SystemExit('Expected alignment source block not found')
+              raise SystemExit(f'Expected one alignment line, found {text.count(needle)}')
           PY
       - name: Commit source fix
         shell: bash
