@@ -329,6 +329,9 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
         addAndMakeVisible(*editor);
     }
     soundPrompt.setTextToShowWhenEmpty("Describe one custom sound...",dim);
+    songPrompt.onTextChange=[this]{p.setSongPromptDraft(songPrompt.getText());};
+    seedInput.setInputRestrictions(18,"0123456789abcdefABCDEFxX");seedInput.setFont(juce::FontOptions(11.f));seedInput.setTextToShowWhenEmpty("16-digit hexadecimal seed",dim);addAndMakeVisible(seedInput);addAndMakeVisible(reproduceSeed);styleButton(reproduceSeed);
+    reproduceSeed.onClick=[this]{auto text=seedInput.getText().trim().toLowerCase().replace("0x","");if(text.isEmpty()||text.length()>16||text!=text.retainCharacters("0123456789abcdef")){showStatus("Enter a hexadecimal seed of up to 16 digits");return;}const auto seed=(uint64_t)text.getHexValue64();const auto prompt=songPrompt.getText();runWork([this,prompt,seed]{p.generateTrackWithSeed(prompt,seed);},[this]{bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);setTab(1);});};
     songPrompt.setTextToShowWhenEmpty("Describe the whole song: genre, key, BPM, energy, drop, instruments...",dim);
     laneSoundPrompt.setTextToShowWhenEmpty("Describe ONLY the selected lane sound: e.g. warm supersaw lead, clean pluck, donk bass...",dim);
 
@@ -361,11 +364,13 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
 
     for(auto* b:{&lockOsc,&lockUnison,&lockEnv,&lockFilter,&lockMod,&lockSources,&lockTone,&lockFx})addAndMakeVisible(*b);
     configureMacro(macroBrightness,"BRIGHT");configureMacro(macroMovement,"MOVE");configureMacro(macroSpace,"SPACE");configureMacro(macroImpact,"IMPACT");configureMixSlider(mixLevel,0.0,1.5," LEVEL");configureMixSlider(mixPan,-1.0,1.0," PAN");configureMixSlider(mixWidth,0.0,1.5," WIDTH");configureMixSlider(mixFx,0.0,1.5," FX");
+    bpm.setTooltip("Existing song tempo is shown here. Set a new song tempo explicitly in the prompt; this control sets sound-preview and fallback generation tempo.");
     bpm.setRange(60,200,1);bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);bpm.setSliderStyle(juce::Slider::LinearHorizontal);bpm.setTextBoxStyle(juce::Slider::TextBoxRight,false,64,20);bpm.setTextValueSuffix(" BPM");addAndMakeVisible(bpm);
     patchName.setColour(juce::Label::textColourId,text);patchName.setFont(juce::FontOptions(15.f).withStyle("Bold"));addAndMakeVisible(patchName);
     statusLine.setColour(juce::Label::textColourId,dim);statusLine.setFont(11.f);addAndMakeVisible(statusLine);
     selectedLaneLabel.setColour(juce::Label::textColourId,text.withAlpha(.75f));selectedLaneLabel.setFont(11.f);addAndMakeVisible(selectedLaneLabel);
     referenceSummary.setColour(juce::Label::textColourId,text.withAlpha(.82f));referenceSummary.setFont(juce::FontOptions(13.f));referenceSummary.setJustificationType(juce::Justification::topLeft);addAndMakeVisible(referenceSummary);
+    timeline.setName("Song timeline");pianoRoll.setName("Selected lane piano roll");
     addAndMakeVisible(soundView);addAndMakeVisible(timeline);addAndMakeVisible(pianoRoll);addAndMakeVisible(playbackBar);
 
     const std::array<juce::String,8> soundPresetPrompts={
@@ -473,10 +478,10 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     mixFx.onValueChange=[this]{p.setLaneMix(p.getSelectedLane(),SonaraAudioProcessor::LaneMixParameter::fxSend,(float)mixFx.getValue());};
     lockOsc.onClick=[this]{p.mutationLocks().oscillators=lockOsc.getToggleState();};lockUnison.onClick=[this]{p.mutationLocks().unison=lockUnison.getToggleState();};lockEnv.onClick=[this]{p.mutationLocks().ampEnvelope=lockEnv.getToggleState();};lockFilter.onClick=[this]{p.mutationLocks().filter=lockFilter.getToggleState();};lockMod.onClick=[this]{p.mutationLocks().modulation=lockMod.getToggleState();};lockSources.onClick=[this]{p.mutationLocks().sources=lockSources.getToggleState();};lockTone.onClick=[this]{p.mutationLocks().tone=lockTone.getToggleState();};lockFx.onClick=[this]{p.mutationLocks().spatialFx=lockFx.getToggleState();};
 
-    const auto& d=p.currentPatch();macroBrightness.setValue(d.macroBrightness,juce::dontSendNotification);macroMovement.setValue(d.macroMovement,juce::dontSendNotification);macroSpace.setValue(d.macroSpace,juce::dontSendNotification);macroImpact.setValue(d.macroImpact,juce::dontSendNotification);syncLockButtons();setTab(1);startTimerHz(15);
+    const auto& d=p.currentPatch();macroBrightness.setValue(d.macroBrightness,juce::dontSendNotification);macroMovement.setValue(d.macroMovement,juce::dontSendNotification);macroSpace.setValue(d.macroSpace,juce::dontSendNotification);macroImpact.setValue(d.macroImpact,juce::dontSendNotification);syncLockButtons();setTab(1);startTimerHz(15);timerCallback();
 }
 
-SonaraAudioProcessorEditor::~SonaraAudioProcessorEditor(){stopTimer();p.backgroundCancel.store(true);if(worker.joinable())worker.join();fileChooser.reset();setLookAndFeel(nullptr);}
+SonaraAudioProcessorEditor::~SonaraAudioProcessorEditor(){stopTimer();if(busy)p.backgroundCancel.store(true);if(worker.joinable())worker.join();fileChooser.reset();setLookAndFeel(nullptr);}
 void SonaraAudioProcessorEditor::styleButton(juce::Button& b,bool accent){b.setColour(juce::TextButton::buttonColourId,accent?juce::Colour(0xff39256f):juce::Colour(0xff101a2c));b.setColour(juce::TextButton::buttonOnColourId,purple);}
 void SonaraAudioProcessorEditor::configureMacro(juce::Slider& s,const juce::String& name){s.setRange(0,1,.001);s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s.setName(name);addAndMakeVisible(s);}
 void SonaraAudioProcessorEditor::configureMixSlider(juce::Slider& s,double min,double max,const juce::String& suffix)
@@ -493,7 +498,8 @@ void SonaraAudioProcessorEditor::syncMixControls()
     const int lane=p.getSelectedLane();
     const auto state=p.getLaneMix(lane);
     const bool enabled=lane>=0;
-    for(auto* s:{&mixLevel,&mixPan,&mixWidth,&mixFx})s->setEnabled(enabled);
+    mixLevel.setEnabled(enabled);mixPan.setEnabled(enabled&&lane!=5);
+    mixWidth.setEnabled(lane>=4&&lane!=5);mixFx.setEnabled(enabled&&lane!=0&&lane!=4&&lane!=5);
     mixLevel.setValue(state.level,juce::dontSendNotification);
     mixPan.setValue(state.pan,juce::dontSendNotification);
     mixWidth.setValue(state.width,juce::dontSendNotification);
@@ -529,7 +535,7 @@ juce::String SonaraAudioProcessorEditor::dragCacheKey(ExternalDragButton::Kind k
 {
     auto song=p.arrangementSnapshot();
     juce::String key=juce::String((int)kind)+":"+juce::String::toHexString((juce::int64)(uintptr_t)song.get())
-        +":"+juce::String(p.getSelectedLane())+":"+juce::String(p.currentPatch().seed)+":"+juce::String(p.getPreviewBpm(),4);
+        +":"+juce::String(p.getSelectedLane())+":"+juce::String(p.currentPatch().seed)+":"+juce::String(p.getPreviewBpm(),4)+":"+juce::String(p.getPreparedSampleRate(),1);
     for(int i=0;i<12;++i){const auto m=p.getLaneMix(i);key+=":"+juce::String(m.level,6)+":"+juce::String(m.pan,6)+":"+juce::String(m.width,6)+":"+juce::String(m.fxSend,6);}
     return key;
 }
@@ -759,6 +765,7 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     const bool exportTab=activeTab==6;
     const bool arrangementTab=songTab||drumsTab||mixTab||midiTab||exportTab;
 
+    seedInput.setVisible(songTab);reproduceSeed.setVisible(songTab);
     timeline.setVisible(arrangementTab);
     pianoRoll.setVisible(songTab||drumsTab||midiTab);
     soundView.setVisible(instrumentTab);
@@ -793,15 +800,15 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     patchName.setVisible(instrumentTab);
     selectedLaneLabel.setVisible(arrangementTab);
 
-    dragPreviewMidi.setVisible(instrumentTab||midiTab);
+    dragPreviewMidi.setVisible(instrumentTab);
     dragFullMidi.setVisible(songTab||midiTab||exportTab);
     dragLaneMidi.setVisible(songTab||drumsTab||midiTab||exportTab);
-    dragLeadMidi.setVisible(songTab||midiTab||exportTab);
+    dragLeadMidi.setVisible(midiTab||exportTab);
     dragReferenceMidi.setVisible(referenceTab||midiTab||exportTab);
     dragReferenceAudio.setVisible(referenceTab||exportTab);
     dragFullAudio.setVisible(songTab||exportTab);
     dragLaneAudio.setVisible(songTab||drumsTab||exportTab);
-    dragLeadAudio.setVisible(songTab||exportTab);
+    dragLeadAudio.setVisible(exportTab);
     dragStems.setVisible(exportTab);
 
     previewSound.setVisible(instrumentTab||referenceTab);
@@ -831,6 +838,8 @@ void SonaraAudioProcessorEditor::timerCallback()
 
     auto a=p.arrangementSnapshot();
     const bool hasArrangement=a&&!a->isEmpty();
+    bpm.setEnabled(activeTab==0||!hasArrangement);if(activeTab!=0&&hasArrangement)bpm.setValue(a->getBpm(),juce::dontSendNotification);
+    const auto seed=p.getSongGenerationSeed();if((!seedInitialised||seed!=displayedSeed)&&!seedInput.hasKeyboardFocus(true)){seedInitialised=true;displayedSeed=seed;seedInput.setText(hasArrangement?juce::String::toHexString((juce::int64)seed).paddedLeft('0',16):juce::String(),false);}
     const int selected=p.getSelectedLane();
     const bool selectedReady=hasArrangement&&juce::isPositiveAndBelow(selected,(int)a->getLanes().size())
                           &&!a->getLanes()[(size_t)selected].notes.empty();
@@ -884,7 +893,7 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
     g.setColour(text);g.setFont(juce::FontOptions(32.f).withStyle("Bold"));
     g.drawText("SONARA",30,18,220,38,juce::Justification::left);
     g.setColour(cyan);g.setFont(11.f);
-    g.drawText("AI MUSIC CREATOR • SOUND + DRUM + TRACK",32,51,360,18,juce::Justification::left);
+    g.drawText("AI MUSIC PRODUCER | SOUND + SONG + DRUMS",32,52,650,20,juce::Justification::left);
 
     const auto left=juce::Rectangle<float>(22,118,210,(float)getHeight()-195);
     const auto right=juce::Rectangle<float>((float)getWidth()-244,118,222,(float)getHeight()-195);
@@ -950,7 +959,7 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
         for(const auto& lane:a->getLanes()) noteCount+=(int)lane.notes.size();
 
         juce::String seedHex=juce::String::toHexString((juce::int64)p.getSongGenerationSeed()).toUpperCase();
-        if(seedHex.length()>8) seedHex=seedHex.substring(seedHex.length()-8);
+
         auto shortHex=[](uint64_t value)
         {
             auto result=juce::String::toHexString((juce::int64)value).toUpperCase();
@@ -967,7 +976,7 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
         else if(lower.contains("cinematic")) style="CINEMATIC EDM";
         const auto card=[&](const juce::String& label,const juce::String& value,int y)
         {
-            const auto box=juce::Rectangle<float>((float)rx, (float)y, 186.f, 44.f);
+            const auto box=juce::Rectangle<float>((float)rx, (float)y, 186.f, 40.f);
             g.setColour(juce::Colour(0xff0b1524));g.fillRoundedRectangle(box,7.f);
             g.setColour(juce::Colour(0xff263650));g.drawRoundedRectangle(box,7.f,1.f);
             g.setColour(dim);g.setFont(8.5f);g.drawText(label,rx+10,y+6,166,12,juce::Justification::left);
@@ -976,51 +985,21 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
 
         if(activeTab==1)
         {
-            card("STYLE",style,ry);ry+=48;
-            card("KEY / TEMPO",key+" • "+juce::String(a->getBpm(),0)+" BPM",ry);ry+=48;
-            juce::String sectionPlan="—";
-            const auto& goals=a->getSectionGoals();
-            const int currentBar=p.currentSongBar();
-            for(size_t gi=0;gi<a->getSections().size()&&gi<goals.size();++gi)
-            {
-                const auto& section=a->getSections()[gi];
-                if(currentBar>=section.startBar&&currentBar<section.startBar+section.bars)
-                {
-                    const auto& goal=goals[gi];
-                    sectionPlan="E"+juce::String((int)std::lround(goal.energy*100.f))
-                        +" D"+juce::String((int)std::lround(goal.density*100.f))
-                        +" M"+juce::String((int)std::lround(goal.melodyActivity*100.f))
-                        +" B"+juce::String((int)std::lround(goal.bassDrive*100.f))
-                        +" R"+juce::String((int)std::lround(goal.drumDrive*100.f));
-                    break;
-                }
-            }
-            card("SECTION PRODUCER GOAL",sectionPlan,ry);ry+=48;
-            card("SONG ID",seedHex.isEmpty()?"—":seedHex,ry);ry+=48;
-            card("HARMONY / ID",a->getHarmonySummary()+" • "+shortHex(a->getHarmonyId()),ry);ry+=48;
-            card("HARMONIC RHYTHM",a->getHarmonicRhythmSummary(),ry);ry+=48;
-            card("MELODY / ID",a->getMelodyArchetypeName()+" • "+shortHex(a->getMelodyId()),ry);ry+=48;
-            card("CURRENT SECTION",p.currentSectionName().isEmpty()?"READY":p.currentSectionName()
-                 +" • BAR "+juce::String(p.currentSongBar()+1)+"/"+juce::String(a->getBars()),ry);ry+=48;
-            card("NOVELTY • H / M / SONG",juce::String(p.getHarmonyNovelty()*100.f,0)+"% / "
-                 +juce::String(p.getMelodyNovelty()*100.f,0)+"% / "+juce::String(p.getSongNovelty()*100.f,0)+"%",ry);ry+=48;
-            card("PREVIEW MODE",p.isSongPlaying()?"LOW CPU • PLAYING":"LOW CPU • READY",ry);ry+=48;
-            card("GENERATED CONTENT",juce::String((int)a->getLanes().size())+" lanes • "+juce::String(noteCount)+" notes",ry);ry+=48;
-
+            card("STYLE",style,ry);ry+=44;
+            card("KEY / TEMPO",key+" • "+juce::String(a->getBpm(),0)+" BPM",ry);ry+=44;
+            g.setColour(dim);g.setFont(9.f);g.drawText("SEED • HEXADECIMAL",rx,ry,186,16,juce::Justification::left);
+            ry+=82;
+            card("PRODUCER PLAN",a->getPromptIntentSummary(),ry);ry+=44;
+            card("HARMONY",a->getHarmonySummary(),ry);ry+=44;
+            card("MELODY",a->getMelodyArchetypeName(),ry);ry+=44;
+            card("CURRENT SECTION",p.currentSectionName()+" • "+juce::String(p.currentSongBar()+1)+"/"+juce::String(a->getBars()),ry);ry+=44;
             const int selected=p.getSelectedLane();
             if(juce::isPositiveAndBelow(selected,(int)a->getLanes().size()))
             {
                 const auto& lane=a->getLanes()[(size_t)selected];
-                const auto dna=lane.sound;
-                card("SELECTED SOUND DNA",lane.name+" • U"+juce::String(dna.unison)
-                     +" • W"+juce::String(dna.width,2)+" • C"+juce::String((int)dna.cutoff)+"Hz",ry);
-                ry+=52;
+                card("SOUND DNA",lane.name+" • U"+juce::String(lane.sound.unison)+" • "+juce::String((int)lane.sound.cutoff)+" Hz",ry);ry+=44;
             }
-
-            g.setColour(cyan.withAlpha(.15f));g.fillRoundedRectangle((float)rx,(float)ry,186.f,42.f,8.f);
-            g.setColour(cyan);g.setFont(8.5f);
-            g.drawFittedText("FRESH SONG DNA\nDRUMS • BASS • SUB • HARMONY • MELODY • FX",
-                             rx+7,ry+5,172,31,juce::Justification::centred,2);
+            g.setColour(dim);g.setFont(9.f);g.drawFittedText("MIDI carries notes and timing. Use WAV/stems for exact SONARA sound.",rx,ry,186,40,juce::Justification::topLeft,3);
         }
         else if(activeTab==2)
         {
@@ -1040,10 +1019,10 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
             {
                 const auto& lane=a->getLanes()[(size_t)laneIndex];
                 const auto mix=p.getLaneMix(laneIndex);
-                card("SELECTED LANE",lane.name,ry);ry+=48;
-                card("MIDI EVENTS",juce::String((int)lane.notes.size()),ry);ry+=48;
-                card("LEVEL / PAN",juce::String(mix.level,2)+" / "+juce::String(mix.pan,2),ry);ry+=48;
-                card("WIDTH / FX SEND",juce::String(mix.width,2)+" / "+juce::String(mix.fxSend,2),ry);ry+=48;
+                card("SELECTED LANE",lane.name,ry);ry+=44;
+                card("MIDI EVENTS",juce::String((int)lane.notes.size()),ry);ry+=44;
+                card("LEVEL / PAN",juce::String(mix.level,2)+" / "+juce::String(mix.pan,2),ry);ry+=44;
+                card("WIDTH / FX SEND",juce::String(mix.width,2)+" / "+juce::String(mix.fxSend,2),ry);ry+=44;
                 card("SOUND DNA",lane.sound.name,ry);
             }
         }
@@ -1126,7 +1105,8 @@ void SonaraAudioProcessorEditor::resized()
     }
 
     const int upperY=activeTab==1?300:(activeTab==6?268:232);
-    const int upperH=juce::jlimit(230,320,(int)(h*.34f));
+    const int upperH=activeTab==1?juce::jlimit(164,280,h-upperY-272):
+        (activeTab==3?juce::jlimit(164,280,h-upperY-302):juce::jlimit(164,280,h-upperY-206));
     soundView.setBounds(cx,upperY,cw,upperH);
     timeline.setBounds(cx,upperY,cw,upperH);
     referenceSummary.setBounds(cx+28,upperY+42,cw-56,upperH-64);
@@ -1141,16 +1121,17 @@ void SonaraAudioProcessorEditor::resized()
         mixWidth.setBounds(cx+18,my+96,cw-36,38);
         mixFx.setBounds(cx+18,my+144,cw-36,38);
     }
-    const int pianoH=juce::jmax(96,bottomControlsY-pianoY-56);
+    const int pianoH=juce::jmax(40,h-164-pianoY);
     pianoRoll.setBounds(cx,pianoY,cw,pianoH);
 
     patchName.setBounds(cx+18,upperY+8,cw-36,22);
-    selectedLaneLabel.setBounds(cx,bottomControlsY-(activeTab==6?104:58),juce::jmin(280,cw/2),20);
+    selectedLaneLabel.setBounds(cx,activeTab==3?pianoY-8:h-(activeTab==6?194:158),cw,20);
+    seedInput.setBounds(w-226,270,186,26);reproduceSeed.setBounds(w-226,301,186,30);
 
     switch(activeTab)
     {
         case 0: layoutRow({&dragPreviewMidi},h-130,34); break;
-        case 1: layoutRow({&dragFullMidi,&dragLaneMidi,&dragLeadMidi,&dragFullAudio,&dragLaneAudio,&dragLeadAudio},h-130,34); break;
+        case 1: layoutRow({&dragFullMidi,&dragLaneMidi,&dragFullAudio,&dragLaneAudio},h-130,34); break;
         case 2: layoutRow({&dragLaneMidi,&dragLaneAudio},h-130,34); break;
         case 4: layoutRow({&dragReferenceMidi,&dragReferenceAudio},h-130,34); break;
         case 5: layoutRow({&dragFullMidi,&dragLaneMidi,&dragLeadMidi,&dragReferenceMidi},h-130,34); break;
@@ -1161,12 +1142,13 @@ void SonaraAudioProcessorEditor::resized()
         default: break;
     }
 
-    previewSound.setBounds(cx,bottomControlsY,112,34);
-    playSong.setBounds(cx+120,bottomControlsY,96,34);
-    playChorus.setBounds(cx+222,bottomControlsY,106,34);
-    playDrop.setBounds(cx+334,bottomControlsY,94,34);
-    stop.setBounds(cx+434,bottomControlsY,62,34);
-    bpm.setBounds(cx+502,bottomControlsY,juce::jmax(120,cw-502),34);
+    std::vector<juce::Component*> transport;
+    if(activeTab==0||activeTab==4)transport.push_back(&previewSound);
+    if(activeTab!=0){transport.push_back(&playSong);if(activeTab!=4){transport.push_back(&playChorus);transport.push_back(&playDrop);}}
+    transport.push_back(&stop);
+    const int transportW=cw-174,cell=(transportW-6*((int)transport.size()-1))/(int)transport.size();int tx=cx;
+    for(auto* c:transport){c->setBounds(tx,bottomControlsY,cell,34);tx+=cell+6;}
+    bpm.setBounds(cx+cw-168,bottomControlsY,168,34);
     playbackBar.setBounds(cx,h-46,cw,15);
     statusLine.setBounds(cx,h-28,cw,18);
 

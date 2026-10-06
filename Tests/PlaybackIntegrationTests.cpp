@@ -11,6 +11,22 @@
 namespace {
 int fail(const juce::String& m){std::cerr<<"SONARA playback test failure: "<<m<<"\n";return 1;}
 
+juce::String firstStateDifference(const juce::ValueTree& a,const juce::ValueTree& b,const juce::String& path="song")
+{
+    for(int i=0;i<a.getNumProperties();++i)
+    {
+        const auto name=a.getPropertyName(i);
+        if(a[name].toString()!=b[name].toString())return path+"/"+name.toString()+": "+a[name].toString()+" vs "+b[name].toString();
+    }
+    if(a.getNumChildren()!=b.getNumChildren())return path+" child count";
+    for(int i=0;i<a.getNumChildren();++i)
+    {
+        auto difference=firstStateDifference(a.getChild(i),b.getChild(i),path+"/"+a.getChild(i).getType().toString()+juce::String(i));
+        if(difference.isNotEmpty())return difference;
+    }
+    return {};
+}
+
 const sonara::ArrangementLane* laneNamed(const sonara::SongArrangement& a,const juce::String& name)
 {
     for(const auto& l:a.getLanes())if(l.name==name)return &l;
@@ -445,7 +461,15 @@ int main()
     if(surprise.length()<40||!surprise.containsIgnoreCase("BPM"))return fail("SURPRISE ME prompt invalid");
     randomizer.generateTrack(surprise);
     auto surprised=randomizer.arrangementSnapshot();
-    if(!surprised||surprised->getLanes().size()!=12||surprised->getSections().size()!=11)return fail("SURPRISE ME arrangement incomplete");
+    if(!surprised||surprised->getLanes().size()!=12||surprised->getSections().size()!=11)return fail("SURPRISE ME arrangement incomplete: "+surprise+" / "+juce::String(randomizer.generationStatus));
+
+    // Genre and mood clauses must not impose contradictory harmony gates.
+    for(const juce::String genre:{"dark tech house","melodic EDM pop","drum and bass"})
+    {
+        SonaraAudioProcessor moodProducer;
+        if(!moodProducer.generateTrack(genre+", 128 BPM F minor, dreamy and cinematic, emotional memorable hook"))
+            return fail("Genre/mood producer failed: "+genre+" / "+juce::String(moodProducer.generationStatus));
+    }
 
     // Reference actions must fail truthfully before any reference exists and must
     // never publish a stale arrangement merely because the UI button was clicked.
@@ -521,10 +545,11 @@ int main()
 
     auto resoundWav=juce::File::getSpecialLocation(juce::File::tempDirectory)
         .getNonexistentChildFile("sonara-reference-resound",".wav");
+    if(!randomizer.resoundReference("glassy emotional lead, wide but controlled"))return fail("Reference parity setup failed");
     if(!randomizer.exportReferenceAudio(resoundWav)||resoundWav.getSize()<4096)
         return fail("RESOUND WAV export failed");
     juce::AudioFormatManager resoundFormats;resoundFormats.registerBasicFormats();
-    auto resoundReader=resoundFormats.createReaderFor(resoundWav);
+    std::unique_ptr<juce::AudioFormatReader> resoundReader(resoundFormats.createReaderFor(resoundWav));
     if(!resoundReader||resoundReader->lengthInSamples<1024)
         return fail("RESOUND WAV could not be reopened");
     juce::AudioBuffer<float> resoundAudio(2,(int)std::min<juce::int64>(resoundReader->lengthInSamples,44100*4));
@@ -543,7 +568,21 @@ int main()
     if(resoundEnergy<=1.0e-7||resoundPeak>sonara::mixpolicy::masterCeiling()+.01f)
         return fail("RESOUND WAV was silent or exceeded safety ceiling");
 
-    referenceMidi.deleteFile();extracted.deleteFile();resoundWav.deleteFile();
+    if(resoundReader->sampleRate!=randomizer.getPreparedSampleRate())return fail("RESOUND ignored host sample rate");
+    randomizer.stopPreview();randomizer.startPreview();
+    float referenceError=0.f;
+    for(int start=0;start<resoundAudio.getNumSamples();)
+    {
+        const int n=juce::jmin(257,resoundAudio.getNumSamples()-start);
+        juce::AudioBuffer<float> live(2,n);juce::MidiBuffer midi;randomizer.processBlock(live,midi);
+        for(int ch=0;ch<2;++ch)for(int i=0;i<n;++i)
+            referenceError=juce::jmax(referenceError,std::abs(live.getSample(ch,i)-resoundAudio.getSample(ch,start+i)));
+        start+=n;
+    }
+    randomizer.stopPreview();
+    if(referenceError>2.0e-6f)return fail("Reference preview/RESOUND WAV sample parity failed: "+juce::String(referenceError,9));
+
+    resoundReader.reset();referenceMidi.deleteFile();extracted.deleteFile();resoundWav.deleteFile();
 
     // MIDI export paths.
     auto fullMidi=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-playback-full",".mid");
@@ -602,6 +641,7 @@ int main()
     if(restored.getSelectedLane()!=subIndex
        ||restored.currentPatch().seed!=restored.arrangementSnapshot()->getLanes()[(size_t)subIndex].sound.seed)
         return fail("selected lane / live SoundDNA did not survive plugin state round-trip");
+    if(restored.getSongGenerationSeed()!=randomizer.getSongGenerationSeed())return fail("full seed did not survive plugin state");
     if(!restored.hasReference())
         return fail("reference analysis did not survive plugin state round-trip");
     if(restored.getCurrentSongPrompt().isEmpty())
@@ -619,10 +659,22 @@ int main()
     if(projectLoaded.getSelectedLane()!=subIndex
        ||projectLoaded.currentPatch().seed!=projectLoaded.arrangementSnapshot()->getLanes()[(size_t)subIndex].sound.seed)
         return fail("project round-trip lost selected lane SoundDNA");
+    if(projectLoaded.getSongGenerationSeed()!=randomizer.getSongGenerationSeed())return fail("full seed did not survive saved project");
     if(!projectLoaded.hasReference())
         return fail("project round-trip lost reference analysis");
     if(projectLoaded.getCurrentSongPrompt().isEmpty())
         return fail("project round-trip lost source prompt");
+
+    randomizer.setSongPromptDraft("next brief: warm ambient, no hats, 88 BPM D major");
+    randomizer.getStateInformation(state);
+    restored.setStateInformation(state.getData(),(int)state.getSize());
+    if(restored.getCurrentSongPrompt()!=randomizer.getCurrentSongPrompt()
+       ||restored.arrangementSnapshot()->toValueTree().createXml()->toString()!=randomizer.arrangementSnapshot()->toValueTree().createXml()->toString())
+        return fail("Draft prompt restore changed the current composition: "+firstStateDifference(randomizer.arrangementSnapshot()->toValueTree(),restored.arrangementSnapshot()->toValueTree()));
+    restored.setSongPromptDraft({});restored.getStateInformation(state);
+    projectLoaded.setStateInformation(state.getData(),(int)state.getSize());
+    if(projectLoaded.getCurrentSongPrompt().isNotEmpty())return fail("An intentionally empty prompt was not restored");
+    randomizer.getStateInformation(state);
 
     auto soundOnlyProject=juce::File::getSpecialLocation(juce::File::tempDirectory)
         .getNonexistentChildFile("sonara-sound-only",".sonaraproject");
@@ -808,6 +860,20 @@ int main()
         reader.reset();temp.deleteRecursively();
     }
 
+    {
+        SonaraAudioProcessor failures;
+        for(const juce::String invalid:{"", "no drums, no lead, no bass, no sub, no chords, no pads, no plucks, no counter, no fx"})
+        {
+            if(!failures.generateTrackWithSeed(prompt,0xffff0000abcd1234ULL))return fail("Failure fixture could not generate");
+            if(failures.generateTrack(invalid)||failures.arrangementSnapshot()||failures.getSongGenerationSeed()!=0
+               ||failures.generationProgress.load()!=0||!failures.generationStatus.containsIgnoreCase("failed"))
+                return fail("Failed generation retained old output/seed or claimed success");
+        }
+        if(!failures.generateTrackWithSeed(prompt,0))return fail("Seed zero could not generate");
+        failures.backgroundCancel.store(true);
+        if(failures.generateTrack(prompt)||failures.arrangementSnapshot()||!failures.generationStatus.containsIgnoreCase("cancelled"))
+            return fail("Cancelled generation retained stale output");
+    }
     std::cout<<"SONARA processor playback, CPU, seek, randomize, surprise and export tests passed\n";
     return 0;
 }

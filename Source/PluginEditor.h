@@ -86,7 +86,8 @@ private:
     void showStatus(const juce::String&);
 
     SonaraAudioProcessor& p;
-    juce::TextEditor soundPrompt, songPrompt, laneSoundPrompt;
+    juce::TextEditor soundPrompt, songPrompt, laneSoundPrompt,seedInput;
+    juce::TextButton reproduceSeed{"REPRODUCE SEED"};uint64_t displayedSeed=0;bool seedInitialised=false;
     juce::TextButton generateSound{"GENERATE SOUND"}, generateTrack{"GENERATE TRACK"}, generateDrums{"GENERATE DRUMS"}, randomizeEverythingButton{"RANDOMIZE EVERYTHING"}, surpriseMe{"SURPRISE ME"}, similar{"SIMILAR"}, mutate{"MUTATE"}, randomize{"RANDOMIZE"};
     juce::TextButton applyLaneSound{"APPLY SELECTED SOUND"}, autoLaneSound{"AUTO FIT SELECTED"};
     juce::TextButton undo{"UNDO"}, redo{"REDO"}, variation1{"V1"}, variation2{"V2"}, variation3{"V3"}, variation4{"V4"};

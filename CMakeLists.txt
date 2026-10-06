@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(SONARA VERSION 4.5.0)
+project(SONARA VERSION 4.6.0)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -150,6 +150,13 @@ if(BUILD_TESTING)
         juce::juce_audio_utils juce::juce_dsp
         juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
     add_test(NAME sonara_full_playback_acceptance COMMAND SONARA_PlaybackTests)
+
+    juce_add_console_app(SONARA_UITests PRODUCT_NAME "SONARA UI Tests")
+    juce_generate_juce_header(SONARA_UITests)
+    target_sources(SONARA_UITests PRIVATE Tests/UIIntegrationTests.cpp)
+    target_compile_definitions(SONARA_UITests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(SONARA_UITests PRIVATE SONARA juce::juce_audio_utils juce::juce_dsp)
+    add_test(NAME sonara_ui_workflow COMMAND SONARA_UITests)
 
     # Release-blocking host-discovery regression. Unit tests that instantiate the
     # processor directly cannot catch a malformed VST3 bundle or registration.

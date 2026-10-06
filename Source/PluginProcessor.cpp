@@ -475,13 +475,16 @@ float productionQualityScore(const sonara::SongArrangement& song)
 
 float promptCompositionMatch(const juce::String& prompt,const sonara::SongArrangement& song)
 {
-    const auto p=prompt.toLowerCase();
+    const auto p=sonara::ProducerPrompt::parse(prompt).positive;
     const int n=song.getHarmonyProgressionLength();
     float score=.82f;
-    if((p.contains("tech house")||p.contains("minimal house"))&&n>3)score-=.30f;
-    if((p.contains("cinematic")||p.contains("film"))&&n<6)score-=.24f;
-    if((p.contains("pop")||p.contains("radio"))&&(n<3||n>6))score-=.18f;
-    if((p.contains("progressive")||p.contains("melodic house"))&&(n<3||n>8))score-=.20f;
+    // Use the same precedence as the harmony planner. A cinematic mood on a
+    // tech-house brief cannot demand both a two-chord vamp and six chords.
+    if(p.contains("tech house")||p.contains("minimal house")){if(n>3)score-=.30f;}
+    else if(p.contains("cinematic")||p.contains("film")){if(n<6)score-=.24f;}
+    else if(p.contains("drum and bass")||p.contains("dnb")){}
+    else if(p.contains("pop")||p.contains("radio")){if(n<3||n>6)score-=.18f;}
+    else if(p.contains("progressive")||p.contains("melodic house")){if(n<3||n>8)score-=.20f;}
     if(p.contains("minor")&&!song.isMinor())score-=.30f;
     if(p.contains("major")&&song.isMinor())score-=.30f;
     if(p.contains("emotional")&&song.getMelodyArchetypeName()=="SPARSE MOTIF")score-=.08f;
@@ -691,6 +694,13 @@ void SonaraAudioProcessor::processBlock(juce::AudioBuffer<float>& b, juce::MidiB
     juce::ScopedNoDenormals noDenormals;
     b.clear();
 
+    if(previewPlaying.load()&&referenceMelodyPreview.load()&&referenceSong)
+    {
+        m.clear();const auto start=previewSample.load();songRenderer.render(*referenceSong,b,start,b.getNumSamples());
+        previewSample.store(start+b.getNumSamples());if(start+b.getNumSamples()>=previewLengthSamples)previewPlaying.store(false);
+        return;
+    }
+
     if (songPlaying.load(std::memory_order_acquire))
     {
         m.clear();
@@ -720,7 +730,16 @@ void SonaraAudioProcessor::processBlock(juce::AudioBuffer<float>& b, juce::MidiB
 
 void SonaraAudioProcessor::startPreview()
 {
+    const juce::ScopedLock lock(getCallbackLock());
     stopSongPreview();
+    engine.allNotesOff();
+    if(referenceMelodyPreview.load()&&referenceLoaded)
+    {
+        referenceSong=std::make_shared<sonara::SongArrangement>(sonara::AudioExporter::makeReferenceSong(reference,engine.patchSnapshot()));
+        songRenderer.configure(*referenceSong);previewSample.store(0);
+        previewLengthSamples=(int64_t)std::llround(referenceSong->getTotalBeats()*previewSampleRate*60.0/referenceSong->getBpm()+previewSampleRate*4.0);
+        previewPlaying.store(true);generationStatus="Reference preview • same renderer as RESOUND WAV";return;
+    }
     const double beats = referenceMelodyPreview && referenceLoaded && !reference.melody.empty() ? juce::jmax(1.0, reference.melodyBeats()) : 16.0;
     previewLengthSamples = (int64_t) std::llround(previewSampleRate * (60.0 / previewBpm) * beats);
     previewSample.store(0);
@@ -847,6 +866,8 @@ void SonaraAudioProcessor::recallB(){ if(hasB){ engine.setPatch(patchB);generati
 
 bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
 {
+    const juce::ScopedLock operation(operationLock);
+    setSongPromptDraft(prompt);
     stopPreview();stopSongPreview();
     generationProgress.store(.03f);
     generationStatus="Planning new harmony, melody and groove identities";
@@ -1040,6 +1061,7 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
         trim(drumHistory);trim(pluckHistory);trim(structureHistory);
     }
 
+    if(backgroundCancel.load()){generationStatus="Generation cancelled";generationProgress.store(0);return false;}
     made->finalizeSoundPalette();
     lastSongSeed.store(seed,std::memory_order_relaxed);
     lastMelodyNovelty.store(juce::jlimit(0.f,1.f,1.f-melodySimilarityMax),std::memory_order_relaxed);
@@ -1075,6 +1097,8 @@ void SonaraAudioProcessor::publishSong(std::shared_ptr<sonara::SongArrangement> 
 
 bool SonaraAudioProcessor::generateTrackWithSeed(const juce::String& prompt,uint64_t seed)
 {
+    const juce::ScopedLock operation(operationLock);
+    setSongPromptDraft(prompt);
     stopPreview();stopSongPreview();
     storeArrangement(std::shared_ptr<const sonara::SongArrangement>{});
     lastSongSeed.store(0,std::memory_order_relaxed);
@@ -1095,6 +1119,7 @@ bool SonaraAudioProcessor::generateTrackWithSeed(const juce::String& prompt,uint
 
 bool SonaraAudioProcessor::randomizeEverything(const juce::String& prompt)
 {
+    const juce::ScopedLock operation(operationLock);
     locks={};
     auto q=prompt.trim();
     auto lower=q.toLowerCase();
@@ -1167,6 +1192,7 @@ juce::String SonaraAudioProcessor::makeSurprisePrompt()
 
 void SonaraAudioProcessor::regenerateDrums(const juce::String& prompt)
 {
+    const juce::ScopedLock operation(operationLock);
     stopSongPreview();
     generationProgress.store(.08f);
     generationStatus = "Understanding drum prompt only";
@@ -1238,7 +1264,7 @@ void SonaraAudioProcessor::startSongPreviewAtBar(int bar)
     stopPreview();
     const int safe=juce::jlimit(0,a->getBars()-1,bar);
     const auto start=(int64_t)std::llround(safe*4.0*previewSampleRate*60.0/a->getBpm());
-    songRenderer.reset(start);songSample.store(start);songPlaying.store(true);
+    songRenderer.configure(*a);songRenderer.reset(start);songSample.store(start);songPlaying.store(true);
     generationStatus="Playing "+currentSectionName()+" • bar "+juce::String(safe+1);
 }
 void SonaraAudioProcessor::pauseSongPreview()
@@ -1543,12 +1569,13 @@ bool SonaraAudioProcessor::loadSound(const juce::File& file)
 
 bool SonaraAudioProcessor::saveProject(const juce::File& file) const
 {
+    const juce::ScopedLock operation(operationLock);
     juce::ValueTree root("SONARA_PROJECT");
-    root.setProperty("schema",3,nullptr);
+    root.setProperty("schema",4,nullptr);root.setProperty("promptDraft",getCurrentSongPrompt(),nullptr);
     root.setProperty("generationCounter",juce::String(generationCounter),nullptr);
-    root.setProperty("bpm",previewBpm,nullptr);
+    root.setProperty("bpm",previewBpm.load(),nullptr);
     root.setProperty("selectedLane",selectedLane.load(),nullptr);
-    root.addChild(engine.patch().toValueTree(),-1,nullptr);
+    root.addChild(engine.patchSnapshot().toValueTree(),-1,nullptr);
     root.addChild(locks.toValueTree(),-1,nullptr);
     root.addChild(makeLaneMixTree(*this),-1,nullptr);
     if(auto a=arrangementSnapshot())root.addChild(a->toValueTree(),-1,nullptr);
@@ -1558,6 +1585,7 @@ bool SonaraAudioProcessor::saveProject(const juce::File& file) const
 }
 bool SonaraAudioProcessor::loadProject(const juce::File& file)
 {
+    const juce::ScopedLock operation(operationLock);
     auto xml=juce::XmlDocument::parse(file);
     if(!xml)return false;
     auto root=juce::ValueTree::fromXml(*xml);
@@ -1566,6 +1594,7 @@ bool SonaraAudioProcessor::loadProject(const juce::File& file)
     if(!dna.isValid())return false;
 
     stopPreview();stopSongPreview();
+    setSongPromptDraft(root.getProperty("promptDraft","").toString());
     resetLaneMix(*this);
     reference={};referenceLoaded=false;referenceMelodyPreview=false;
     storeArrangement(std::shared_ptr<const sonara::SongArrangement>{});
@@ -1596,11 +1625,13 @@ bool SonaraAudioProcessor::loadProject(const juce::File& file)
     if(arr.isValid())
     {
         auto made=std::make_shared<sonara::SongArrangement>(sonara::SongArrangement::fromValueTree(arr));
+        if(!made->validate()){generationStatus="Project load failed • invalid arrangement";generationProgress.store(0);return false;}
         if(!made->isEmpty())
         {
             const auto& lanes=made->getLanes();
                     
             storeArrangement(std::shared_ptr<const sonara::SongArrangement>(made));
+            if(!root.hasProperty("promptDraft"))setSongPromptDraft(made->getSourcePrompt());
             setSelectedLane(juce::jlimit(0,(int)lanes.size()-1,(int)root.getProperty("selectedLane",9)));
         }
     }
@@ -1664,7 +1695,7 @@ bool SonaraAudioProcessor::exportReferenceAudio(const juce::File& file)
 
     generationProgress.store(.02f);
     generationStatus="Rendering RESOUND WAV";
-    const bool ok=audioExporter.renderReferenceMelody(reference,engine.patch(),file,44100.0,
+    const bool ok=audioExporter.renderReferenceMelody(reference,engine.patchSnapshot(),file,previewSampleRate,
         [this](float x,const juce::String& status)
         {
             generationProgress.store(x);
@@ -1734,6 +1765,7 @@ SonaraAudioProcessor::LaneMixState SonaraAudioProcessor::getLaneMix(int laneInde
 
 bool SonaraAudioProcessor::setSelectedLaneSound(const juce::String& prompt,bool automatic)
 {
+    const juce::ScopedLock operation(operationLock);
     auto current=arrangementSnapshot();
     if(!current)return false;
     const int laneIndex=selectedLane.load();
@@ -1792,6 +1824,12 @@ void SonaraAudioProcessor::setMacro(Macro macro, float normalized)
         case Macro::space: d.macroSpace=x; d.chorus=juce::jlimit(0.f,1.f,x*.75f); d.reverb=juce::jlimit(0.f,1.f,x*.85f); d.delay=juce::jlimit(0.f,1.f,juce::jmax(0.f,(x-.18f)*.9f)); break;
         case Macro::impact: d.macroImpact=x; d.drive=juce::jlimit(0.f,1.f,.04f+x*.62f); d.subLevel=juce::jlimit(0.f,1.f,x*.52f); break;
     }
+    const int lane=selectedLane.load();
+    if(auto a=arrangementSnapshot();a&&juce::isPositiveAndBelow(lane,(int)a->getLanes().size()))
+    {
+        auto updated=std::make_shared<sonara::SongArrangement>(*a);applyLaneSoundCpuBudget(updated->getLanes()[(size_t)lane].name,d);
+        updated->editLanes()[(size_t)lane].sound=d;storeArrangement(updated);
+    }
     engine.setPatch(d); generationStatus = "Macro adjusted";
 }
 
@@ -1809,12 +1847,13 @@ bool SonaraAudioProcessor::importPatchFromCyanoryx(const juce::String& payload)
 
 void SonaraAudioProcessor::getStateInformation(juce::MemoryBlock& dest)
 {
+    const juce::ScopedLock operation(operationLock);
     juce::ValueTree state("SONARA_STATE");
-    state.setProperty("schema",7,nullptr);
+    state.setProperty("schema",8,nullptr);state.setProperty("promptDraft",getCurrentSongPrompt(),nullptr);
     state.setProperty("generationCounter",juce::String(generationCounter),nullptr);
-    state.setProperty("bpm",previewBpm,nullptr);
+    state.setProperty("bpm",previewBpm.load(),nullptr);
     state.setProperty("selectedLane",selectedLane.load(),nullptr);
-    state.addChild(engine.patch().toValueTree(),-1,nullptr);
+    state.addChild(engine.patchSnapshot().toValueTree(),-1,nullptr);
     state.addChild(locks.toValueTree(),-1,nullptr);
     state.addChild(makeLaneMixTree(*this),-1,nullptr);
     if(auto a=arrangementSnapshot())state.addChild(a->toValueTree(),-1,nullptr);
@@ -1824,7 +1863,8 @@ void SonaraAudioProcessor::getStateInformation(juce::MemoryBlock& dest)
 
 void SonaraAudioProcessor::setStateInformation(const void* data,int bytes)
 {
-    if(data==nullptr||bytes<=0)return;
+    const juce::ScopedLock operation(operationLock);
+    if(data==nullptr||bytes<=0||bytes>64*1024*1024)return;
     if(auto xml=getXmlFromBinary(data,bytes))
     {
         const auto state=juce::ValueTree::fromXml(*xml);if(!state.isValid())return;
@@ -1837,11 +1877,12 @@ void SonaraAudioProcessor::setStateInformation(const void* data,int bytes)
             storeArrangement(std::shared_ptr<const sonara::SongArrangement>{});
             selectedLane.store(9);
             setPatchWithHistory(sonara::SoundDNA::fromValueTree(state));
-            locks={};generationCounter=1;generationStatus="Legacy preset restored";return;
+            setSongPromptDraft({});locks={};generationCounter=1;generationStatus="Legacy preset restored";return;
         }
         if(state.getType().toString()!="SONARA_STATE")return;
         const auto dna=state.getChildWithName("SoundDNA");if(!dna.isValid())return;
 
+        setSongPromptDraft(state.getProperty("promptDraft","").toString());
         resetLaneMix(*this);
         reference={};referenceLoaded=false;referenceMelodyPreview=false;
         storeArrangement(std::shared_ptr<const sonara::SongArrangement>{});
@@ -1872,11 +1913,13 @@ void SonaraAudioProcessor::setStateInformation(const void* data,int bytes)
         if(arr.isValid())
         {
             auto made=std::make_shared<sonara::SongArrangement>(sonara::SongArrangement::fromValueTree(arr));
+            if(!made->validate()){generationStatus="Session restore failed • invalid arrangement";generationProgress.store(0);return;}
             if(!made->isEmpty())
             {
                 const auto& lanes=made->getLanes();
                             
                 storeArrangement(std::shared_ptr<const sonara::SongArrangement>(made));
+                if(!state.hasProperty("promptDraft"))setSongPromptDraft(made->getSourcePrompt());
                 setSelectedLane(juce::jlimit(0,(int)lanes.size()-1,(int)state.getProperty("selectedLane",9)));
             }
         }

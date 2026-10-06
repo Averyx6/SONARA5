@@ -12,6 +12,7 @@ namespace sonara {
 class AudioExporter {
 public:
     void setCancelFlag(const std::atomic<bool>* value) noexcept {cancel=value;}
+    static SongArrangement makeReferenceSong(const ReferenceAnalysis&,const SoundDNA&);
     using Progress = std::function<void(float,const juce::String&)>;
     using MixState=SongMixState;
     using MixArray=SongMixArray;

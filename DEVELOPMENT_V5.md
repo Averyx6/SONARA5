@@ -72,3 +72,24 @@ DSP safety and loudness assertions and new sample parity checks (2e-6 tolerance)
 
 Validation: local Release plugin UI compiled; arrangement, producer and full
 processor suites passed, including stronger MIDI round-trip and WAV parity tests.
+
+## v4.6 — usable interface and faithful state
+
+- Keep the existing seven tabs; fit every interactive control at 1180x720,
+  1320x820 and 1900x1200. Remove duplicate song drag controls and display the
+  full hexadecimal seed with deterministic REPRODUCE. Section clicks audition.
+- Save edited prompt drafts independently from the current song, and restore
+  the seed domains, selected lane, mix, arrangement and SoundDNA.
+- Preserve same-beat note ordering on restore: an unstable sort reordered chord
+  voices and changed playback of otherwise identical saved MIDI.
+- Route reference audition and RESOUND WAV through the common renderer at the
+  host sample rate; compare their PCM at a 2e-6 tolerance.
+- Align genre/mood scoring with the harmony planner, fixing impossible mixed
+  tech-house/cinematic briefs without reducing quality or novelty thresholds.
+- Tighten the master ceiling to .950 after Windows run 196 exposed .955 against
+  the unchanged .951 playback assertion. Invalid/cancelled generation tests
+  explicitly verify that no old arrangement or seed remains published.
+- Add a ninth regression suite for all seven UI tabs, three sizes and section
+  audition; serialize state operations and guard UI sound/status reads.
+
+Validation: UI snapshots inspected; final Windows release gate remains pending.

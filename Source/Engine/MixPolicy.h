@@ -112,7 +112,7 @@ inline float drumGain(const juce::String& section,float energy) noexcept
 
 inline float masterHighPassHz() noexcept { return 24.f; }
 inline float masterDrive() noexcept { return 1.18f; }
-inline float masterCeiling() noexcept { return .955f; }
+inline float masterCeiling() noexcept { return .950f; }
 
 inline float processMasterSample(float input,float& x1,float& y1,double sampleRate) noexcept
 {

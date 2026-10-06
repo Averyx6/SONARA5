@@ -254,6 +254,8 @@ private:
             drums[(size_t)lane].render(drumView,triggers.data(),hits);
             const auto m=mix?(*mix)[(size_t)lane]:MixState{};
             const float gain=mixpolicy::drumGain(blockSection,sectionEnergy)*juce::jlimit(0.f,1.5f,m.level);
+            if(lane>0&&m.fxSend>0.f)
+                for(int ch=0;ch<2;++ch)fxBus.addFrom(ch,0,drumBus,ch,0,n,gain*.04f*lanes[(size_t)lane].sound.macroSpace*m.fxSend);
             const float pan=juce::jlimit(-1.f,1.f,m.pan);
             for(int ch=0;ch<2;++ch)
                 block.addFrom(ch,0,drumBus,ch,0,n,gain*(ch==0?(pan>0?1.f-pan:1.f):(pan<0?1.f+pan:1.f)));

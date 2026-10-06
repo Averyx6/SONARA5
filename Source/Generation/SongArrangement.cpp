@@ -3738,10 +3738,13 @@ SongArrangement SongArrangement::fromValueTree(const juce::ValueTree& root)
 {
     SongArrangement a;
     if(!root.isValid()||root.getType().toString()!="SONARA_ARRANGEMENT")return a;
+    if(root.getChildWithName("LANES").getNumChildren()>12||root.getChildWithName("SECTIONS").getNumChildren()>64
+       ||!std::isfinite((double)root.getProperty("bpm",128.0)))return a;
     a.sourcePrompt=root.getProperty("prompt","").toString();a.tempo=juce::jlimit(60.0,200.0,(double)root.getProperty("bpm",128.0));a.bars=juce::jlimit(1,512,(int)root.getProperty("bars",defaultBars));a.rootMidi=juce::jlimit(0,127,(int)root.getProperty("rootMidi",53));a.minor=(bool)root.getProperty("minor",true);a.promptIntent=parsePromptIntent(a.sourcePrompt,a.tempo);a.promptIntent.tempo=a.tempo;a.promptIntent.rootMidi=a.rootMidi;a.promptIntent.minor=a.minor;a.sections.clear();a.lanes.clear();
     a.resolvedPrompt=root.getProperty("resolvedPrompt",ProducerPrompt::parse(a.sourcePrompt).positive).toString();
     a.promptIntent.exclusionMask=(unsigned)(int)root.getProperty("exclusions",(int)a.promptIntent.exclusionMask);
     a.masterSeed=(uint64_t)root.getProperty("songId","0").toString().getHexValue64();
+    a.buildSeedDomains(a.masterSeed);
     a.harmonyId=(uint64_t)root.getProperty("harmonyId","0").toString().getHexValue64();
     a.melodyId=(uint64_t)root.getProperty("melodyId","0").toString().getHexValue64();
     auto composition=root.getChildWithName("COMPOSITION_DNA");
@@ -3808,7 +3811,7 @@ SongArrangement SongArrangement::fromValueTree(const juce::ValueTree& root)
         a.sectionGoals.clear();
         a.buildSectionGoals(a.masterSeed!=0?a.masterSeed:0x360036ULL);
     }
-    auto lt=root.getChildWithName("LANES");for(int i=0;i<lt.getNumChildren();++i){auto l=lt.getChild(i);ArrangementLane lane;lane.name=l.getProperty("name","Lane").toString();lane.midiChannel=juce::jlimit(1,16,(int)l.getProperty("channel",1));lane.drums=(bool)l.getProperty("drums",false);auto dna=l.getChildWithName("SoundDNA");if(dna.isValid())lane.sound=SoundDNA::fromValueTree(dna);auto notes=l.getChildWithName("NOTES");for(int j=0;j<notes.getNumChildren();++j){auto n=notes.getChild(j);lane.notes.push_back({juce::jlimit(0,127,(int)n.getProperty("note",60)),juce::jlimit(1,127,(int)n.getProperty("velocity",100)),juce::jmax(0.0,(double)n.getProperty("beat",0.0)),juce::jmax(.03,(double)n.getProperty("length",.5))});}std::sort(lane.notes.begin(),lane.notes.end(),[](const ArrangementNote&x,const ArrangementNote&y){return x.beat<y.beat;});a.lanes.push_back(std::move(lane));}
+    auto lt=root.getChildWithName("LANES");for(int i=0;i<lt.getNumChildren();++i){auto l=lt.getChild(i);ArrangementLane lane;lane.name=l.getProperty("name","Lane").toString();lane.midiChannel=juce::jlimit(1,16,(int)l.getProperty("channel",1));lane.drums=(bool)l.getProperty("drums",false);auto dna=l.getChildWithName("SoundDNA");if(dna.isValid())lane.sound=SoundDNA::fromValueTree(dna);auto notes=l.getChildWithName("NOTES");for(int j=0;j<notes.getNumChildren();++j){auto n=notes.getChild(j);lane.notes.push_back({juce::jlimit(0,127,(int)n.getProperty("note",60)),juce::jlimit(1,127,(int)n.getProperty("velocity",100)),juce::jmax(0.0,(double)n.getProperty("beat",0.0)),juce::jmax(.03,(double)n.getProperty("length",.5))});}a.lanes.push_back(std::move(lane));}
     for(auto& lane:a.lanes)canonicaliseLane(lane,a.getTotalBeats());
     return a;
 }

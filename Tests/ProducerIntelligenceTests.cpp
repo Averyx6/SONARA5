@@ -81,6 +81,8 @@ int main()
            ||sub.transientLevel!=0.f||sub.width!=0.f)return fail("Pure sub contains hidden modulation/upper layers");
     }
     if(leadMaterials.size()<4)return fail("Lead seeds did not produce different oscillator materials");
+    auto restored=sonara::SongArrangement::fromValueTree(first.toValueTree());restored.finalizeSoundPalette();
+    if(restored.getSoundPaletteFingerprint()!=first.getSoundPaletteFingerprint())return fail("Restored seed domains changed AUTO FIT SoundDNA");
     std::cout<<"Producer prompt constraints, complete deterministic plans and seed diversity passed\n";
     return 0;
 }

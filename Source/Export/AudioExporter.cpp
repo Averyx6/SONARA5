@@ -43,64 +43,25 @@ bool AudioExporter::renderSelectedLane(const SongArrangement& a,int lane,const j
     return renderSong(a,f,sr,cb,mix,lane);
 }
 
-bool AudioExporter::renderReferenceMelody(const ReferenceAnalysis& reference,const SoundDNA& patch,
-                                               const juce::File& destination,double sampleRate,Progress cb) const
+SongArrangement AudioExporter::makeReferenceSong(const ReferenceAnalysis& reference,const SoundDNA& patch)
+{
+    juce::ValueTree root("SONARA_ARRANGEMENT");
+    root.setProperty("bpm",juce::jlimit(60.0,200.0,reference.estimatedBpm),nullptr);
+    const int bars=juce::jlimit(1,512,(int)std::ceil(reference.melodyBeats()/4.0));root.setProperty("bars",bars,nullptr);
+    juce::ValueTree sections("SECTIONS"),section("SECTION");
+    section.setProperty("name","REFERENCE",nullptr);section.setProperty("startBar",0,nullptr);section.setProperty("bars",bars,nullptr);section.setProperty("energy",.8f,nullptr);sections.addChild(section,-1,nullptr);root.addChild(sections,-1,nullptr);
+    juce::ValueTree lanes("LANES");
+    static const char* names[12]={"KICK","SNARE / CLAP","HATS","PERCUSSION","BASS","SUB","CHORDS","PLUCK","PAD","LEAD","COUNTER","FX / TRANSITIONS"};
+    for(int i=0;i<12;++i){juce::ValueTree lane("LANE");lane.setProperty("name",names[i],nullptr);lane.setProperty("channel",i==9?1:(i<4?10:i-2),nullptr);lane.setProperty("drums",i<4,nullptr);lane.addChild((i==9?patch:SoundDNA{}).toValueTree(),-1,nullptr);lanes.addChild(lane,-1,nullptr);}root.addChild(lanes,-1,nullptr);
+    auto song=SongArrangement::fromValueTree(root);
+    for(const auto& n:reference.melody)song.editLanes()[9].notes.push_back({juce::jlimit(0,127,n.midiNote),juce::jlimit(1,127,n.velocity),juce::jmax(0.0,n.beat),juce::jmax(.0625,n.length)});
+    return SongArrangement::fromValueTree(song.toValueTree());
+}
+bool AudioExporter::renderReferenceMelody(const ReferenceAnalysis& reference,const SoundDNA& patch,const juce::File& destination,double rate,Progress cb) const
 {
     if(!reference.valid()||reference.melody.empty())return false;
-    std::unique_ptr<juce::AudioFormatWriter> writer;
-    if(!createWavWriter(destination,sampleRate,writer))return false;
-
-    ArrangementLane lane;
-    lane.name="REFERENCE";
-    lane.midiChannel=1;
-    lane.sound=patch;
-    lane.notes.reserve(reference.melody.size());
-    for(const auto& n:reference.melody)
-        lane.notes.push_back({n.midiNote,juce::jlimit(1,127,n.velocity),
-                              juce::jmax(0.0,n.beat),juce::jmax(.0625,n.length)});
-
-    constexpr int blockSize=512;
-    const double bpm=juce::jlimit(40.0,240.0,reference.estimatedBpm);
-    const double spb=sampleRate*60.0/bpm;
-    const int64_t total=(int64_t)std::llround(
-        (juce::jmax(1.0,reference.melodyBeats())*spb)+sampleRate*3.0);
-
-    SonaraEngine synth;
-    synth.setLowCpuMode(true);
-    synth.setVoiceLimit(4);
-    synth.prepare(sampleRate,blockSize,2);
-    synth.setPatch(patch);
-
-    juce::AudioBuffer<float> block(2,blockSize);
-    juce::MidiBuffer midi;
-    midi.ensureSize(8192);
-    std::array<float,2> masterX{},masterY{};
-
-    for(int64_t start=0;start<total;start+=blockSize)
-    {
-        if(cancel&&cancel->load()){writer.reset();destination.deleteFile();return false;}
-        const int n=(int)std::min<int64_t>(blockSize,total-start);
-        block.clear();
-        juce::AudioBuffer<float> view(block.getArrayOfWritePointers(),2,0,n);
-        injectLaneMidi(lane,midi,start,n,bpm,sampleRate);
-        synth.render(view,midi,n);
-
-        for(int ch=0;ch<2;++ch)
-        {
-            auto* d=block.getWritePointer(ch);
-            float x1=masterX[(size_t)ch],y1=masterY[(size_t)ch];
-            for(int i=0;i<n;++i)
-                d[i]=mixpolicy::processMasterSample(d[i],x1,y1,sampleRate);
-            masterX[(size_t)ch]=x1;masterY[(size_t)ch]=y1;
-        }
-
-        if(!writer->writeFromAudioSampleBuffer(block,0,n))return false;
-        if(cb&&start%(blockSize*64)==0)
-            cb((float)start/(float)std::max<int64_t>(1,total),"Rendering RESOUND WAV");
-    }
-
-    if(cb)cb(1.f,"RESOUND WAV ready");
-    return true;
+    const auto song=makeReferenceSong(reference,patch);
+    return renderSong(song,destination,rate,cb,nullptr,-1);
 }
 
 bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& f,double sr,Progress cb,const MixArray* mix) const

@@ -51,7 +51,8 @@ public:
     double songPosition01() const noexcept;
     int currentSongBar() const noexcept;
     juce::String currentSectionName() const;
-    juce::String getCurrentSongPrompt() const { auto a=arrangementSnapshot(); return a?a->getSourcePrompt():juce::String{}; }
+    juce::String getCurrentSongPrompt() const { const juce::ScopedLock lock(promptLock);return promptDraft; }
+    void setSongPromptDraft(const juce::String& value){const juce::ScopedLock lock(promptLock);promptDraft=value.substring(0,8192);}
     std::shared_ptr<const sonara::SongArrangement> arrangementSnapshot() const noexcept { return std::atomic_load_explicit(&arrangement,std::memory_order_acquire); }
     bool writeArrangementMidiFile(const juce::File&) const;
     bool writeSelectedLaneMidiFile(const juce::File&) const;
@@ -82,6 +83,7 @@ public:
 
     void setPreviewBpm(double bpm) noexcept { previewBpm=juce::jlimit(60.0,200.0,bpm); }
     double getPreviewBpm() const noexcept { return previewBpm; }
+    double getPreparedSampleRate() const noexcept{return previewSampleRate.load();}
     uint64_t getSongGenerationSeed() const noexcept { return lastSongSeed.load(std::memory_order_relaxed); }
     float getMelodyNovelty() const noexcept { return lastMelodyNovelty.load(std::memory_order_relaxed); }
     float getHarmonyNovelty() const noexcept { return lastHarmonyNovelty.load(std::memory_order_relaxed); }
@@ -106,6 +108,7 @@ public:
     std::atomic<bool> backgroundCancel{false};
 
 private:
+    mutable juce::CriticalSection operationLock,promptLock;juce::String promptDraft;
     static constexpr int firstMusicalLane=4, musicalLaneCount=8;
     void injectPreviewMidi(juce::MidiBuffer&,int);
     sonara::SongMixArray songMixSnapshot() const noexcept;
@@ -117,7 +120,8 @@ private:
     sonara::SonaraEngine engine;
     sonara::SongRenderEngine songRenderer;
     sonara::PromptGenerator generator; sonara::CyanoryxBridge cyanoryx; sonara::MutationLocks locks;
-    sonara::ReferenceAnalyzer referenceAnalyzer; sonara::ReferenceAnalysis reference; bool referenceLoaded=false, referenceMelodyPreview=false;
+    sonara::ReferenceAnalyzer referenceAnalyzer; sonara::ReferenceAnalysis reference; bool referenceLoaded=false;std::atomic<bool> referenceMelodyPreview{false};
+    std::shared_ptr<const sonara::SongArrangement> referenceSong;
     sonara::AudioExporter audioExporter;
     uint64_t generationCounter=1;
     uint64_t sessionSalt=0;
@@ -128,7 +132,7 @@ private:
     std::deque<std::vector<int>> melodyHistory;
     std::deque<std::vector<int>> harmonyHistory,bassHistory,drumHistory,pluckHistory,structureHistory;
     std::atomic<bool> previewPlaying{false}; std::atomic<int64_t> previewSample{0}; std::atomic<bool> songPlaying{false}; std::atomic<int64_t> songSample{0}; std::atomic<int> selectedLane{9};
-    double previewSampleRate=44100.0,previewBpm=128.0; int64_t previewLengthSamples=1; int maximumBlockSize=512;
+    std::atomic<double> previewSampleRate{44100.0},previewBpm{128.0}; int64_t previewLengthSamples=1; int maximumBlockSize=512;
     std::shared_ptr<const sonara::SongArrangement> arrangement;
     std::array<std::atomic<float>,12> laneMixLevel{},laneMixPan{},laneMixWidth{},laneMixFx{};
     std::vector<sonara::SoundDNA> patchHistory; int historyIndex=-1; sonara::SoundDNA patchA,patchB; bool hasA=false,hasB=false;
