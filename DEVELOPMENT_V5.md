@@ -122,3 +122,18 @@ Validation: UI snapshots inspected; final Windows release gate remains pending.
 Validation: extended local producer/playback tests passed, including the 185-second
 run at about 0.19 real-time factor. Windows v4.6 run 197 passed all nine suites,
 Release compilation, VST3 discovery and packaging. Exact final v5 validation is pending.
+
+## v5.0 — final candidate gate
+
+This candidate consolidates the working v4.1–v4.9 improvements above. Release
+acceptance requires the exact final commit to pass Windows x64 Release and every
+regression suite, including VST3 host discovery. The downloaded ZIP must then be
+inspected for the complete bundle, strict instrument metadata, x64 PE binary,
+matching version, exact commit and `tests=passed` in `BUILD_LOG.txt`, and matching
+SHA-256 checksums. A version label alone does not establish release acceptance.
+
+The nine suites cover mutation locks, Cyanoryx interchange, SoundDNA seed state,
+engine DSP, arrangements, producer intelligence, processor playback/exports/state,
+UI workflow and VST3 discovery. Original musical, master and CPU assertions remain
+in force. FL Studio's OS-level file acceptance is a separate host interaction;
+the guide describes the visible drag state and the save/import fallback accurately.
