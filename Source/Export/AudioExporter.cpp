@@ -17,21 +17,6 @@ bool AudioExporter::createWavWriter(const juce::File& file, double sampleRate, s
     return true;
 }
 
-void AudioExporter::injectLaneMidi(const ArrangementLane& lane, juce::MidiBuffer& midi, int64_t startSample, int numSamples, double bpm, double sampleRate)
-{
-    midi.clear();const double spb=sampleRate*60.0/bpm;const double startBeat=(double)startSample/spb,endBeat=(double)(startSample+numSamples)/spb;
-    auto it=std::lower_bound(lane.notes.begin(),lane.notes.end(),startBeat-5.0,[](const ArrangementNote& n,double beat){return n.beat<beat;});
-    for(;it!=lane.notes.end()&&it->beat<=endBeat;++it){const double onS=it->beat*spb,offS=(it->beat+it->length)*spb;if(onS>=startSample&&onS<startSample+numSamples)midi.addEvent(juce::MidiMessage::noteOn(lane.midiChannel,it->note,(juce::uint8)it->velocity),(int)(onS-startSample));if(offS>=startSample&&offS<startSample+numSamples)midi.addEvent(juce::MidiMessage::noteOff(lane.midiChannel,it->note),(int)(offS-startSample));}
-}
-
-int AudioExporter::collectDrumTriggers(const ArrangementLane& lane,int64_t startSample,int numSamples,double bpm,double sampleRate,DrumTrigger* out,int capacity)
-{
-    if(out==nullptr||capacity<=0)return 0;const double spb=sampleRate*60.0/bpm;const double startBeat=(double)startSample/spb,endBeat=(double)(startSample+numSamples)/spb;int count=0;
-    auto it=std::lower_bound(lane.notes.begin(),lane.notes.end(),startBeat,[](const ArrangementNote& n,double beat){return n.beat<beat;});
-    for(;it!=lane.notes.end()&&it->beat<endBeat&&count<capacity;++it){const int offset=juce::jlimit(0,numSamples-1,(int)std::llround(it->beat*spb-startSample));out[count++]={offset,it->note,it->velocity/127.f};}
-    return count;
-}
-
 juce::String AudioExporter::safeFileName(const juce::String& s)
 {
     return s.retainCharacters("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ ").trim().replaceCharacter(' ','_');
@@ -69,20 +54,24 @@ bool AudioExporter::renderFullMix(const SongArrangement& a,const juce::File& f,d
 
 bool AudioExporter::renderSong(const SongArrangement& a,const juce::File& file,double sr,Progress cb,const MixArray* mix,int lane) const
 {
-    if(a.getLanes().size()!=12||!std::isfinite(sr)||sr<8000||sr>192000)return false;
-    std::unique_ptr<juce::AudioFormatWriter> writer;if(!createWavWriter(file,sr,writer))return false;
+    if(!a.validate()||!std::isfinite(sr)||sr<8000||sr>192000)return false;
+    juce::TemporaryFile temporary(file);
+    std::unique_ptr<juce::AudioFormatWriter> writer;if(!createWavWriter(temporary.getFile(),sr,writer))return false;
     constexpr int blockSize=512;
     SongRenderEngine renderer;renderer.prepare(sr,blockSize);renderer.configure(a);
     juce::AudioBuffer<float> block(2,blockSize);
     const auto total=(int64_t)std::llround(a.getTotalBeats()*sr*60.0/a.getBpm()+sr*4.0);
     for(int64_t start=0;start<total;start+=blockSize)
     {
-        if(cancel&&cancel->load()){writer.reset();file.deleteFile();return false;}
+        if(cancel&&cancel->load()){writer.reset();return false;}
         const int n=(int)std::min<int64_t>(blockSize,total-start);
         renderer.render(a,block,start,n,mix,lane);
-        if(!writer->writeFromAudioSampleBuffer(block,0,n)){writer.reset();file.deleteFile();return false;}
+        if(!writer->writeFromAudioSampleBuffer(block,0,n)){writer.reset();return false;}
         if(cb&&start%(blockSize*64)==0)cb((float)start/(float)total,lane<0?"Rendering full mix":"Rendering "+a.getLanes()[(size_t)lane].name);
     }
+    writer.reset();
+    if(cancel&&cancel->load())return false;
+    if(!temporary.overwriteTargetFileWithTemporary())return false;
     if(cb)cb(1.f,lane<0?"Full mix ready":"Lane ready");
     return true;
 }
@@ -91,6 +80,10 @@ bool AudioExporter::renderAllStems(const SongArrangement& a,const juce::File& di
 {
     if(!directory.exists()&&!directory.createDirectory())return false;const auto& lanes=a.getLanes();if(lanes.empty())return false;
     for(size_t i=0;i<lanes.size();++i){if(cb)cb((float)i/(float)lanes.size(),"Stem "+lanes[i].name);const auto f=directory.getChildFile(juce::String((int)i+1).paddedLeft('0',2)+"_"+safeFileName(lanes[i].name)+".wav");if(!renderSelectedLane(a,(int)i,f,sampleRate,{},mix))return false;}
+    const auto instructions="SONARA stems\nBPM="+juce::String(a.getBpm(),3)+"\nkey="+a.getKeyLabel()+"\nseed="+juce::String::toHexString((juce::int64)a.getSongId()).paddedLeft('0',16)
+        +"\nsample_rate="+juce::String(sampleRate,0)+"\nbars="+juce::String(a.getBars())
+        +"\nAll WAVs start at bar 1 and include the same four-second decay tail.\nSet FL Studio's tempo above and place every stem at the same Playlist start.\nMIDI carries notes and timing; audio carries SONARA's rendered sound.\nEach stem uses the lane's SoundDNA, section automation and mix settings.\nThe safe nonlinear master is applied separately to each stem; their sum is not bit-identical to the mastered full-mix WAV.\n";
+    if(!directory.getChildFile("STEMS.txt").replaceWithText(instructions))return false;
     if(cb)cb(1.f,"All stems ready");return true;
 }
 

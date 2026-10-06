@@ -216,10 +216,10 @@ SongArrangement::PromptIntent SongArrangement::parsePromptIntent(const juce::Str
         if(tokens[i+1].startsWithIgnoreCase("bar"))
         {
             const int value=tokens[i].getIntValue();
-            if(value>=48&&value<=512){result.targetBars=4*((value+2)/4);break;}
+            if(value>=4&&value<=512){result.targetBars=value;break;}
         }
     if(result.targetBars==0&&prepared.durationSeconds>0.0)
-        result.targetBars=juce::jlimit(48,512,4*(int)std::llround(prepared.durationSeconds*result.tempo/960.0));
+        result.targetBars=juce::jlimit(4,512,4*(int)std::llround(prepared.durationSeconds*result.tempo/960.0));
 
     if(positive("rising motif")||positive("rising hook")||positive("rising melody"))result.hookShape=1;
     else if(positive("falling motif")||positive("falling hook")||positive("falling melody"))result.hookShape=2;
@@ -1269,8 +1269,8 @@ void SongArrangement::buildSongPlan(uint64_t seed)
 void SongArrangement::buildSections(uint64_t seed)
 {
     juce::ignoreUnused(seed);
-    std::array<juce::String,11> names;
-    std::array<int,11> lengths{};
+    std::vector<juce::String> names;
+    std::vector<int> lengths;
 
     // A SongPlan selects architecture before any MIDI is emitted. All families
     // retain stable role labels for the UI/export path, but their actual order
@@ -1359,26 +1359,33 @@ void SongArrangement::buildSections(uint64_t seed)
     if((promptIntent.sectionDirections&16u)!=0u)setMax("BREAKDOWN",4);
     if((promptIntent.sectionDirections&32u)!=0u)setMin("BREAKDOWN",12);
 
-    // Explicit "N bars" sets the planned full-song duration. Round to a musical
-    // four-bar grid, then distribute the difference across content sections.
+    // Keep explicit bar counts exact. Short briefs get a compact arc instead
+    // of silently expanding to an eleven-section, 48-bar song.
     const int requestedBars=promptIntent.targetBars;
+    if(requestedBars>0&&requestedBars<8)
+    {names={"INTRO","BUILD","DROP","OUTRO"};lengths={1,1,1,1};}
+    else if(requestedBars>=8&&requestedBars<11)
+    {names={"INTRO","VERSE","BUILD","CHORUS","DROP","BUILD 2","FINAL HOOK","OUTRO"};lengths={1,1,1,1,1,1,1,1};}
     auto totalBars=[&](){int total=0;for(const int value:lengths)total+=value;return total;};
     if(requestedBars>0)
     {
         static constexpr int priority[11]={9,4,8,1,6,5,3,7,2,0,10};
+        const int minimum=requestedBars>=44?4:1;
+        const int step=requestedBars>=44&&requestedBars%4==0?4:1;
+        const auto slot=[&](int cursor){return names.size()==11?priority[cursor%11]:cursor%(int)names.size();};
         int cursor=0;
         while(totalBars()<requestedBars)
         {
-            const int i=priority[cursor++%11];
+            const int i=slot(cursor++);
             const bool protectedPreDrop=(promptIntent.sectionDirections&1u)!=0u
                 &&(names[(size_t)i]=="INTRO"||names[(size_t)i]=="VERSE"||names[(size_t)i]=="BUILD");
-            if(!protectedPreDrop)lengths[(size_t)i]+=4;
+            if(!protectedPreDrop)lengths[(size_t)i]+=step;
         }
         cursor=0;
         while(totalBars()>requestedBars&&cursor<1536)
         {
-            const int i=priority[cursor++%11];
-            if(lengths[(size_t)i]>4)lengths[(size_t)i]-=4;
+            const int i=slot(cursor++);
+            if(lengths[(size_t)i]>minimum)lengths[(size_t)i]-=step;
         }
     }
 
@@ -1588,13 +1595,16 @@ void SongArrangement::regenerateDrumsOnly(const juce::String& drumPrompt, uint64
     const auto originalPrompt=sourcePrompt;
     const auto originalResolved=resolvedPrompt;
     const auto originalPlan=plan;
+    const auto originalIntent=promptIntent;
     const auto originalDomains=domains;
 
     // Keep the current song architecture/harmony/melody intact. Only the drum
     // generation domains and drum-specific plan fields are refreshed.
     const auto extra=drumPrompt.trim();
-    sourcePrompt=originalPrompt+(extra.isNotEmpty()?juce::String(", ")+extra:juce::String());
-    resolvedPrompt=ProducerPrompt::parse(sourcePrompt).positive;
+    sourcePrompt=extra.isNotEmpty()?extra:originalPrompt;
+    const auto drumIntent=ProducerPrompt::parse(sourcePrompt);
+    resolvedPrompt=drumIntent.positive;
+    promptIntent=parsePromptIntent(sourcePrompt,tempo);
     domains.drums=mix64(seed^0x4452554d5f4e4557ULL);
     domains.soundPalette=mix64(seed^0x4452554d5f534e44ULL);
     plan.drumGroove=(int)(random01(domains.drums,0x1002)*6.f)%6;
@@ -1615,6 +1625,7 @@ void SongArrangement::regenerateDrumsOnly(const juce::String& drumPrompt, uint64
         sourcePrompt=originalPrompt;
         resolvedPrompt=originalResolved;
         plan=originalPlan;
+        promptIntent=originalIntent;
         domains=originalDomains;
         return;
     }
@@ -1636,6 +1647,13 @@ void SongArrangement::regenerateDrumsOnly(const juce::String& drumPrompt, uint64
     plan.drumGroove=newGroove;
     plan.hatMode=newHatMode;
     domains=originalDomains;
+    promptIntent=originalIntent;
+    static constexpr unsigned masks[4]={ProducerPrompt::kick,ProducerPrompt::snare,ProducerPrompt::hats,ProducerPrompt::percussion};
+    for(size_t i=0;i<4;++i)
+    {
+        if(((drumIntent.exclusions|originalIntent.exclusionMask)&masks[i])!=0u)lanes[i].notes.clear();
+        canonicaliseLane(lanes[i],getTotalBeats());
+    }
 }
 
 
@@ -1902,6 +1920,10 @@ void SongArrangement::finalizeSoundPalette()
 
         const auto semanticName=lane.sound.name.replace("Generated ","").trim();
         lane.sound.name=lane.name+" • "+(semanticName.isEmpty()?juce::String("Custom"):semanticName);
+        // Generated patches must already obey the persisted DSP domain. In
+        // particular, seeded pluck attacks may otherwise fall below 1 ms and
+        // change when restored through the SoundDNA reader.
+        lane.sound=SoundDNA::fromValueTree(lane.sound.toValueTree());
     }
 }
 
@@ -3613,8 +3635,12 @@ bool SongArrangement::validate(juce::String* reason) const
     }
     if(boundary!=bars)return fail("Sections do not cover the song");
     size_t count=0;
-    for(const auto& lane:lanes)
+    static const char* names[12]={"KICK","SNARE / CLAP","HATS","PERCUSSION","BASS","SUB","CHORDS","PLUCK","PAD","LEAD","COUNTER","FX / TRANSITIONS"};
+    for(size_t li=0;li<lanes.size();++li)
     {
+        const auto& lane=lanes[li];
+        if(lane.name!=names[li]||lane.drums!=(li<4)||lane.midiChannel<1||lane.midiChannel>16)return fail("Invalid lane identity");
+        int eventBeat=-1,eventsInBeat=0;
         double previous=-1.0;
         for(const auto& n:lane.notes)
         {
@@ -3622,6 +3648,9 @@ bool SongArrangement::validate(juce::String* reason) const
                ||n.beat>=getTotalBeats()||n.length<=0.0||n.beat+n.length>getTotalBeats()+.001
                ||n.note<0||n.note>127||n.velocity<1||n.velocity>127)return fail("Invalid MIDI event");
             previous=n.beat;
+            const int beat=(int)std::floor(n.beat);
+            if(beat!=eventBeat){eventBeat=beat;eventsInBeat=0;}
+            if(++eventsInBeat>(lane.drums?32:128))return fail("Lane exceeds realtime event density budget");
             if(++count>200000)return fail("Arrangement exceeds event budget");
         }
     }
@@ -3740,6 +3769,8 @@ SongArrangement SongArrangement::fromValueTree(const juce::ValueTree& root)
     if(!root.isValid()||root.getType().toString()!="SONARA_ARRANGEMENT")return a;
     if(root.getChildWithName("LANES").getNumChildren()>12||root.getChildWithName("SECTIONS").getNumChildren()>64
        ||!std::isfinite((double)root.getProperty("bpm",128.0)))return a;
+    int eventCount=0;for(const auto lane:root.getChildWithName("LANES"))
+        if((eventCount+=lane.getChildWithName("NOTES").getNumChildren())>200000)return a;
     a.sourcePrompt=root.getProperty("prompt","").toString();a.tempo=juce::jlimit(60.0,200.0,(double)root.getProperty("bpm",128.0));a.bars=juce::jlimit(1,512,(int)root.getProperty("bars",defaultBars));a.rootMidi=juce::jlimit(0,127,(int)root.getProperty("rootMidi",53));a.minor=(bool)root.getProperty("minor",true);a.promptIntent=parsePromptIntent(a.sourcePrompt,a.tempo);a.promptIntent.tempo=a.tempo;a.promptIntent.rootMidi=a.rootMidi;a.promptIntent.minor=a.minor;a.sections.clear();a.lanes.clear();
     a.resolvedPrompt=root.getProperty("resolvedPrompt",ProducerPrompt::parse(a.sourcePrompt).positive).toString();
     a.promptIntent.exclusionMask=(unsigned)(int)root.getProperty("exclusions",(int)a.promptIntent.exclusionMask);

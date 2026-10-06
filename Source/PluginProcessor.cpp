@@ -494,7 +494,8 @@ float promptCompositionMatch(const juce::String& prompt,const sonara::SongArrang
 float melodyQualityScore(const sonara::SongArrangement& song)
 {
     const auto* lead=laneNamed(song,"LEAD");
-    if(lead==nullptr||lead->notes.size()<20)return 0.f;
+    const auto minimumNotes=(size_t)juce::jlimit(3,20,song.getBars()/2);
+    if(lead==nullptr||lead->notes.size()<minimumNotes)return 0.f;
 
     int hugeLeaps=0,repeatedRun=1,maxRepeated=1,isolatedOutliers=0;
     int minNote=127,maxNote=0,lowRegisterNotes=0,maxNotesPerBar=0;
@@ -680,7 +681,7 @@ void SonaraAudioProcessor::prepareToPlay(double sr, int bs)
 
     engine.prepare(sr, maximumBlockSize, getTotalNumOutputChannels());
     songRenderer.prepare(sr,maximumBlockSize);
-    if(auto a=arrangementSnapshot())songRenderer.configure(*a);
+    if(auto a=arrangementSnapshot()){songRenderer.configure(*a);rendererPlan=a.get();}else rendererPlan=nullptr;
 }
 
 bool SonaraAudioProcessor::isBusesLayoutSupported(const BusesLayout& l) const
@@ -732,11 +733,11 @@ void SonaraAudioProcessor::startPreview()
 {
     const juce::ScopedLock lock(getCallbackLock());
     stopSongPreview();
-    engine.allNotesOff();
+    engine.reset();
     if(referenceMelodyPreview.load()&&referenceLoaded)
     {
         referenceSong=std::make_shared<sonara::SongArrangement>(sonara::AudioExporter::makeReferenceSong(reference,engine.patchSnapshot()));
-        songRenderer.configure(*referenceSong);previewSample.store(0);
+        songRenderer.configure(*referenceSong);rendererPlan=referenceSong.get();previewSample.store(0);
         previewLengthSamples=(int64_t)std::llround(referenceSong->getTotalBeats()*previewSampleRate*60.0/referenceSong->getBpm()+previewSampleRate*4.0);
         previewPlaying.store(true);generationStatus="Reference preview • same renderer as RESOUND WAV";return;
     }
@@ -749,9 +750,10 @@ void SonaraAudioProcessor::startPreview()
 
 void SonaraAudioProcessor::stopPreview()
 {
+    const juce::ScopedLock lock(getCallbackLock());
     previewPlaying.store(false);
     previewSample.store(0);
-    engine.allNotesOff();
+    engine.reset();
     generationStatus = "Sound preview stopped";
 }
 
@@ -815,6 +817,7 @@ void SonaraAudioProcessor::setPatchWithHistory(const sonara::SoundDNA& d)
 
 void SonaraAudioProcessor::generatePatch(const juce::String& p)
 {
+    const juce::ScopedLock operation(operationLock);
     stopPreview(); referenceMelodyPreview=false;
     const auto seed = (uint64_t) p.hashCode64()
                     ^ sessionSalt
@@ -828,6 +831,7 @@ void SonaraAudioProcessor::generatePatch(const juce::String& p)
 
 void SonaraAudioProcessor::mutatePatch()
 {
+    const juce::ScopedLock operation(operationLock);
     auto d = generator.mutate(engine.patch(), engine.patch().seed + (++generationCounter), .45f, locks,
                               [this](float x, const juce::String& s){ generationProgress.store(x); generationStatus = s; });
     setPatchWithHistory(d); generationStatus = "Mutation ready";
@@ -835,6 +839,7 @@ void SonaraAudioProcessor::mutatePatch()
 
 void SonaraAudioProcessor::generateSimilarPatch()
 {
+    const juce::ScopedLock operation(operationLock);
     const auto source = engine.patch();
     const auto seed = source.seed + (++generationCounter * 0x517cc1b727220a95ULL);
     auto d = generator.mutate(source, seed, .18f, locks,
@@ -845,6 +850,7 @@ void SonaraAudioProcessor::generateSimilarPatch()
 
 void SonaraAudioProcessor::generateVariation(int index)
 {
+    const juce::ScopedLock operation(operationLock);
     const float amount = .12f + .12f * (float) juce::jlimit(1, 4, index);
     auto d = generator.mutate(engine.patch(), engine.patch().seed + (++generationCounter * 0x94d049bb133111ebULL), amount, locks);
     d.name = "Variation " + juce::String(index);
@@ -853,16 +859,17 @@ void SonaraAudioProcessor::generateVariation(int index)
 
 void SonaraAudioProcessor::randomizePatch()
 {
+    const juce::ScopedLock operation(operationLock);
     const auto sourcePrompt = engine.patch().sourcePrompt.isNotEmpty() ? engine.patch().sourcePrompt : "experimental wide synth";
     generatePatch(sourcePrompt + " randomized texture");
 }
 
-void SonaraAudioProcessor::undoPatch(){ if(historyIndex>0){ --historyIndex; engine.setPatch(patchHistory[(size_t)historyIndex]); generationStatus="Undo"; } }
-void SonaraAudioProcessor::redoPatch(){ if(historyIndex+1<(int)patchHistory.size()){ ++historyIndex; engine.setPatch(patchHistory[(size_t)historyIndex]); generationStatus="Redo"; } }
-void SonaraAudioProcessor::captureA(){ patchA=engine.patch();hasA=true;generationStatus="A captured"; }
-void SonaraAudioProcessor::captureB(){ patchB=engine.patch();hasB=true;generationStatus="B captured"; }
-void SonaraAudioProcessor::recallA(){ if(hasA){ engine.setPatch(patchA);generationStatus="A recalled"; } }
-void SonaraAudioProcessor::recallB(){ if(hasB){ engine.setPatch(patchB);generationStatus="B recalled"; } }
+void SonaraAudioProcessor::undoPatch(){const juce::ScopedLock operation(operationLock); if(historyIndex>0){ --historyIndex; engine.setPatch(patchHistory[(size_t)historyIndex]); generationStatus="Undo"; } }
+void SonaraAudioProcessor::redoPatch(){const juce::ScopedLock operation(operationLock); if(historyIndex+1<(int)patchHistory.size()){ ++historyIndex; engine.setPatch(patchHistory[(size_t)historyIndex]); generationStatus="Redo"; } }
+void SonaraAudioProcessor::captureA(){const juce::ScopedLock operation(operationLock); patchA=engine.patch();hasA=true;generationStatus="A captured"; }
+void SonaraAudioProcessor::captureB(){const juce::ScopedLock operation(operationLock); patchB=engine.patch();hasB=true;generationStatus="B captured"; }
+void SonaraAudioProcessor::recallA(){const juce::ScopedLock operation(operationLock); if(hasA){ engine.setPatch(patchA);generationStatus="A recalled"; } }
+void SonaraAudioProcessor::recallB(){const juce::ScopedLock operation(operationLock); if(hasB){ engine.setPatch(patchB);generationStatus="B recalled"; } }
 
 bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
 {
@@ -1106,8 +1113,10 @@ bool SonaraAudioProcessor::generateTrackWithSeed(const juce::String& prompt,uint
     if(prompt.trim().isEmpty()||prompt.length()>8192)
     {generationStatus="Generation failed • enter a valid prompt";generationProgress.store(0.f);return false;}
     generationStatus="Planning the requested seed";
+    if(backgroundCancel.load()){generationStatus="Generation cancelled";generationProgress.store(0);return false;}
     auto made=std::make_shared<sonara::SongArrangement>();
     made->generate(prompt,previewBpm,seed);
+    if(backgroundCancel.load()){generationStatus="Generation cancelled";generationProgress.store(0);return false;}
     juce::String reason;
     if(!made->validate(&reason))
     {generationStatus="Generation failed • "+reason;generationProgress.store(0.f);return false;}
@@ -1264,7 +1273,8 @@ void SonaraAudioProcessor::startSongPreviewAtBar(int bar)
     stopPreview();
     const int safe=juce::jlimit(0,a->getBars()-1,bar);
     const auto start=(int64_t)std::llround(safe*4.0*previewSampleRate*60.0/a->getBpm());
-    songRenderer.configure(*a);songRenderer.reset(start);songSample.store(start);songPlaying.store(true);
+    if(rendererPlan!=a.get()){songRenderer.configure(*a);rendererPlan=a.get();}
+    songRenderer.reset(start);songSample.store(start);songPlaying.store(true);
     generationStatus="Playing "+currentSectionName()+" • bar "+juce::String(safe+1);
 }
 void SonaraAudioProcessor::pauseSongPreview()
@@ -1332,8 +1342,8 @@ sonara::SongMixArray SonaraAudioProcessor::songMixSnapshot() const noexcept
 void SonaraAudioProcessor::storeArrangement(std::shared_ptr<const sonara::SongArrangement> made)
 {
     const juce::ScopedLock lock(getCallbackLock());
-    if(made){songRenderer.configure(*made);songRenderer.reset(songSample.load());lastSongSeed.store(made->getSongId());}
-    else {songPlaying.store(false);songRenderer.reset(0);lastSongSeed.store(0);}
+    if(made){songRenderer.configure(*made);songRenderer.reset(songSample.load());rendererPlan=made.get();lastSongSeed.store(made->getSongId());}
+    else {songPlaying.store(false);songRenderer.reset(0);rendererPlan=nullptr;lastSongSeed.store(0);}
     std::atomic_store_explicit(&arrangement,std::move(made),std::memory_order_release);
 }
 void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int numSamples)
@@ -1388,6 +1398,8 @@ bool SonaraAudioProcessor::writeLeadMidiFile(const juce::File& destination) cons
     auto tempo=juce::MidiMessage::tempoMetaEvent((int)std::llround(60000000.0/a->getBpm()));
     tempo.setTimeStamp(0);seq.addEvent(tempo);
     auto name=juce::MidiMessage::textMetaEvent(3,"LEAD");name.setTimeStamp(0);seq.addEvent(name);
+    auto meter=juce::MidiMessage::timeSignatureMetaEvent(4,4);meter.setTimeStamp(0);seq.addEvent(meter);
+    for(const auto& section:a->getSections()){auto marker=juce::MidiMessage::textMetaEvent(6,section.name);marker.setTimeStamp(section.startBar*4.0*960);seq.addEvent(marker);}
     for(const auto& n:lane.notes)
     {
         auto on=juce::MidiMessage::noteOn(1,n.note,(juce::uint8)n.velocity);
@@ -1395,6 +1407,7 @@ bool SonaraAudioProcessor::writeLeadMidiFile(const juce::File& destination) cons
         on.setTimeStamp(n.beat*960.0);off.setTimeStamp((n.beat+n.length)*960.0);
         seq.addEvent(on);seq.addEvent(off);
     }
+    auto end=juce::MidiMessage::endOfTrack();end.setTimeStamp(a->getTotalBeats()*960);seq.addEvent(end);
     seq.updateMatchedPairs();mf.addTrack(seq);destination.deleteFile();juce::FileOutputStream out(destination);
     return out.openedOk()&&mf.writeTo(out);
 }
@@ -1402,6 +1415,7 @@ bool SonaraAudioProcessor::writeLeadMidiFile(const juce::File& destination) cons
 
 bool SonaraAudioProcessor::analyseReferenceFile(const juce::File& file)
 {
+    const juce::ScopedLock operation(operationLock);
     stopPreview();stopSongPreview();
     reference={};referenceLoaded=false;referenceMelodyPreview=false;
     generationProgress.store(.05f);generationStatus="Analyzing reference audio";
@@ -1423,6 +1437,7 @@ bool SonaraAudioProcessor::analyseReferenceFile(const juce::File& file)
 
 bool SonaraAudioProcessor::importMidiFile(const juce::File& file)
 {
+    const juce::ScopedLock operation(operationLock);
     stopPreview();stopSongPreview();
     reference={};referenceLoaded=false;referenceMelodyPreview=false;
     generationProgress.store(.1f);generationStatus="Importing MIDI";
@@ -1440,6 +1455,7 @@ bool SonaraAudioProcessor::importMidiFile(const juce::File& file)
 
 bool SonaraAudioProcessor::resoundReference(const juce::String& prompt)
 {
+    const juce::ScopedLock operation(operationLock);
     if(!hasReference())
     {
         generationProgress.store(0.f);generationStatus="Load a usable reference audio or MIDI first";
@@ -1456,6 +1472,7 @@ bool SonaraAudioProcessor::resoundReference(const juce::String& prompt)
 
 bool SonaraAudioProcessor::rebuildInstrumentalFromReference(const juce::String& prompt)
 {
+    const juce::ScopedLock operation(operationLock);
     if(!hasReference())
     {
         generationProgress.store(0.f);generationStatus="Load a usable reference audio or MIDI first";
@@ -1559,7 +1576,7 @@ bool SonaraAudioProcessor::writeReferenceMidiFile(const juce::File& file) const
 
 bool SonaraAudioProcessor::saveSound(const juce::File& file) const
 {
-    auto xml=engine.patch().toValueTree().createXml();return xml&&file.replaceWithText(xml->toString());
+    auto xml=engine.patchSnapshot().toValueTree().createXml();return xml&&file.replaceWithText(xml->toString());
 }
 
 bool SonaraAudioProcessor::loadSound(const juce::File& file)
@@ -1586,6 +1603,7 @@ bool SonaraAudioProcessor::saveProject(const juce::File& file) const
 bool SonaraAudioProcessor::loadProject(const juce::File& file)
 {
     const juce::ScopedLock operation(operationLock);
+    if(file.getSize()>64*1024*1024)return false;
     auto xml=juce::XmlDocument::parse(file);
     if(!xml)return false;
     auto root=juce::ValueTree::fromXml(*xml);
@@ -1606,7 +1624,7 @@ bool SonaraAudioProcessor::loadProject(const juce::File& file)
     applyLaneMixTree(*this,root.getChildWithName("LANE_MIX"));
     generationCounter=(uint64_t)std::max<juce::int64>(1,
         root.getProperty("generationCounter","1").toString().getLargeIntValue());
-    previewBpm=juce::jlimit(60.0,200.0,(double)root.getProperty("bpm",128.0));
+    setPreviewBpm((double)root.getProperty("bpm",128.0));
 
     const auto referenceTree=root.getChildWithName("REFERENCE_ANALYSIS");
     if(referenceTree.isValid())
@@ -1633,6 +1651,7 @@ bool SonaraAudioProcessor::loadProject(const juce::File& file)
             storeArrangement(std::shared_ptr<const sonara::SongArrangement>(made));
             if(!root.hasProperty("promptDraft"))setSongPromptDraft(made->getSourcePrompt());
             setSelectedLane(juce::jlimit(0,(int)lanes.size()-1,(int)root.getProperty("selectedLane",9)));
+            engine.setPatch(sonara::SoundDNA::fromValueTree(dna));
         }
     }
 
@@ -1642,6 +1661,7 @@ bool SonaraAudioProcessor::loadProject(const juce::File& file)
 }
 bool SonaraAudioProcessor::exportFullMix(const juce::File& file)
 {
+    const juce::ScopedLock operation(operationLock);
     auto a=arrangementSnapshot();
     if(!a){generationStatus="Generate a track first";return false;}
 
@@ -1666,11 +1686,13 @@ bool SonaraAudioProcessor::exportFullMix(const juce::File& file)
 
 bool SonaraAudioProcessor::exportSelectedLaneAudio(const juce::File& file)
 {
+    const juce::ScopedLock operation(operationLock);
     auto a=arrangementSnapshot();if(!a)return false;const auto mix=songMixSnapshot();const bool ok=audioExporter.renderSelectedLane(*a,selectedLane.load(),file,previewSampleRate,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;},&mix);generationProgress.store(ok?1.f:0.f);generationStatus=ok?"Selected lane WAV ready • "+file.getFullPathName():"Lane export failed";return ok;
 }
 
 bool SonaraAudioProcessor::exportLeadAudio(const juce::File& file)
 {
+    const juce::ScopedLock operation(operationLock);
     auto a=arrangementSnapshot();if(!a)return false;
     const auto& lanes=a->getLanes();
     int leadIndex=-1;
@@ -1686,6 +1708,7 @@ bool SonaraAudioProcessor::exportLeadAudio(const juce::File& file)
 
 bool SonaraAudioProcessor::exportReferenceAudio(const juce::File& file)
 {
+    const juce::ScopedLock operation(operationLock);
     if(!hasReference())
     {
         generationProgress.store(0.f);
@@ -1708,13 +1731,17 @@ bool SonaraAudioProcessor::exportReferenceAudio(const juce::File& file)
 
 bool SonaraAudioProcessor::exportAllStems(const juce::File& directory)
 {
+    const juce::ScopedLock operation(operationLock);
     auto a=arrangementSnapshot();if(!a)return false;const auto mix=songMixSnapshot();
-    const bool ok=audioExporter.renderAllStems(*a,directory,previewSampleRate,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;},&mix);generationProgress.store(ok?1.f:0.f);generationStatus=ok?"All 24-bit stems ready • "+directory.getFullPathName():"Stem export failed";return ok;
+    const bool ok=audioExporter.renderAllStems(*a,directory,previewSampleRate,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;},&mix)
+        &&saveProject(directory.getChildFile("SONARA-Stems.sonaraproject"))&&a->writeMidiFile(directory.getChildFile("SONARA-Arrangement.mid"));
+    generationProgress.store(ok?1.f:0.f);generationStatus=ok?"All 24-bit stems + MIDI + SoundDNA project ready • "+directory.getFullPathName():"Stem export failed";return ok;
 }
 
 void SonaraAudioProcessor::setLaneMix(int laneIndex,LaneMixParameter parameter,float value) noexcept
 {
     if(!juce::isPositiveAndBelow(laneIndex,12))return;
+    if(!std::isfinite(value))value=parameter==LaneMixParameter::pan?0.f:1.f;
     const size_t i=(size_t)laneIndex;
     switch(parameter)
     {
@@ -1735,6 +1762,7 @@ void SonaraAudioProcessor::setLaneMix(int laneIndex,LaneMixParameter parameter,f
 
 void SonaraAudioProcessor::setSelectedLane(int i)
 {
+    const juce::ScopedLock operation(operationLock);
     const int bounded=juce::jlimit(0,11,i);
     selectedLane.store(bounded);
     auto a=arrangementSnapshot();
@@ -1816,6 +1844,7 @@ bool SonaraAudioProcessor::setSelectedLaneSound(const juce::String& prompt,bool 
 
 void SonaraAudioProcessor::setMacro(Macro macro, float normalized)
 {
+    const juce::ScopedLock operation(operationLock);
     const float x = juce::jlimit(0.f,1.f,normalized); auto d = engine.patch();
     switch(macro)
     {
@@ -1835,8 +1864,9 @@ void SonaraAudioProcessor::setMacro(Macro macro, float normalized)
 
 juce::String SonaraAudioProcessor::exportProjectForCyanoryx() const
 {
+    const juce::ScopedLock operation(operationLock);
     auto a=arrangementSnapshot();
-    return cyanoryx.serializeInterchange(engine.patch(), a ? a->toValueTree() : juce::ValueTree{}, previewBpm, referenceLoaded ? reference.keyName : juce::String("Unknown"));
+    return cyanoryx.serializeInterchange(engine.patchSnapshot(), a ? a->toValueTree() : juce::ValueTree{}, previewBpm, referenceLoaded ? reference.keyName : juce::String("Unknown"));
 }
 
 bool SonaraAudioProcessor::importPatchFromCyanoryx(const juce::String& payload)
@@ -1894,7 +1924,7 @@ void SonaraAudioProcessor::setStateInformation(const void* data,int bytes)
         applyLaneMixTree(*this,state.getChildWithName("LANE_MIX"));
         generationCounter=(uint64_t)std::max<juce::int64>(1,
             state.getProperty("generationCounter","1").toString().getLargeIntValue());
-        previewBpm=juce::jlimit(60.0,200.0,(double)state.getProperty("bpm",128.0));
+        setPreviewBpm((double)state.getProperty("bpm",128.0));
 
         const auto referenceTree=state.getChildWithName("REFERENCE_ANALYSIS");
         if(referenceTree.isValid())
@@ -1921,6 +1951,7 @@ void SonaraAudioProcessor::setStateInformation(const void* data,int bytes)
                 storeArrangement(std::shared_ptr<const sonara::SongArrangement>(made));
                 if(!state.hasProperty("promptDraft"))setSongPromptDraft(made->getSourcePrompt());
                 setSelectedLane(juce::jlimit(0,(int)lanes.size()-1,(int)state.getProperty("selectedLane",9)));
+                engine.setPatch(sonara::SoundDNA::fromValueTree(dna));
             }
         }
 

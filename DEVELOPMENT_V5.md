@@ -93,3 +93,32 @@ processor suites passed, including stronger MIDI round-trip and WAV parity tests
   audition; serialize state operations and guard UI sound/status reads.
 
 Validation: UI snapshots inspected; final Windows release gate remains pending.
+
+## v4.7–v4.9 — constraints, stability and release hardening
+
+- Honour exact 4–512 bar counts, including short and non-four-bar durations;
+  compact requests receive a complete compact arc. Support instrument-only lists.
+- Drum regeneration uses its own brief, honours drum exclusions and canonicalises
+  regenerated notes while preserving the backing arrangement and sounds.
+- Cache section automation, filter coefficients and duck release; reuse cached
+  note schedules on seeks. Enforce lane identity, event density and state size.
+- Canonicalise generated SoundDNA to its persisted domain, fixing sub-1ms pluck
+  attacks changing on restore. Preserve standalone/RESOUND SoundDNA independently
+  from the selected song lane during project/session restoration.
+- Prepare every synth reverb for the actual host sample rate and settle initial
+  parameter smoothing. The first play and long-preview restart now agree.
+- Check 185 seconds of dense playback for finite audio, DC, unchanged master/CPU
+  limits, lifetime and repeat-start identity. Read and validate all twelve stems.
+- Keep original loudness limits; measure an actual four-bar drop with a valid
+  section plan instead of truncating a cinematic intro before its planned entrance.
+- Include full MIDI, a saved SoundDNA project and timing instructions with stems.
+  Preserve meter, sections and outro duration in dedicated lead MIDI too.
+- Move drum/reference generation to the GUI worker; test cancellation and editor
+  shutdown. Package the FL workflow guide and checksums, and verify checkout and
+  module versions before uploading the Windows artifact.
+- Flush rendered WAVs into a temporary sibling before replacing the destination;
+  cancellation preserves an existing export. Clear standalone preview FX on restart.
+
+Validation: extended local producer/playback tests passed, including the 185-second
+run at about 0.19 real-time factor. Windows v4.6 run 197 passed all nine suites,
+Release compilation, VST3 discovery and packaging. Exact final v5 validation is pending.

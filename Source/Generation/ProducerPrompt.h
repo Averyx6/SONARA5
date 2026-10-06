@@ -47,6 +47,28 @@ struct ProducerPrompt {
             if(w=="drums"||w=="drum")return kick|snare|hats|percussion;
             return 0u;
         };
+        // An explicit instrument-only clause is a positive whitelist. Ordinary
+        // adjectives such as "only dark" do not silence musical lanes.
+        for(int i=0;i<words.size();++i)if(words[i]=="only")
+        {
+            unsigned allowed=0;
+            int j=i+1;if(j<words.size()&&(words[j]=="use"||words[j]=="using"))++j;
+            for(;j<words.size();++j)
+            {
+                const auto bit=instrument(words[j].trimCharactersAtEnd(".!?"));
+                if(bit){allowed|=bit;continue;}
+                if(words[j]=="and"||words[j]=="&"||words[j]=="the")continue;
+                break;
+            }
+            if(allowed==0)for(j=i-1;j>=0;--j)
+            {
+                const auto bit=instrument(words[j].trimCharactersAtEnd(".!?"));
+                if(bit){allowed|=bit;continue;}
+                if(words[j]=="and"||words[j]=="&"||words[j]=="the")continue;
+                break;
+            }
+            if(allowed)out.exclusions|=4095u&~allowed;
+        }
         juce::StringArray affirmative;
         for(int i=0;i<words.size();++i)
         {

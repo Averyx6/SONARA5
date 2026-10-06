@@ -26,8 +26,6 @@ private:
     const std::atomic<bool>* cancel=nullptr;
     bool renderSong(const SongArrangement&,const juce::File&,double,Progress,const MixArray*,int) const;
     static bool createWavWriter(const juce::File&, double, std::unique_ptr<juce::AudioFormatWriter>&);
-    static void injectLaneMidi(const ArrangementLane&, juce::MidiBuffer&, int64_t startSample, int numSamples, double bpm, double sampleRate);
-    static int collectDrumTriggers(const ArrangementLane&, int64_t startSample, int numSamples, double bpm, double sampleRate, DrumTrigger* out, int capacity);
     static juce::String safeFileName(const juce::String&);
 };
 

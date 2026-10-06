@@ -21,6 +21,10 @@ public:
     void prepare(double rate,int maximumBlock)
     {
         sampleRate=juce::jmax(8000.0,rate);blockSize=juce::jmax(1,maximumBlock);
+        const float dt=1.f/(float)sampleRate;
+        for(int i=0;i<8;++i){const float rc=1.f/(juce::MathConstants<float>::twoPi*mixpolicy::highPassHz(i));hpCoefficient[(size_t)i]=rc/(rc+dt);}
+        subCoefficient=dt/(1.f/(juce::MathConstants<float>::twoPi*mixpolicy::subLowPassHz())+dt);
+        duckReleaseCoefficient=std::exp(-1.f/(float)(sampleRate*.18));
         static constexpr int voices[8]={1,1,3,2,3,3,2,1};
         for(int i=0;i<8;++i)
         {
@@ -33,10 +37,12 @@ public:
         block.setSize(2,blockSize);fxBus.setSize(2,blockSize);drumBus.setSize(2,blockSize);
         duckEnvelope.resize((size_t)blockSize);
         juce::Reverb::Parameters rp;rp.roomSize=.31f;rp.damping=.52f;rp.wetLevel=.22f;rp.dryLevel=0.f;rp.width=.82f;
-        reverb.setSampleRate(sampleRate);reverb.setParameters(rp);reset(0);
+        reverb.setParameters(rp);reverb.setSampleRate(sampleRate);reset(0);
     }
     void configure(const SongArrangement& a)
     {
+        if(a.getLanes().size()!=12||a.getSections().empty())
+        {for(auto& e:events)e.clear();for(auto& h:holds)h.clear();boundaries.clear();sectionMix.clear();reset(0);return;}
         const double spb=sampleRate*60.0/a.getBpm();
         for(size_t i=0;i<events.size();++i)
         {
@@ -55,7 +61,21 @@ public:
         }
         if(a.getLanes().size()>=4)for(size_t i=0;i<drums.size();++i)
         {drums[i].configureKit(a.getLanes()[0].sound,a.getLanes()[1].sound,a.getLanes()[2].sound,a.getLanes()[3].sound);drums[i].setNoiseSalt(i+1);}
-        boundaries.clear();for(const auto& s:a.getSections())boundaries.push_back((int64_t)std::llround((s.startBar+s.bars)*4.0*spb));
+        boundaries.clear();sectionMix.clear();
+        for(const auto& s:a.getSections())
+        {
+            boundaries.push_back((int64_t)std::llround((s.startBar+s.bars)*4.0*spb));
+            CachedSection cached;const float energy=juce::jlimit(0.f,1.f,s.energy),dt=1.f/(float)sampleRate;
+            cached.toneCoefficient=dt/(1.f/(juce::MathConstants<float>::twoPi*mixpolicy::toneCutoffHz(energy))+dt);
+            cached.drumGain=mixpolicy::drumGain(s.name,energy);
+            for(int i=0;i<8;++i)
+            {
+                cached.gain[(size_t)i]=mixpolicy::baseGain(i)*mixpolicy::sectionGain(i,s.name)*mixpolicy::energyGain(i,energy);
+                cached.send[(size_t)i]=mixpolicy::baseFxSend(i)*mixpolicy::energySpace(energy)*a.getLanes()[(size_t)i+4].sound.macroSpace;
+                cached.width[(size_t)i]=mixpolicy::stereoWidth(i,1.f,energy);
+            }
+            sectionMix.push_back(cached);
+        }
         reset(0);
     }
     void reset(int64_t start)
@@ -74,6 +94,7 @@ public:
     }
     void render(const SongArrangement& a,juce::AudioBuffer<float>& out,int64_t start,int samples,const SongMixArray* mix=nullptr,int isolatedLane=-1)
     {
+        if(sectionMix.empty()){out.clear();return;}
         int offset=0;
         while(offset<samples)
         {
@@ -92,6 +113,7 @@ public:
 private:
     struct Event { int64_t sample;int note,velocity;bool on; };
     struct Hold { int64_t on,off;int note,velocity; };
+    struct CachedSection {float toneCoefficient=1.f,drumGain=.7f;std::array<float,8> gain{},send{},width{};};
     void injectMidi(int lane,juce::MidiBuffer& midi,int64_t start,int n)
     {
         midi.clear();const auto& list=events[(size_t)lane];
@@ -110,25 +132,13 @@ private:
     {
         juce::ScopedNoDenormals noDenormals;
         constexpr int firstMusical=4,musicalCount=8;
-        const auto& lanes=a.getLanes();const double spb=sampleRate*60.0/a.getBpm();
+        const auto& lanes=a.getLanes();
         block.clear();fxBus.clear();
-        const double blockBeat=(double)startSample/spb;
-        const int blockBar=juce::jlimit(0,juce::jmax(0,a.getBars()-1),(int)std::floor(blockBeat/4.0));
-        juce::String blockSection;
-        float sectionEnergy=.5f;
-        for(const auto& s:a.getSections())
-            if(blockBar>=s.startBar&&blockBar<s.startBar+s.bars)
-            {blockSection=s.name;sectionEnergy=juce::jlimit(0.f,1.f,s.energy);break;}
-        const bool mixIntro=blockSection=="INTRO";
-        const bool mixVerse=blockSection=="VERSE";
-        const bool mixBuild=blockSection.contains("BUILD");
-        const bool mixChorus=blockSection=="CHORUS";
-        const bool mixDrop=blockSection.contains("DROP");
-        const bool mixBreakdown=blockSection=="BREAKDOWN";
-        const bool mixFinal=blockSection=="FINAL HOOK";
+        const auto sectionIndex=std::min(sectionMix.size()-1,(size_t)(std::upper_bound(boundaries.begin(),boundaries.end(),startSample)-boundaries.begin()));
+        const auto& automation=sectionMix[sectionIndex];
 
         int count=mix&&(*mix)[0].level<=.0001f?0:collectTriggers(0,startSample,n,triggers.data(),(int)triggers.size());
-        const float duckRelease=std::exp(-1.f/(float)(sampleRate*.18));
+        const float duckRelease=duckReleaseCoefficient;
         float duck=duckState;int triggerIndex=0;
         for(int s=0;s<n;++s)
         {
@@ -145,7 +155,6 @@ private:
 
         for(int i=0;i<musicalCount;++i)
         {
-            const auto& lane=lanes[(size_t)(firstMusical+i)];
             auto& midi=midis[(size_t)i];
             auto& s=scratch[(size_t)i];
             injectMidi(firstMusical+i,midi,startSample,n);
@@ -154,9 +163,7 @@ private:
             s.clear();
             engines[(size_t)i]->render(s,midi,n);
 
-            const float rc=1.f/(juce::MathConstants<float>::twoPi*mixpolicy::highPassHz(i));
-            const float dt=1.f/(float)sampleRate;
-            const float hpA=rc/(rc+dt);
+            const float hpA=hpCoefficient[(size_t)i];
             for(int ch=0;ch<2;++ch)
             {
                 auto* d=s.getWritePointer(ch);
@@ -177,8 +184,7 @@ private:
             }
             else if(i==1)
             {
-                const float lpRc=1.f/(juce::MathConstants<float>::twoPi*mixpolicy::subLowPassHz());
-                const float lpA=dt/(lpRc+dt);
+                const float lpA=subCoefficient;
                 auto* l=s.getWritePointer(0);auto* r=s.getWritePointer(1);
                 float state=lpState[(size_t)i][0];
                 for(int smp=0;smp<n;++smp){const float mono=.5f*(l[smp]+r[smp]);state+=lpA*(mono-state);l[smp]=state;r[smp]=state;}
@@ -187,9 +193,7 @@ private:
 
             if(i>=2)
             {
-                const float toneHz=mixpolicy::toneCutoffHz(sectionEnergy);
-                const float toneRc=1.f/(juce::MathConstants<float>::twoPi*toneHz);
-                const float toneA=dt/(toneRc+dt);
+                const float toneA=automation.toneCoefficient;
                 for(int ch=0;ch<2;++ch)
                 {
                     auto* d=s.getWritePointer(ch);
@@ -208,7 +212,7 @@ private:
             {
                 auto* l=s.getWritePointer(0);auto* r=s.getWritePointer(1);
                 const float requestedWidth=juce::jlimit(0.f,1.5f,mixState.width);
-                const float width=mixpolicy::stereoWidth(i,requestedWidth,sectionEnergy);
+                const float width=i==1?0.f:(i==0?juce::jmin(.18f,requestedWidth):requestedWidth*automation.width[(size_t)i]);
                 const float pan=i==1?0.f:juce::jlimit(-1.f,1.f,mixState.pan);
                 const float panL=pan>0.f?1.f-pan:1.f;
                 const float panR=pan<0.f?1.f+pan:1.f;
@@ -232,12 +236,8 @@ private:
                 }
             }
 
-            const float sectionGain=mixpolicy::sectionGain(i,blockSection);
-            const float energyGain=mixpolicy::energyGain(i,sectionEnergy);
-            const float gain=mixpolicy::baseGain(i)*sectionGain*energyGain
-                            *juce::jlimit(0.f,1.5f,mixState.level);
-            const float send=mixpolicy::baseFxSend(i)*mixpolicy::energySpace(sectionEnergy)*lane.sound.macroSpace
-                            *juce::jlimit(0.f,1.5f,mixState.fxSend);
+            const float gain=automation.gain[(size_t)i]*juce::jlimit(0.f,1.5f,mixState.level);
+            const float send=automation.send[(size_t)i]*juce::jlimit(0.f,1.5f,mixState.fxSend);
             for(int ch=0;ch<2;++ch)
             {
                 block.addFrom(ch,0,s,ch,0,n,gain);
@@ -253,7 +253,7 @@ private:
             juce::AudioBuffer<float> drumView(drumBus.getArrayOfWritePointers(),2,0,n);
             drums[(size_t)lane].render(drumView,triggers.data(),hits);
             const auto m=mix?(*mix)[(size_t)lane]:MixState{};
-            const float gain=mixpolicy::drumGain(blockSection,sectionEnergy)*juce::jlimit(0.f,1.5f,m.level);
+            const float gain=automation.drumGain*juce::jlimit(0.f,1.5f,m.level);
             if(lane>0&&m.fxSend>0.f)
                 for(int ch=0;ch<2;++ch)fxBus.addFrom(ch,0,drumBus,ch,0,n,gain*.04f*lanes[(size_t)lane].sound.macroSpace*m.fxSend);
             const float pan=juce::jlimit(-1.f,1.f,m.pan);
@@ -289,5 +289,7 @@ private:
     std::array<std::vector<Hold>,12> holds;
     std::array<int,12> channels{};
     std::vector<int64_t> boundaries;
+    std::vector<CachedSection> sectionMix;
+    std::array<float,8> hpCoefficient{};float subCoefficient=1.f,duckReleaseCoefficient=1.f;
 };
 } // namespace sonara

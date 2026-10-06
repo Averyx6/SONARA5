@@ -81,7 +81,7 @@ public:
     bool exportReferenceAudio(const juce::File&);
     bool exportAllStems(const juce::File& directory);
 
-    void setPreviewBpm(double bpm) noexcept { previewBpm=juce::jlimit(60.0,200.0,bpm); }
+    void setPreviewBpm(double bpm) noexcept { previewBpm=std::isfinite(bpm)?juce::jlimit(60.0,200.0,bpm):128.0; }
     double getPreviewBpm() const noexcept { return previewBpm; }
     double getPreparedSampleRate() const noexcept{return previewSampleRate.load();}
     uint64_t getSongGenerationSeed() const noexcept { return lastSongSeed.load(std::memory_order_relaxed); }
@@ -99,7 +99,7 @@ public:
     void connectCyanoryx() noexcept { cyanoryx.connect(); }
     void disconnectCyanoryx() noexcept { cyanoryx.disconnect(); }
     bool isCyanoryxConnected() const noexcept { return cyanoryx.isConnected(); }
-    juce::String exportPatchForCyanoryx() const { return cyanoryx.serializePatch(engine.patch()); }
+    juce::String exportPatchForCyanoryx() const { return cyanoryx.serializePatch(engine.patchSnapshot()); }
     juce::String exportProjectForCyanoryx() const;
     bool importPatchFromCyanoryx(const juce::String& payload);
     juce::String makeCyanoryxRequest(const sonara::CyanoryxSoundRequest& request) const { return cyanoryx.serializeRequest(request); }
@@ -122,6 +122,7 @@ private:
     sonara::PromptGenerator generator; sonara::CyanoryxBridge cyanoryx; sonara::MutationLocks locks;
     sonara::ReferenceAnalyzer referenceAnalyzer; sonara::ReferenceAnalysis reference; bool referenceLoaded=false;std::atomic<bool> referenceMelodyPreview{false};
     std::shared_ptr<const sonara::SongArrangement> referenceSong;
+    const sonara::SongArrangement* rendererPlan=nullptr; // protected by callback lock
     sonara::AudioExporter audioExporter;
     uint64_t generationCounter=1;
     uint64_t sessionSalt=0;

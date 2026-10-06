@@ -51,10 +51,14 @@ jobs:
           $versionMatch = Select-String -Path CMakeLists.txt -Pattern 'project\(SONARA VERSION ([0-9.]+)\)'
           if (-not $versionMatch -or $versionMatch.Matches.Count -lt 1) { throw "SONARA version not found in CMakeLists.txt" }
           $sonaraVersion = $versionMatch.Matches[0].Groups[1].Value
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.sha }}') { throw 'Build checkout does not match workflow commit' }
+          python -c "import json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); assert d['Version']==sys.argv[2]" "$moduleInfo" "$sonaraVersion"
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged VST3 version does not match source version' }
 
           Remove-Item -Recurse -Force DIST -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path DIST | Out-Null
           Copy-Item -Recurse -Force $vst.FullName "DIST/SONARA.vst3"
+          Copy-Item FL_STUDIO_WORKFLOW.md DIST/FL_STUDIO_WORKFLOW.md
           @"
           SONARA VST3 $sonaraVersion - Windows x64
 
@@ -77,6 +81,13 @@ jobs:
           "moduleinfo_json=valid" | Add-Content DIST/BUILD_LOG.txt
           "architecture=x86_64" | Add-Content DIST/BUILD_LOG.txt
           "tests=passed" | Add-Content DIST/BUILD_LOG.txt
+          "workflow_run=${{ github.run_id }}" | Add-Content DIST/BUILD_LOG.txt
+          "regression_suites=9" | Add-Content DIST/BUILD_LOG.txt
+          $checksums = Get-ChildItem DIST -Recurse -File | ForEach-Object {
+            $relative = [System.IO.Path]::GetRelativePath((Resolve-Path DIST).Path, $_.FullName).Replace('\','/')
+            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $relative
+          }
+          $checksums | Set-Content -Encoding utf8 DIST/SHA256SUMS.txt
       - name: Upload SONARA Windows package
         uses: actions/upload-artifact@v4
         with:
@@ -85,5 +96,7 @@ jobs:
             DIST/SONARA.vst3
             DIST/INSTALL.txt
             DIST/BUILD_LOG.txt
+            DIST/FL_STUDIO_WORKFLOW.md
+            DIST/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14

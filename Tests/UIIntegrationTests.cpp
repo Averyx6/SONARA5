@@ -55,6 +55,18 @@ int main(int argc,char** argv)
             {const auto file=output.getChildFile("SONARA-"+juce::String(size.x)+"x"+juce::String(size.y)+".png");file.deleteFile();juce::FileOutputStream stream(file);juce::PNGImageFormat png;if(!png.writeImageToStream(snapshot,stream))return 6;}
         }
     }
+    // A worker must expose cancellation and safely join when the editor closes.
+    bool started=false;
+    for(int i=0;i<editor->getNumChildComponents();++i)
+        if(auto* button=dynamic_cast<juce::TextButton*>(editor->getChildComponent(i));button&&button->getButtonText()=="GENERATE TRACK")
+        {button->onClick();started=true;if(button->isEnabled())return 8;break;}
+    if(!started)return 9;
+    bool cancelVisible=false;
+    for(int i=0;i<editor->getNumChildComponents();++i)
+        if(auto* button=dynamic_cast<juce::TextButton*>(editor->getChildComponent(i));button&&button->getButtonText()=="CANCEL")
+        {cancelVisible=button->isVisible()&&button->isEnabled();button->onClick();break;}
+    if(!cancelVisible)return 10;
+    editor.reset();
     std::cout<<"All seven tabs render; interactive controls fit without overlap at three sizes\n";
     return 0;
 }

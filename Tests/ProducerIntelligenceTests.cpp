@@ -31,6 +31,17 @@ int main()
     if(duration.getBars()!=64||duration.getBpm()!=128)return fail("Seconds did not control duration");
     duration.generateComposition("progressive house, 128 BPM F minor, 2 minutes, 80 bars",120,1);
     if(duration.getBars()!=80)return fail("Explicit bars did not take precedence over duration");
+    for(const int bars:{4,8,16,17,32,48,70,73,512})
+    {
+        duration.generate("progressive house 128 BPM F minor, "+juce::String(bars)+" bars",120,4);
+        if(duration.getBars()!=bars||!duration.validate())return fail("Explicit short/non-grid bars were expanded or invalid");
+    }
+    for(const juce::String brief:{"only lead and bass", "lead and bass only", "only use lead and bass"})
+    {
+        sonara::SongArrangement only;only.generate("progressive house 128 BPM F minor, "+brief,128,0x470047);
+        if(!only.validate()||lane(only,"LEAD").notes.empty()||lane(only,"BASS").notes.empty())return fail("Instrument-only brief lost an allowed lane");
+        for(const auto& l:only.getLanes())if(l.name!="LEAD"&&l.name!="BASS"&&!l.notes.empty())return fail("Instrument whitelist generated another lane");
+    }
     const juce::String prompt="progressive house 128 BPM F minor, sparse, dry, soft melodic drop";
     sonara::SongArrangement first,again;
     first.generate(prompt,128,0xfedcba9876543210ULL);again.generate(prompt,128,0xfedcba9876543210ULL);
@@ -44,6 +55,13 @@ int main()
     {
         sonara::SongArrangement song;song.generate(prompt,128,seed);
         if(!song.validate())return fail("Generated arrangement violates event/timing budget");
+        if(sonara::SongArrangement::fromValueTree(song.toValueTree()).toValueTree().createXml()->toString()!=song.toValueTree().createXml()->toString())
+        {
+            const auto temp=juce::File::getSpecialLocation(juce::File::tempDirectory);
+            temp.getChildFile("sonara-producer-original.xml").replaceWithText(song.toValueTree().createXml()->toString());
+            temp.getChildFile("sonara-producer-restored.xml").replaceWithText(sonara::SongArrangement::fromValueTree(song.toValueTree()).toValueTree().createXml()->toString());
+            std::cerr<<"Round-trip seed "<<seed<<"\n";return fail("Restoring a generated plan changed MIDI, SoundDNA or section goals");
+        }
         melodies.insert(song.getMelodyFingerprint());harmonies.insert(song.getProgressionFingerprint());
         palettes.insert(song.getSoundPaletteFingerprint());structures.insert(song.getStructureFingerprint());
     }
@@ -83,6 +101,13 @@ int main()
     if(leadMaterials.size()<4)return fail("Lead seeds did not produce different oscillator materials");
     auto restored=sonara::SongArrangement::fromValueTree(first.toValueTree());restored.finalizeSoundPalette();
     if(restored.getSoundPaletteFingerprint()!=first.getSoundPaletteFingerprint())return fail("Restored seed domains changed AUTO FIT SoundDNA");
+    auto dense=first;auto& events=dense.editLanes()[9].notes;events.clear();
+    for(int i=0;i<400;++i)events.push_back({i%128,100,i*.001,.0005});
+    if(dense.validate())return fail("Pathological imported event density was accepted for realtime playback");
+    auto drumOnly=first;const auto backing=drumOnly.getLanes()[9].notes;
+    drumOnly.regenerateDrumsOnly("drum and bass, no hats",0x490049);
+    if(!drumOnly.validate()||!lane(drumOnly,"HATS").notes.empty()||lane(drumOnly,"LEAD").notes.size()!=backing.size())return fail("Drum regeneration ignored exclusions or changed backing notes");
+    for(size_t i=0;i<backing.size();++i)if(backing[i].note!=lane(drumOnly,"LEAD").notes[i].note||backing[i].beat!=lane(drumOnly,"LEAD").notes[i].beat)return fail("Drum regeneration rewrote the lead");
     std::cout<<"Producer prompt constraints, complete deterministic plans and seed diversity passed\n";
     return 0;
 }

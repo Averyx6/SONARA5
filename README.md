@@ -1,35 +1,47 @@
-# SONARA v2.0
+# SONARA
 
-SONARA is a Windows x64 JUCE VST3 + Standalone AI music-production instrument for FL Studio.
+SONARA is a Windows x64 JUCE C++ VST3 and standalone music-production
+instrument for FL Studio. It plans a song before writing its independent lanes
+and generates their SoundDNA from reproducible seeds.
 
-v2.0 is the melody clarity, drop identity, preview fidelity and FL workflow release.
+## v5 production workflow
 
-## What v2.0 changes
+- Prompts control genre, mood, tempo, key, exact bar count, energy, density,
+  groove, instrument selection/exclusions, melodic character and sound direction.
+- Full songs develop an intro, verse, build, chorus/drop, second verse/build/drop,
+  final hook and outro. Short requests use a compact complete arc.
+- Harmony, melody, bass, sub, drums, supporting parts, arrangement and sounds have
+  separate seed domains. Later drops develop the existing hook.
+- Preview, full-mix WAV, isolated WAVs and stems use the same cached note schedule,
+  SoundDNA, section automation and mixer. MIDI exports that same arrangement.
+- The SONG view shows the complete seed, sections, playhead, lanes, selected-lane
+  piano roll and sound plan. Click a section to audition it; REPRODUCE uses the seed.
+- Save/restore retains the prompt draft, producer plan, full arrangement, SoundDNA,
+  mix and selected lane. Failed/cancelled generation clears the old output.
+- Reference analysis, RESOUND, REBUILD, SoundDNA mutation, lane mixing, patch locks,
+  A/B history and Cyanoryx interchange remain available.
 
-- Mainstream EDM melodies are simpler and easier to read: tighter register, lower note density, fewer random passing tones, no random verse octave-down behavior, and a hard clarity gate that rejects note soup.
-- Song sections have clearer jobs. CHORUS states the hook, DROP uses a tighter driving variation of that identity, BREAKDOWN releases energy, and FINAL HOOK restores/develops the fuller phrase.
-- A full-beat pre-drop breathing gap and beat-one drop anchor make the drop boundary obvious.
-- Drop drums are louder than build/breakdown drums without changing the core SoundDNA.
-- Preview output is louder while remaining soft-limited and finite.
-- Full-mix WAV export follows the same section balance/master gain decisions as preview.
-- After generation, LEAD SoundDNA is loaded into the live SONARA instrument so editable FL Piano Roll MIDI on a SONARA channel uses the generated lead patch.
-- Project save/load preserves the selected lane and restores the matching live SoundDNA.
-- New PLAY CHORUS transport jumps directly to the first chorus for fast hook comparison.
-- New PLAY DROP transport jumps directly to the first DROP.
-- New LEAD MIDI drag always exports only the main LEAD notes, never BASS/SUB/support notes.
-- New LEAD WAV drag always renders the LEAD SoundDNA as audio.
-- Selected-lane MIDI/WAV, multitrack MIDI, exact preview WAV, rendered stems, reference RESOUND/REBUILD, SoundDNA mutation, lane mixing and Cyanoryx interchange remain available.
+See [FL_STUDIO_WORKFLOW.md](FL_STUDIO_WORKFLOW.md) for installation, MIDI/audio
+transfers, stems and project restoration. MIDI contains notes and metadata;
+SONARA's exact synth audio travels through WAV/stems or SONARA with saved SoundDNA.
 
-## Important MIDI behavior
+## Build and release verification
 
-Standard MIDI stores notes, timing, velocity and metadata; it does not contain SONARA's custom synth audio. Use LEAD MIDI / selected-lane MIDI on a SONARA channel when you want editable notes with the matching SoundDNA loaded. Use LEAD WAV, selected-lane WAV, full-mix WAV or stems when you need the rendered SONARA sound preserved exactly.
+Build with Visual Studio 2022, CMake 3.22 or newer and JUCE 8.0.12:
 
-## v2 quality rules
+```sh
+cmake -S . -B build-win64 -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTING=ON
+cmake --build build-win64 --config Release --parallel
+ctest --test-dir build-win64 -C Release --output-on-failure
+```
 
-SONARA rejects candidates that recycle the previous song, create isolated melody spikes, put mainstream lead notes in the wrong low register, overload hook bars, lose section contrast, miss the pre-drop gap, or fail to produce a clear drop arrival. Novelty is treated as a constraint, not the goal: a strong musical song that is genuinely different is preferred over random complexity.
+The GitHub Actions Windows workflow builds Release, runs all nine regression
+suites including VST3 host discovery, validates the x64 bundle and uploads
+`SONARA-Windows-x64-VST3`. Its downloadable ZIP includes the complete VST3 folder,
+installation/workflow instructions, `BUILD_LOG.txt` and `SHA256SUMS.txt`.
 
-See `SONARA_V2_MASTER_PROMPT.md` for the complete release specification and regression requirements.
-
-## Windows build
-
-Run `BUILD_SONARA.bat` from a Visual Studio 2022 developer environment, or use the GitHub Actions workflow. A release is considered verified only after Windows VST3 + Standalone compilation, every regression test, VST3 packaging and artifact upload succeed. The packaged artifact is `DIST/SONARA-Windows-x64-VST3.zip`.
+A release is verified only when those checks pass for the exact branch HEAD and
+the downloaded artifact's contents, commit, version and checksums are inspected.
+Use its `BUILD_LOG.txt` to identify the commit and CI run that produced the binary.
+Development checkpoints and validation history are in
+[DEVELOPMENT_V5.md](DEVELOPMENT_V5.md).

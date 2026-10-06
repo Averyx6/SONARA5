@@ -524,6 +524,13 @@ int main()
     if(!randomizer.importMidiFile(referenceMidi)||!randomizer.hasReference())return fail("reference MIDI import failed");
     if(!randomizer.resoundReference("glassy emotional lead, wide but controlled"))
         return fail("RESOUND reported success path unavailable after valid MIDI reference");
+    {
+        juce::MemoryBlock referenceState;randomizer.getStateInformation(referenceState);
+        SonaraAudioProcessor referenceRestored;referenceRestored.prepareToPlay(48000,512);
+        referenceRestored.setStateInformation(referenceState.getData(),(int)referenceState.getSize());
+        if(referenceRestored.currentPatch().toValueTree().createXml()->toString()!=randomizer.currentPatch().toValueTree().createXml()->toString())
+            return fail("Reference RESOUND SoundDNA was replaced by the selected song lane on restore");
+    }
     const auto arrangementBeforeReferenceRebuild=randomizer.arrangementSnapshot();
     if(!randomizer.rebuildInstrumentalFromReference("emotional progressive house, strong drums, warm chords"))
         return fail("reference REBUILD failed after valid MIDI import");
@@ -756,11 +763,33 @@ int main()
     }
 
     // Shortened offline export exercises the real full-mix/stem renderers without a long CI file.
-    auto shortTree=surprised->toValueTree();
+    // Measure a real full arrangement statement. The first four bars of an
+    // eight-bar cinematic intro deliberately precede the drums/lead entrance.
+    auto shortSource=*surprised;double dropStart=-1.0;float dropEnergy=.95f;
+    for(const auto& section:surprised->getSections())if(section.name=="DROP"){dropStart=section.startBar*4.0;dropEnergy=section.energy;break;}
+    if(dropStart<0)return fail("Full mix export fixture has no drop");
+    for(auto& lane:shortSource.editLanes())
+    {
+        lane.notes.erase(std::remove_if(lane.notes.begin(),lane.notes.end(),[&](const auto& n){return n.beat<dropStart||n.beat>=dropStart+16.0;}),lane.notes.end());
+        for(auto& n:lane.notes)n.beat-=dropStart;
+    }
+    auto shortTree=shortSource.toValueTree();
     shortTree.setProperty("bars",4,nullptr);
+    auto compactSections=shortTree.getChildWithName("SECTIONS");compactSections.removeAllChildren(nullptr);
+    juce::ValueTree compactIntro("SECTION");compactIntro.setProperty("name","DROP",nullptr);compactIntro.setProperty("startBar",0,nullptr);compactIntro.setProperty("bars",4,nullptr);compactIntro.setProperty("energy",dropEnergy,nullptr);compactSections.addChild(compactIntro,-1,nullptr);
+    shortTree.getChildWithName("SECTION_GOALS").removeAllChildren(nullptr);
     auto shortSong=sonara::SongArrangement::fromValueTree(shortTree);
+    if(!shortSong.validate())return fail("Offline export fixture is invalid");
     sonara::AudioExporter exporter;
     auto wav=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-full-mix-test",".wav");
+    {
+        std::atomic<bool> cancel{false};sonara::AudioExporter cancelledExporter;cancelledExporter.setCancelFlag(&cancel);
+        const juce::String previous="Existing export must survive cancellation";
+        if(!wav.replaceWithText(previous))return fail("Cancelled export fixture could not be created");
+        if(cancelledExporter.renderFullMix(shortSong,wav,44100.0,[&](float,const juce::String&){cancel.store(true);}))
+            return fail("Cancelled export reported success");
+        if(wav.loadFileAsString()!=previous)return fail("Cancelled export replaced the existing destination");
+    }
     if(!exporter.renderFullMix(shortSong,wav,44100.0,{})||wav.getSize()<4096)return fail("full mix WAV export failed");
 
     juce::AudioFormatManager exportFormats;exportFormats.registerBasicFormats();
@@ -785,7 +814,20 @@ int main()
 
     auto stems=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("sonara-stems-test","");
     if(!exporter.renderAllStems(shortSong,stems,44100.0,{}))return fail("stem export failed");
-    int wavCount=0;for(const auto& file:stems.findChildFiles(juce::File::findFiles,false,"*.wav")){++wavCount;file.deleteFile();}
+    int wavCount=0;for(const auto& file:stems.findChildFiles(juce::File::findFiles,false,"*.wav"))
+    {
+        ++wavCount;std::unique_ptr<juce::AudioFormatReader> stemReader(exportFormats.createReaderFor(file));
+        if(!stemReader||stemReader->sampleRate!=44100||stemReader->numChannels!=2||stemReader->bitsPerSample!=24
+           ||stemReader->lengthInSamples!=mixReader->lengthInSamples)return fail("Stem format/start duration does not match full WAV");
+        juce::AudioBuffer<float> stemBlock(2,512);float peak=0;double energy=0;
+        for(juce::int64 start=0;start<stemReader->lengthInSamples;start+=512)
+        {
+            stemBlock.clear();const int n=(int)std::min<juce::int64>(512,stemReader->lengthInSamples-start);
+            if(!stemReader->read(&stemBlock,0,n,start,true,true)||!finiteAndSafe(stemBlock,peak,energy))return fail("Stem contains invalid or unsafe PCM");
+        }
+        stemReader.reset();file.deleteFile();
+    }
+    delete mixReader;mixReader=nullptr;
     stems.deleteRecursively();wav.deleteFile();
     if(wavCount!=12)return fail("stem export did not produce 12 lane WAVs");
 
@@ -857,9 +899,44 @@ int main()
                     return fail("SUB stem differs from isolated preview or is not mono");
         }
         if(solo.hasActiveVoices())return fail("held note missed its scheduled note-off");
+        const auto stemSet=temp.getChildFile("host-stems");
+        if(!live.exportAllStems(stemSet)||!stemSet.getChildFile("SONARA-Stems.sonaraproject").existsAsFile()
+           ||!stemSet.getChildFile("SONARA-Arrangement.mid").existsAsFile()||!stemSet.getChildFile("STEMS.txt").existsAsFile())
+            return fail("Host stem set lost MIDI, SoundDNA project or timing instructions");
+        SonaraAudioProcessor stemProject;
+        if(!stemProject.loadProject(stemSet.getChildFile("SONARA-Stems.sonaraproject"))
+           ||firstStateDifference(live.arrangementSnapshot()->toValueTree(),stemProject.arrangementSnapshot()->toValueTree()).isNotEmpty()
+           ||std::abs(stemProject.getLaneMix(5).level-live.getLaneMix(5).level)>1e-6f)return fail("Stem project does not reproduce the exported plan/mix");
         reader.reset();temp.deleteRecursively();
     }
 
+    {
+        SonaraAudioProcessor longPreview;longPreview.prepareToPlay(44100,512);
+        if(!longPreview.generateTrackWithSeed("future rave, dense bright spacious aggressive 128 BPM F minor 96 bars",0x490049))return fail("Long preview could not plan");
+        longPreview.startSongPreview();
+        juce::AudioBuffer<float> audio(2,512),opening(2,512);juce::MidiBuffer midi;
+        double energy=0;float peak=0;double dc[2]{};int dcSamples=0;
+        const auto begin=std::chrono::steady_clock::now();
+        for(int block=0;block<(int)std::ceil(185.0*44100/512);++block)
+        {
+            longPreview.processBlock(audio,midi);if(block==0)opening.makeCopyOf(audio);
+            if(!finiteAndSafe(audio,peak,energy))return fail("Long preview exceeded unchanged DSP safety ceiling");
+            for(int ch=0;ch<2;++ch)for(int i=0;i<512;++i)dc[ch]+=audio.getSample(ch,i);
+            dcSamples+=512;
+            if(dcSamples>=44100){if(std::abs(dc[0]/dcSamples)>.015||std::abs(dc[1]/dcSamples)>.015)return fail("Long preview developed DC");dc[0]=dc[1]=0;dcSamples=0;}
+        }
+        const auto elapsed=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
+        if(energy<1e-6||longPreview.isSongPlaying()||elapsed/185.0>=.5)return fail("Long preview failed lifetime/CPU limits");
+        longPreview.startSongPreview();longPreview.processBlock(audio,midi);
+        for(int ch=0;ch<2;++ch)for(int i=0;i<512;++i)if(std::abs(audio.getSample(ch,i)-opening.getSample(ch,i))>1e-7f)return fail("Long preview left energy in a new playback");
+        std::cout<<"185-second preview realtime factor "<<elapsed/185.0<<" peak "<<peak<<'\n';
+        for(const int bars:{4,8,16,32})
+        {
+            SonaraAudioProcessor shortProducer;
+            if(!shortProducer.generateTrack("progressive house, 128 BPM F minor, "+juce::String(bars)+" bars")||shortProducer.arrangementSnapshot()->getBars()!=bars)
+                return fail("Producer failed an explicit short arrangement: "+juce::String(bars));
+        }
+    }
     {
         SonaraAudioProcessor failures;
         for(const juce::String invalid:{"", "no drums, no lead, no bass, no sub, no chords, no pads, no plucks, no counter, no fx"})
@@ -873,6 +950,8 @@ int main()
         failures.backgroundCancel.store(true);
         if(failures.generateTrack(prompt)||failures.arrangementSnapshot()||!failures.generationStatus.containsIgnoreCase("cancelled"))
             return fail("Cancelled generation retained stale output");
+        if(failures.generateTrackWithSeed(prompt,42)||failures.arrangementSnapshot()||!failures.generationStatus.containsIgnoreCase("cancelled"))
+            return fail("Seed reproduction ignored cancellation");
     }
     std::cout<<"SONARA processor playback, CPU, seek, randomize, surprise and export tests passed\n";
     return 0;

@@ -64,6 +64,8 @@ public:
     double getBpm() const noexcept { return tempo; }
     int getRootMidi() const noexcept { return rootMidi; }
     bool isMinor() const noexcept { return minor; }
+    juce::String getKeyLabel() const
+    {static const char* names[12]={"C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"};return juce::String(names[juce::jlimit(0,127,rootMidi)%12])+(minor?" minor":" major");}
     double getTotalBeats() const noexcept { return static_cast<double>(bars * beatsPerBar); }
     bool isEmpty() const noexcept { return lanes.empty(); }
     uint64_t getSongId() const noexcept { return masterSeed; }
