@@ -2143,6 +2143,18 @@ void SongArrangement::addDrums(uint64_t seed, bool energetic)
         {
             if(house)
             {
+                if(trance&&!preDropGap)
+                {
+                    // Keep the four-on-floor/16th-hat skeleton, but let the
+                    // percussion answer own a stable seeded two-bar cell.
+                    // Previously trance reused only the small generic groove
+                    // modulo family, even when its SoundDNA/seed changed.
+                    const int cell=(int)(random01(seed,0x5a310ULL)*16.f)%16;
+                    const double first=.25+.25*(cell%7);
+                    const double second=2.25+.25*(cell/4);
+                    addNote(perc,37,b+first,.055,54+(localBar%2?4:0));
+                    if(localBar%2==1)addNote(perc,39,b+second,.06,62);
+                }
                 if((bar+groove)%2==0)
                     addNote(perc,37,b+3.5,.055,58+(int)(random01(seed,1500+bs)*18.f));
                 if((bar+groove)%4==3)
@@ -3175,7 +3187,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
             while(previousNote-n.note>12&&n.note+12<=96)n.note+=12;
 
             repeatedRun=(n.note==previousNote)?repeatedRun+1:0;
-            if(repeatedRun>=3)
+            if(repeatedRun>=3&&!tech)
             {
                 if(n.note+12<=96)n.note+=12;
                 else if(n.note-12>=52)n.note-=12;
@@ -3186,6 +3198,91 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
         n.length=juce::jlimit(.08,1.55,n.length);
         n.velocity=juce::jlimit(48,124,n.velocity);
         previousNote=n.note;
+    }
+
+    if(tech)
+    {
+        // A short tech-house riff is a deliberate pedal/call, not an invitation
+        // to octave-hop after three repeated notes. Keep the original groove and
+        // short articulation while placing the hook in a usable middle register.
+        const ArrangementSection* firstDrop=nullptr;
+        for(const auto& s:sections)if(s.name=="DROP"){firstDrop=&s;break;}
+        const ArrangementSection* previousSection=nullptr;
+        previousNote=-1;
+        for(auto& n:lead.notes)
+        {
+            const ArrangementSection* current=nullptr;
+            for(const auto& s:sections)if(sectionContains(s,(int)std::floor(n.beat/beatsPerBar))){current=&s;break;}
+            if(current!=previousSection)previousNote=-1;
+            while(n.note>79)n.note-=12;
+            while(n.note<60)n.note+=12;
+            if(previousNote>=0)
+            {
+                while(n.note-previousNote>7&&n.note-12>=60)n.note-=12;
+                while(previousNote-n.note>7&&n.note+12<=79)n.note+=12;
+            }
+            previousNote=n.note;previousSection=current;
+        }
+        if(firstDrop)
+        {
+            std::vector<ArrangementNote> motif;
+            const double begin=firstDrop->startBar*beatsPerBar;
+            for(const auto& n:lead.notes)if(n.beat>=begin&&n.beat<begin+8.0)
+            {auto copy=n;copy.beat-=begin;motif.push_back(copy);}
+            if(motif.size()>=2)
+            {
+                auto hookSection=[](const ArrangementSection& s)
+                {return s.name.contains("DROP")||s.name=="CHORUS"||s.name=="FINAL HOOK";};
+                std::vector<ArrangementNote> rebuilt;
+                rebuilt.reserve(lead.notes.size()+32);
+                for(const auto& n:lead.notes)
+                {
+                    bool replace=false;
+                    for(const auto& s:sections)if(hookSection(s)&&sectionContains(s,(int)std::floor(n.beat/beatsPerBar))){replace=true;break;}
+                    if(!replace)rebuilt.push_back(n);
+                }
+                for(const auto& s:sections)if(hookSection(s))
+                {
+                    const double end=(s.startBar+s.bars)*beatsPerBar;
+                    for(int block=0;block<s.bars;block+=2)
+                    {
+                        bool shifted=false;
+                        const bool answer=s.name=="FINAL HOOK"&&block>=juce::jmax(2,s.bars/2)
+                            &&plan.finalEvolution>.38f;
+                        for(size_t i=0;i<motif.size();++i)
+                        {
+                            auto n=motif[i];n.beat+=s.startBar*beatsPerBar+block*beatsPerBar;
+                            if(n.beat>=end)continue;
+                            if(block+2>=s.bars&&sectionFlowsIntoImpact(&s)&&n.beat>=end-1.0)continue;
+                            if(answer)
+                            {
+                                // Recall the call, then displace one response and
+                                // aim its last pitch at the current harmonic triad.
+                                if(!shifted&&motif[i].beat>.20&&n.beat+.25+n.length<end)
+                                {n.beat+=.25;shifted=true;}
+                                if(i+1==motif.size())
+                                {
+                                    const int degree=chordInfoAtBeat(n.beat).degreeIndex;
+                                    int best=n.note,distance=999;
+                                    for(int pitch=60;pitch<=79;++pitch)for(int tone:{0,2,4})
+                                        if(((pitch-rootMidi)%12+12)%12==scale[(degree+tone)%7])
+                                        {
+                                            const int d=std::abs(pitch-(n.note+2));
+                                            if(d<distance){distance=d;best=pitch;}
+                                        }
+                                    n.note=best;
+                                }
+                                n.velocity=juce::jmin(124,n.velocity+5);
+                            }
+                            n.length=juce::jmin(n.length,juce::jmax(.08,end-n.beat-.02));
+                            rebuilt.push_back(n);
+                        }
+                    }
+                }
+                std::sort(rebuilt.begin(),rebuilt.end(),[](const ArrangementNote& a,const ArrangementNote& b){return a.beat<b.beat;});
+                lead.notes=std::move(rebuilt);
+            }
+        }
     }
 
     if(mainstreamEdm)
@@ -3332,7 +3429,7 @@ void SongArrangement::addMelody(uint64_t seed, bool energetic)
                             // the answer half. Octave development preserves pitch class;
                             // a single 1/8-beat displacement adds forward motion without
                             // destroying the recognizable four-bar rhythm.
-                            if(finalVariant&&statement>0)
+                            if(finalVariant&&(statement>0||(section.bars<=4&&t.beat>=8.0)))
                             {
                                 const int sourceBar=(int)std::floor(t.beat/beatsPerBar);
                                 const double beatInBar=t.beat-sourceBar*beatsPerBar;
@@ -3402,6 +3499,7 @@ void SongArrangement::alignPitchedLanesToLead()
 {
     const auto p=resolvedPrompt.toLowerCase();
     const bool songMode=p.contains("progressive house")||p.contains("melodic house")
+        ||p.contains("tech house")||p.contains("minimal house")
         ||p.contains("edm")||p.contains("pop")||p.contains("trance")
         ||p.contains("festival")||p.contains("mainstage")||p.contains("future rave");
     if(!songMode)return;

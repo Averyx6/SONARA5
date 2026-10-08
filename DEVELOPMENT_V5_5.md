@@ -29,7 +29,9 @@ produces identical samples with one instance and five instances. Existing playba
 tests also passed before the final routing additions, including CPU and 185-second
 stability. Final v5.1 Linux Release build and all nine CTest suites passed (70.33 seconds),
 including the expanded playback acceptance, all seven UI tabs/three sizes and native
-VST3 discovery. Exact v5.1 Windows CI remains pending.
+VST3 discovery. Exact v5.1 Windows run 37776043170 passed all nine suites and
+packaging. Its downloaded ZIP was verified against cce1415c1f34c45ed004d6396ad79a39020b92f0:
+SHA-256 848657c557a43de1ead82ca462f27283d7c9a4d62af8a7f2118fe8cbd9f42b08.
 
 ## Deterministic baseline measurements
 
@@ -78,10 +80,48 @@ The sample ceiling is not a true-peak limiter; do not describe it as one.
 Recorded comparison evidence: measurements-v5.0 versus build-v5/production-benchmark.
 Full v5.2 Linux x64 Release built and all ten registered suites passed (108.66 s),
 including unchanged long playback/CPU, UI and native VST3 discovery checks.
-The comparison CSVs are committed in Evidence/v5.2. Exact v5.1 Windows CI run
-37776043170 is still building; do not cancel it by pushing another checkpoint.
-The v5.2 checkpoint is locally committed while that gate finishes.
+The comparison CSVs are committed in Evidence/v5.2. v5.2 commit
+454bad11d36188e77630710f366e860b974eceea was pushed after the v5.1 run finished.
+Exact v5.2 Windows run 37778599458 is building; do not cancel it with a new push.
 
 Next concrete task: preserve tech-house's short syncopated articulation while
 bounding its accidental high register and developing the answer in four-bar
 final hooks. Verify actual note/rhythm/harmony diversity, not only seed IDs.
+
+## v5.3 — hook memory, short final answers and groove variety
+
+- The new production composition regression initially failed because tech-house
+  changed its hook between drops. Preserve its two-bar call in middle register,
+  keep short syncopated articulation, and develop the final response with a
+  controlled displacement and a harmony-guided ending. Intentional repeated
+  pedal notes no longer trigger arbitrary octave jumps.
+- Four-bar mainstream final hooks now develop their answer half; longer finals
+  retain their full initial statement and develop later blocks. Explicit small
+  final evolution still controls development; preserve every existing hook test.
+- A seeded two-bar trance percussion cell adds audible rhythmic variety while
+  retaining the four-on-floor and sixteen-hat skeleton and protected pre-drop gap.
+- Required production composition test covers 16 seeds each of progressive,
+  tech-house and trance: matching primary calls in DROP/DROP 2/FINAL, different
+  final answers, playable pitches, tech articulation and no-pad exclusions, plus
+  actual relative note/onset/length, actual chord pitch/onset and drum patterns.
+
+Measured production fingerprints / 16 seeds:
+
+| Genre | Melodies | Harmonic plans | Actual chord-note patterns | Drum patterns |
+|---|---:|---:|---:|---:|
+| Progressive | 16 | 16 | 16 | 13 |
+| Tech-house | 16 | 14 | 16 | 16 |
+| Trance | 16 | 16 | 16 | 15 |
+
+Trance drum patterns were 9 before the percussion change, failing the fixed
+12-pattern requirement. The fix passes without relaxing it. Targeted composition,
+balance, arrangement and producer tests pass. Full v5.3 Linux Release built and
+all eleven suites passed (101.74 s), including expanded playback, UI and discovery.
+Quiet tech-house lead now measures -21.24 dBFS versus baseline -34.16 (12.92 dB
+improvement); harmonic/drum deficit is 5.29 dB versus baseline 12.53. The complete
+nine-seed RMS evidence is in Evidence/v5.3. Windows v5.2 remains in flight; v5.3 is
+locally committed without replacing/cancelling that run.
+These are structural/recorded measurements, not listening or FL Studio approval.
+
+Next concrete task: incoming MIDI transport lifecycle, repeat playback/state sound
+reproducibility, generated-arrangement idle cost and honest UI control visibility.
