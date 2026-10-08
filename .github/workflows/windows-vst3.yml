@@ -90,7 +90,7 @@ jobs:
           "tests=passed" | Add-Content DIST/BUILD_LOG.txt
           "workflow_run=${{ github.run_id }}" | Add-Content DIST/BUILD_LOG.txt
           $testInventory = ctest --test-dir build-win64 -C Release --show-only=json-v1 | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0 -or $testInventory.tests.Count -lt 10) { throw 'Incomplete regression inventory' }
+          if ($LASTEXITCODE -ne 0 -or $testInventory.tests.Count -lt 13) { throw 'Incomplete regression inventory' }
           "regression_suites=$($testInventory.tests.Count)" | Add-Content DIST/BUILD_LOG.txt
           $checksums = Get-ChildItem DIST -Recurse -File | ForEach-Object {
             $relative = [System.IO.Path]::GetRelativePath((Resolve-Path DIST).Path, $_.FullName).Replace('\','/')

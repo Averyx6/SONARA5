@@ -58,6 +58,9 @@ float DrumSynth::noise() noexcept
 
 void DrumSynth::trigger(int note,float v) noexcept
 {
+    if(note==35)note=36;
+    else if(note==40)note=38;
+    else if(note==44)note=42;
     v=juce::jlimit(0.f,1.f,v);
     if(note==36){kickEnv=1.f;kickVelocity=v;kickPhase=0.0;}
     else if(note==38){snareEnv=1.f;snareVelocity=v;snarePhase=0.0;}

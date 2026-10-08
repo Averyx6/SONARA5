@@ -31,7 +31,10 @@ Use **EXPORT FULL MIDI** on EXPORT for FL Studio's multitrack MIDI import, rathe
 than dragging a whole song into one Piano Roll. **MIDI: SONG CHANNELS** routes
 the stored arrangement channels to their own SoundDNA and mixer: lead 1, bass 2,
 sub 3, chords 4, pluck 5, pad 6, counter 7, transitions 8, and drums 10. Keep FL's
-tempo and imported notes' original song position to preserve section automation.
+imported notes at their original song beat positions to preserve section automation.
+FL may use a different tempo: host MIDI preserves sustained notes and follows its
+transport. WAV/stems are rendered at the saved song tempo. Channel-10 aliases
+35/40/44 use SONARA's kick/snare/closed-hat sounds.
 The MIDI routing mode and selected lane are saved with the project/session.
 
 | Transfer | What it contains | Use |

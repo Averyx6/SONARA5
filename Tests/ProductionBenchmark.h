@@ -19,7 +19,7 @@ struct Metrics {
 // patch/seed IDs as a proxy for audible variety. Optional files are review evidence.
 inline int run(const juce::File& output,bool enforceBalance=false) {
     if(!output.createDirectory())return 1;
-    juce::String csv="prompt,seed,group,rms_dbfs,peak,notes\n";
+    juce::String csv="prompt,seed,section,group,rms_dbfs,peak,notes\n";
     static const char* prompts[]={
         "progressive house 128 BPM F minor 64 bars memorable emotional hook powerful melodic drop",
         "tech house 126 BPM A minor 64 bars sparse rhythmic hook tight bass no pads",
@@ -28,12 +28,20 @@ inline int run(const juce::File& output,bool enforceBalance=false) {
         SonaraAudioProcessor processor;processor.prepareToPlay(44100.0,512);
         if(!processor.generateTrackWithSeed(prompts[genre],seed))return 2;
         const auto song=processor.arrangementSnapshot();
-        const ArrangementSection* drop=nullptr;
-        for(const auto& section:song->getSections())if(section.name=="DROP"){drop=&section;break;}
-        if(!drop)return 3;
-        const int64_t start=(int64_t)std::llround(drop->startBar*4.0*44100.0*60.0/song->getBpm());
-        const int samples=(int)std::llround(std::min(4,drop->bars)*4.0*44100.0*60.0/song->getBpm());
-        const auto label=juce::String(genre)+"-"+juce::String::toHexString((juce::int64)seed);
+        const ArrangementSection *drop=nullptr,*final=nullptr;
+        for(const auto& section:song->getSections()) {
+            if(section.name=="DROP")drop=&section;
+            if(section.name=="FINAL HOOK")final=&section;
+        }
+        if(!drop||!final)return 3;
+        const auto baseLabel=juce::String(genre)+"-"+juce::String::toHexString((juce::int64)seed);
+        for(int excerpt=0;excerpt<2;++excerpt) {
+        const auto* section=excerpt==0?drop:final;
+        const int startBar=section->startBar+(excerpt==0?0:std::max(0,section->bars-4));
+        const int bars=std::min(4,section->bars);
+        const int64_t start=(int64_t)std::llround(startBar*4.0*44100.0*60.0/song->getBpm());
+        const int samples=(int)std::llround(bars*4.0*44100.0*60.0/song->getBpm());
+        const auto label=baseLabel+(excerpt==0?"":"-final");
         std::array<double,4> levels{};
         for(int group=0;group<4;++group) {
             SongMixArray mix{};int notes=0;
@@ -41,7 +49,7 @@ inline int run(const juce::File& output,bool enforceBalance=false) {
                 const bool active=group==0||(group==1&&lane<4)||(group==2&&lane>=6&&lane<=10)||(group==3&&lane==9);
                 mix[(size_t)lane].level=active?1.f:0.f;
                 if(active)for(const auto& n:song->getLanes()[(size_t)lane].notes)
-                    if(n.beat>=drop->startBar*4.0&&n.beat<(drop->startBar+std::min(4,drop->bars))*4.0)++notes;
+                    if(n.beat>=startBar*4.0&&n.beat<(startBar+bars)*4.0)++notes;
             }
             SongRenderEngine renderer;renderer.prepare(44100.0,512);renderer.configure(*song);renderer.reset(start);
             juce::AudioBuffer<float> audio(2,512);Metrics metrics;
@@ -60,15 +68,17 @@ inline int run(const juce::File& output,bool enforceBalance=false) {
                 renderer.render(*song,audio,start+position,n,&mix);metrics.add(audio);
                 if(writer&&!writer->writeFromAudioSampleBuffer(audio,0,n))return 6;
             }
-            csv+=juce::String(genre)+","+juce::String::toHexString((juce::int64)seed)+","+juce::String(group)+","+juce::String(metrics.db(),5)+","+juce::String(metrics.peak,7)+","+juce::String(notes)+"\n";
+            csv+=juce::String(genre)+","+juce::String::toHexString((juce::int64)seed)+","+(excerpt==0?"DROP":"FINAL ANSWER")+","+juce::String(group)+","+juce::String(metrics.db(),5)+","+juce::String(metrics.peak,7)+","+juce::String(notes)+"\n";
             levels[(size_t)group]=metrics.db();
             std::cout<<label<<" group="<<group<<" RMS dBFS="<<metrics.db()<<" peak="<<metrics.peak<<" notes="<<notes<<'\n';
             if(!std::isfinite(metrics.rms())||metrics.peak>.951f||metrics.rms()<1e-8)return 7;
         }
         if(enforceBalance&&(levels[0]<-15.0||levels[2]<-20.0||levels[3]<-24.0||levels[2]-levels[1]<-6.0)) {
-            std::cerr<<"Production drop is too quiet or drum-dominated: "<<label<<"\n";return 10;
+            std::cerr<<"Production hook is too quiet or drum-dominated: "<<label<<"\n";
+            output.getChildFile("metrics.csv").replaceWithText(csv);return 10;
         }
-        if(!output.getChildFile(label+"-arrangement.xml").replaceWithText(song->toValueTree().createXml()->toString()))return 8;
+        }
+        if(!output.getChildFile(baseLabel+"-arrangement.xml").replaceWithText(song->toValueTree().createXml()->toString()))return 8;
     }
     return output.getChildFile("metrics.csv").replaceWithText(csv)?0:9;
 }

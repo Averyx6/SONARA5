@@ -11,6 +11,7 @@
 #include "ProductionBenchmark.h"
 #include "CompositionDevelopmentTests.h"
 #include "HostMidiLifecycleTests.h"
+#include "RealtimeRoutingTests.h"
 
 namespace {
 int fail(const juce::String& m){std::cerr<<"SONARA playback test failure: "<<m<<"\n";return 1;}
@@ -172,6 +173,10 @@ int main(int argc,char** argv)
     if(argc==2&&juce::String(argv[1])=="--composition-check")return sonara::compositiontests::run();
     if(argc==2&&juce::String(argv[1])=="--lifecycle-check") {
         if(const auto error=sonara::lifecycletests::run();error.isNotEmpty())return fail(error);
+        return 0;
+    }
+    if(argc==2&&juce::String(argv[1])=="--realtime-check") {
+        if(const auto error=sonara::realtimetests::run();error.isNotEmpty())return fail(error);
         return 0;
     }
     if(const auto error=sonara::incomingtests::run();error.isNotEmpty())return fail(error);

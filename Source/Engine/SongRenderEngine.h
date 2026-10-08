@@ -30,7 +30,7 @@ public:
         {
             if(!engines[(size_t)i])engines[(size_t)i]=std::make_unique<SonaraEngine>();
             auto& e=*engines[(size_t)i];e.setLowCpuMode(true);e.setVoiceLimit(voices[i]);e.prepare(sampleRate,blockSize,2);
-            midis[(size_t)i].ensureSize(32768);chase[(size_t)i].ensureSize(32768);
+            midis[(size_t)i].ensureSize(65536);chase[(size_t)i].ensureSize(32768);
             scratch[(size_t)i].setSize(2,blockSize);
         }
         for(auto& d:drums)d.prepare(sampleRate);
@@ -99,7 +99,16 @@ public:
     // Host MIDI shares the actual lane engines and mixer with preview/WAV/stems.
     void renderMidi(const SongArrangement& a,juce::AudioBuffer<float>& out,const juce::MidiBuffer& midi,
                     int64_t start,int samples,const SongMixArray* mix,int selectedLane,bool selectedOnly)
-    {renderBlocks(a,out,start,samples,mix,-1,&midi,selectedLane,selectedOnly);}
+    {
+        // Bound work and preallocated short-message storage. Reject overload as
+        // one packet so discarded note-offs cannot leave stuck voices behind.
+        int count=0;
+        for(const auto event:midi) {
+            juce::ignoreUnused(event);
+            if(++count>4096){reset(start,false);out.clear();return;}
+        }
+        renderBlocks(a,out,start,samples,mix,-1,&midi,selectedLane,selectedOnly);
+    }
 private:
     void renderBlocks(const SongArrangement& a,juce::AudioBuffer<float>& out,int64_t start,int samples,
                       const SongMixArray* mix,int isolatedLane,const juce::MidiBuffer* incoming,int selectedLane,bool selectedOnly)
@@ -144,7 +153,7 @@ private:
     {
         midi.clear();
         for(const auto event:input)
-            if(event.samplePosition>=offset&&event.samplePosition<offset+n)
+            if(event.numBytes<=3&&event.samplePosition>=offset&&event.samplePosition<offset+n)
             {
                 auto message=event.getMessage();
                 if(message.getChannel()>0&&routesToLane(message,lane,selectedLane,selectedOnly))
@@ -158,7 +167,7 @@ private:
         {
             int count=0;
             for(const auto event:*incoming)
-                if(event.samplePosition>=offset&&event.samplePosition<offset+n&&count<capacity)
+                if(event.numBytes<=3&&event.samplePosition>=offset&&event.samplePosition<offset+n&&count<capacity)
                 {
                     const auto message=event.getMessage();
                     if(message.isNoteOn()&&routesToLane(message,lane,selectedLane,selectedOnly))

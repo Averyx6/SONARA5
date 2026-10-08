@@ -82,7 +82,12 @@ Full v5.2 Linux x64 Release built and all ten registered suites passed (108.66 s
 including unchanged long playback/CPU, UI and native VST3 discovery checks.
 The comparison CSVs are committed in Evidence/v5.2. v5.2 commit
 454bad11d36188e77630710f366e860b974eceea was pushed after the v5.1 run finished.
-Exact v5.2 Windows run 37778599458 is building; do not cancel it with a new push.
+Exact v5.2 Windows run 37778599458 passed all ten suites and packaging. Downloaded
+package CRC, six files, manifest, strict metadata/x64 PE and exact BUILD_LOG verified:
+SHA-256 89d89048af778c04f14d9f71516ed781974bf413313362c945eec5af30eb34e0.
+The in-flight run completed without cancellation before the final checkpoint push.
+Its 36 Windows RMS rows match the locally recorded v5.2 values exactly at the
+reported five-decimal precision (maximum difference 0.0 dB).
 
 Next concrete task: preserve tech-house's short syncopated articulation while
 bounding its accidental high register and developing the answer in four-bar
@@ -154,3 +159,44 @@ the unchanged 185-second stability/CPU, state/export, UI and native discovery ga
 This checkpoint is locally committed while the v5.2 Windows build finishes.
 Next concrete task: final stabilization of explicit routing mode transitions, GM
 aliases and bounded host MIDI; record final-answer audio and rerun every gate.
+
+## v5.5 — stabilization and release gates
+
+- Regression reproduced an explicit song-channel mode still playing the standalone
+  patch (0.609 sample error). Activating a saved arrangement's MIDI mode now really
+  selects the shared song routing; parity passes without changing either sound.
+- Channel-10 aliases 35/40/44 now trigger the mapped kick/snare/closed hat. Actual
+  alias/canonical audio matches. SysEx is ignored before constructing heap-backed
+  messages, preserving musical audio. Remove the obsolete instance counter.
+- Host MIDI work is bounded to 4096 events with preallocated lane buffers. Reject
+  overload as one silent reset to avoid dropped note-offs leaving stuck voices.
+  Actual rejection/recovery regression passes; measured callback is 0.000083 s.
+- Production balance gate now records and checks both the first four DROP bars
+  and last four FINAL HOOK bars for all nine benchmark arrangements: 36 mix/lead
+  WAVs, 72 metric rows, nine complete arrangement XMLs. Every required balance and
+  sample ceiling assertion passes in both excerpts. No new speculative features.
+
+Final Linux measurements: DROP lead -21.24 to -14.78 dBFS; FINAL answer lead -20.75
+to -14.00. DROP harmony -18.32 to -13.30; FINAL -17.79 to -12.74. Worst harmonic
+deficit is 5.29 dB in DROP and 5.18 in FINAL versus baseline 12.53. Quiet tech-house
+lead improves 12.92 dB RMS and 12.5 LUFS (-30.5 to -18.0). Full excerpts measure
+-9.5 to -6.5 LUFS, sample peaks <= .950. Reconstruction peaks 0.0 to +0.7 dBFS
+remain above the sample ceiling; there is no claim of true-peak limiting.
+
+Full final Linux x64 Release built and all thirteen suites passed (76.92 s).
+All 36 recorded WAVs are valid stereo 24-bit / 44.1 kHz with exact four-bar
+frame counts; 72 RMS rows and 36 R128 rows are committed in Evidence/v5.5. The
+final Windows run must build this exact final HEAD and pass every suite/discovery.
+Use Tools/verify_windows_artifact.py on the exact-run download, matching commit,
+5.5.0 version, run and thirteen suites. BUILD_LOG and SHA256SUMS carry the immutable
+release evidence. Do not publish a readiness claim from an earlier checkpoint.
+
+Remaining acceptance on the user's Windows machine: FL Studio verification/rescan,
+LEAD and selected-lane Piano Roll drag with different note colours, song-channel
+import, transport stops/seeks, project reload, and listening to hook/balance/final
+development. These cannot be confirmed by Linux or generic VST3 host discovery.
+The session has no Library-upload or automation-management tool; do not claim
+that those actions occurred. A verified download can be delivered as a file.
+
+Next concrete task after gates pass: user-host acceptance/listening, then only
+reproduce and fix reported issues; preserve all thirteen regression gates.

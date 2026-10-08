@@ -60,6 +60,6 @@ if __name__ == "__main__":
     parser.add_argument("--commit", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--run", type=int, required=True)
-    parser.add_argument("--suites", type=int, default=10)
+    parser.add_argument("--suites", type=int, default=13)
     args = parser.parse_args()
     verify(args.zip, args.commit, args.version, args.run, args.suites)

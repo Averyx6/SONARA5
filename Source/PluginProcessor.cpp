@@ -8,7 +8,6 @@
 #include <cmath>
 
 namespace {
-std::atomic<int> gSonaraInstanceCount{0};
 
 uint64_t scrambleSongSeed(uint64_t x) noexcept
 {
@@ -659,7 +658,6 @@ SonaraAudioProcessor::SonaraAudioProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
     audioExporter.setCancelFlag(&backgroundCancel);
-    gSonaraInstanceCount.fetch_add(1,std::memory_order_relaxed);
     engine.setVoiceLimit(4);
     sessionSalt = static_cast<uint64_t>(juce::Random::getSystemRandom().nextInt64())
                 ^ static_cast<uint64_t>(juce::Time::getHighResolutionTicks());
@@ -670,7 +668,6 @@ SonaraAudioProcessor::SonaraAudioProcessor()
 
 SonaraAudioProcessor::~SonaraAudioProcessor()
 {
-    gSonaraInstanceCount.fetch_sub(1,std::memory_order_relaxed);
 }
 
 void SonaraAudioProcessor::prepareToPlay(double sr, int bs)
@@ -1834,6 +1831,7 @@ void SonaraAudioProcessor::setSelectedLane(int i)
 void SonaraAudioProcessor::setMidiRoutingMode(MidiRoutingMode mode)
 {
     const juce::ScopedLock callback(getCallbackLock());
+    if(auto song=arrangementSnapshot();song&&!song->isEmpty())useLaneMidiSound.store(true,std::memory_order_release);
     midiRoutingMode.store(mode);hostMidiRenderer.reset(0,false);hostMidiSample=0;hostWasPlaying=false;expectedHostPpq=-1.0;
 }
 
