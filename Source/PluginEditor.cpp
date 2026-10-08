@@ -335,9 +335,9 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     songPrompt.setTextToShowWhenEmpty("Describe the whole song: genre, key, BPM, energy, drop, instruments...",dim);
     laneSoundPrompt.setTextToShowWhenEmpty("Describe ONLY the selected lane sound: e.g. warm supersaw lead, clean pluck, donk bass...",dim);
 
-    std::array<juce::Button*,46> buttons {&generateSound,&generateTrack,&generateDrums,&randomizeEverythingButton,&surpriseMe,&similar,&mutate,&randomize,&undo,&redo,
+    std::array<juce::Button*,45> buttons {&generateSound,&generateTrack,&generateDrums,&randomizeEverythingButton,&surpriseMe,&similar,&mutate,&randomize,&undo,&redo,
         &variation1,&variation2,&variation3,&variation4,&captureA,&captureB,&recallA,&recallB,&connect,&previewSound,&playSong,&playChorus,&playDrop,&stop,
-        &dragPreviewMidi,&dragFullMidi,&dragLaneMidi,&dragLeadMidi,&dragReferenceMidi,&dragReferenceAudio,&dragFullAudio,&dragLaneAudio,&dragLeadAudio,&dragStems,
+        &dragPreviewMidi,&dragLaneMidi,&dragLeadMidi,&dragReferenceMidi,&dragReferenceAudio,&dragFullAudio,&dragLaneAudio,&dragLeadAudio,&dragStems,
         &loadReference,&importMidi,&resound,&rebuildReference,&saveSoundButton,&loadSoundButton,&saveProjectButton,&loadProjectButton,&exportMixButton,&exportStemsButton,
         &applyLaneSound,&autoLaneSound};
     for(auto* b:buttons){addAndMakeVisible(*b);styleButton(*b,b==&generateSound||b==&generateTrack||b==&generateDrums||b==&randomizeEverythingButton||b==&surpriseMe||b==&playSong||b==&playChorus||b==&playDrop||b==&resound||b==&rebuildReference||b==&exportMixButton||b==&exportStemsButton);}
@@ -349,7 +349,6 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     exportFullMidiButton.setTooltip("Save a multitrack song for FL Studio's MIDI import. For one Piano Roll, drag a lane or the lead instead.");
     dragLaneMidi.setTooltip("Selected lane notes for FL Piano Roll. Drop onto a SONARA channel to use that lane's SoundDNA; other instruments will sound different.");
     dragLeadMidi.setTooltip("Always exports only the generated LEAD notes for FL Piano Roll. No BASS, SUB, CHORDS, PAD or drum notes are included.");
-    dragFullMidi.setTooltip("Drag the WHOLE generated song as multitrack MIDI: drums, bass, sub, chords, pluck, pad, lead, counter and FX stay on separate named tracks with full song timing.");
     dragPreviewMidi.setTooltip("Sound-preview notes. Drop onto the same SONARA instrument to keep its SoundDNA; use WAV for exact rendered audio.");
     dragLaneAudio.setTooltip("Rendered selected lane with SONARA SoundDNA preserved. Drag to FL Playlist for the exact lane sound.");
     dragLeadAudio.setTooltip("Always renders the generated LEAD with its SONARA SoundDNA. Drag to FL Playlist when you want the lead sound preserved.");
@@ -368,12 +367,14 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
 
     for(auto* b:{&lockOsc,&lockUnison,&lockEnv,&lockFilter,&lockMod,&lockSources,&lockTone,&lockFx})addAndMakeVisible(*b);
     configureMacro(macroBrightness,"BRIGHT");configureMacro(macroMovement,"MOVE");configureMacro(macroSpace,"SPACE");configureMacro(macroImpact,"IMPACT");configureMixSlider(mixLevel,0.0,1.5," LEVEL");configureMixSlider(mixPan,-1.0,1.0," PAN");configureMixSlider(mixWidth,0.0,1.5," WIDTH");configureMixSlider(mixFx,0.0,1.5," FX");
-    bpm.setTooltip("Existing song tempo is shown here. Set a new song tempo explicitly in the prompt; this control sets sound-preview and fallback generation tempo.");
+    bpm.setName("Sound preview tempo");
+    bpm.setTooltip("Sound-preview tempo. Set the song's BPM in its generation prompt.");
     bpm.setRange(60,200,1);bpm.setValue(p.getPreviewBpm(),juce::dontSendNotification);bpm.setSliderStyle(juce::Slider::LinearHorizontal);bpm.setTextBoxStyle(juce::Slider::TextBoxRight,false,64,20);bpm.setTextValueSuffix(" BPM");addAndMakeVisible(bpm);
     patchName.setColour(juce::Label::textColourId,text);patchName.setFont(juce::FontOptions(15.f).withStyle("Bold"));addAndMakeVisible(patchName);
     statusLine.setColour(juce::Label::textColourId,dim);statusLine.setFont(11.f);addAndMakeVisible(statusLine);
     selectedLaneLabel.setColour(juce::Label::textColourId,text.withAlpha(.75f));selectedLaneLabel.setFont(11.f);addAndMakeVisible(selectedLaneLabel);
     referenceSummary.setColour(juce::Label::textColourId,text.withAlpha(.82f));referenceSummary.setFont(juce::FontOptions(13.f));referenceSummary.setJustificationType(juce::Justification::topLeft);addAndMakeVisible(referenceSummary);
+    songTempo.setName("Saved song tempo");songTempo.setColour(juce::Label::textColourId,text);songTempo.setJustificationType(juce::Justification::centredRight);addAndMakeVisible(songTempo);
     timeline.setName("Song timeline");pianoRoll.setName("Selected lane piano roll");
     addAndMakeVisible(soundView);addAndMakeVisible(timeline);addAndMakeVisible(pianoRoll);addAndMakeVisible(playbackBar);
 
@@ -423,7 +424,7 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     {
         addAndMakeVisible(promptSuggestions[i]);
         styleButton(promptSuggestions[i],i==0||i==1||i==7);
-        promptSuggestions[i].setTooltip("Add ""+suggestionText[i]+"" to the song prompt");
+        promptSuggestions[i].setTooltip("Add \""+suggestionText[i]+"\" to the song prompt");
         promptSuggestions[i].onClick=[this,i,suggestionText]
         {
             auto current=songPrompt.getText().trim();
@@ -534,11 +535,15 @@ void SonaraAudioProcessorEditor::runWork(std::function<void()> work,std::functio
 
 juce::String SonaraAudioProcessorEditor::dragCacheKey(ExternalDragButton::Kind kind) const
 {
-    auto song=p.arrangementSnapshot();
-    juce::String key=juce::String((int)kind)+":"+juce::String::toHexString((juce::int64)(uintptr_t)song.get())
-        +":"+juce::String(p.getSelectedLane())+":"+juce::String(p.currentPatch().seed)+":"+juce::String(p.getPreviewBpm(),4)+":"+juce::String(p.getPreparedSampleRate(),1);
-    for(int i=0;i<12;++i){const auto m=p.getLaneMix(i);key+=":"+juce::String(m.level,6)+":"+juce::String(m.pan,6)+":"+juce::String(m.width,6)+":"+juce::String(m.fxSend,6);}
-    return key;
+    // A seed/pointer is not the sound: macros can edit the same seed and a new
+    // reference can reuse the arrangement. Hash the actual persisted content on
+    // the UI thread so those changes cannot reuse a stale prepared WAV.
+    juce::MemoryBlock state;p.getStateInformation(state);
+    uint64_t fingerprint=1469598103934665603ULL;
+    const auto* bytes=static_cast<const unsigned char*>(state.getData());
+    for(size_t i=0;i<state.getSize();++i){fingerprint^=bytes[i];fingerprint*=1099511628211ULL;}
+    return juce::String((int)kind)+":"+juce::String::toHexString((juce::int64)fingerprint)
+        +":"+juce::String(p.getPreparedSampleRate(),1);
 }
 
 void SonaraAudioProcessorEditor::beginExternalDrag(ExternalDragButton::Kind kind)
@@ -600,13 +605,6 @@ juce::StringArray SonaraAudioProcessorEditor::prepareDragFiles(ExternalDragButto
         dragFile=temp.getNonexistentChildFile("SONARA-Sound",".mid");
         ok=p.writePreviewMidiFile(dragFile);
         status="SOUND MIDI ready • drop on SONARA for the same SoundDNA";
-    }
-    else if(kind==ExternalDragButton::Kind::fullMidi)
-    {
-        p.generationStatus=juce::String("Preparing FULL SONG MIDI...");
-        dragFile=temp.getNonexistentChildFile("SONARA-Full-Arrangement",".mid");
-        ok=p.writeArrangementMidiFile(dragFile);
-        status="FULL SONG MIDI ready • separate generated tracks + complete timing";
     }
     else if(kind==ExternalDragButton::Kind::laneMidi)
     {
@@ -764,7 +762,9 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     soundView.setVisible(instrumentTab);
     referenceSummary.setVisible(referenceTab);
     soundPrompt.setVisible(instrumentTab);
-    songPrompt.setVisible(!instrumentTab&&!mixTab);
+    songPrompt.setVisible(songTab||drumsTab||referenceTab);
+    for(auto& preset:presets)preset.setVisible(instrumentTab||songTab||drumsTab||referenceTab);
+    bpm.setVisible(instrumentTab);songTempo.setVisible(!instrumentTab);
     laneSoundPrompt.setVisible(mixTab);
     for(auto& b:promptSuggestions)b.setVisible(songTab);
 
@@ -795,7 +795,6 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     selectedLaneLabel.setVisible(arrangementTab);
 
     dragPreviewMidi.setVisible(instrumentTab);
-    dragFullMidi.setVisible(false);
     dragLaneMidi.setVisible(songTab||drumsTab||midiTab||exportTab);
     dragLeadMidi.setVisible(songTab||midiTab||exportTab);
     dragReferenceMidi.setVisible(referenceTab||midiTab||exportTab);
@@ -832,9 +831,9 @@ void SonaraAudioProcessorEditor::timerCallback()
 
     auto a=p.arrangementSnapshot();
     hostMidiMode.setButtonText(p.getMidiRoutingMode()==SonaraAudioProcessor::MidiRoutingMode::selectedLane?"MIDI: SELECTED LANE":"MIDI: SONG CHANNELS");
-    dragFullMidi.setVisible(false);
     const bool hasArrangement=a&&!a->isEmpty();
-    bpm.setEnabled(activeTab==0||!hasArrangement);if(activeTab!=0&&hasArrangement)bpm.setValue(a->getBpm(),juce::dontSendNotification);
+    bpm.setEnabled(true);
+    songTempo.setText(hasArrangement?juce::String(a->getBpm(),0)+" BPM • saved song":"Set BPM in song prompt",juce::dontSendNotification);
     const auto seed=p.getSongGenerationSeed();if((!seedInitialised||seed!=displayedSeed)&&!seedInput.hasKeyboardFocus(true)){seedInitialised=true;displayedSeed=seed;seedInput.setText(hasArrangement?juce::String::toHexString((juce::int64)seed).paddedLeft('0',16):juce::String(),false);}
     const int selected=p.getSelectedLane();
     const bool selectedReady=hasArrangement&&juce::isPositiveAndBelow(selected,(int)a->getLanes().size())
@@ -844,7 +843,6 @@ void SonaraAudioProcessorEditor::timerCallback()
         for(const auto& lane:a->getLanes())
             if(lane.name=="LEAD"&&!lane.notes.empty()){leadReady=true;break;}
 
-    dragFullMidi.setEnabled(hasArrangement);
     dragFullAudio.setEnabled(hasArrangement);
     dragStems.setEnabled(hasArrangement);
     exportFullMidiButton.setEnabled(hasArrangement);exportLaneMidiButton.setEnabled(selectedReady);
@@ -889,7 +887,7 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
     g.setColour(text);g.setFont(juce::FontOptions(32.f).withStyle("Bold"));
     g.drawText("SONARA",30,18,220,38,juce::Justification::left);
     g.setColour(cyan);g.setFont(11.f);
-    g.drawText("AI MUSIC PRODUCER | SOUND + SONG + DRUMS",32,52,650,20,juce::Justification::left);
+    g.drawText("MIDI COMPOSER | SOUND DESIGN | SONG MIXER",32,52,650,20,juce::Justification::left);
 
     const auto left=juce::Rectangle<float>(22,118,210,(float)getHeight()-195);
     const auto right=juce::Rectangle<float>((float)getWidth()-244,118,222,(float)getHeight()-195);
@@ -898,7 +896,16 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
 
     const bool instrumentTab=activeTab==0;
     g.setColour(dim);g.setFont(10.f);
-    g.drawText(instrumentTab?"SOUND PRESETS":"SONG / STYLE PRESETS",38,134,165,18,juce::Justification::left);
+    const bool promptPresets=activeTab==0||activeTab==1||activeTab==2||activeTab==4;
+    g.drawText(instrumentTab?"SOUND PRESETS":(promptPresets?"SONG / STYLE PRESETS":"TRANSFER WORKFLOW"),38,134,165,18,juce::Justification::left);
+    if(!promptPresets)
+    {
+        g.setColour(text.withAlpha(.8f));g.setFont(12.f);
+        const juce::String guide=activeTab==3
+            ?"Select a lane in the timeline.\n\nSet its sound and mix here. Incoming MIDI uses these same settings."
+            :"Piano Roll: drag LEAD or one selected lane.\n\nMIDI carries notes.\n\nPlaylist: use WAV or stems for the rendered SONARA sound.\n\nSave a project to keep notes, SoundDNA and mix.";
+        g.drawFittedText(guide,38,168,172,300,juce::Justification::topLeft,18);
+    }
 
     juce::String rightTitle="SONG INSPECTOR";
     if(activeTab==0) rightTitle="PERFORMANCE / SOUND DNA";
@@ -915,9 +922,10 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
     g.drawRoundedRectangle(252,118,(float)getWidth()-516,(float)getHeight()-195,12,1);
 
     g.setColour(cyan.withAlpha(.72f));g.setFont(9.f);
-    const juce::String promptTitle=instrumentTab?"SOUND PROMPT • SOUND DESIGN ONLY":
+    const juce::String promptTitle=activeTab==5?"PIANO ROLL NOTES • CHOOSE LEAD OR ONE LANE":
+        (activeTab==6?"SAVE YOUR PROJECT OR EXPORT NOTES / AUDIO":(instrumentTab?"SOUND PROMPT • SOUND DESIGN ONLY":
         (activeTab==3?"SELECTED LANE SOUND PROMPT • OVERRIDES ONLY THIS INSTRUMENT":
-                      "SONG / ARRANGEMENT PROMPT • COMPOSITION + GROOVE + STRUCTURE");
+                      "SONG / ARRANGEMENT PROMPT • COMPOSITION + GROOVE + STRUCTURE")));
     g.drawText(promptTitle,270,120,getWidth()-570,15,juce::Justification::left);
 
     if(instrumentTab)
@@ -962,7 +970,7 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
             return result.length()>8?result.substring(result.length()-8):result;
         };
 
-        const auto lower=songPrompt.getText().toLowerCase();
+        const auto lower=a->getSourcePrompt().toLowerCase();
         juce::String style="EDM";
         if(lower.contains("progressive house")) style="PROGRESSIVE HOUSE";
         else if(lower.contains("future rave")) style="FUTURE RAVE";
@@ -1026,7 +1034,7 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
         {
             card("ARRANGEMENT",juce::String((int)a->getLanes().size())+" editable MIDI lanes",ry);ry+=52;
             card("SONG LENGTH",juce::String(a->getBars())+" bars",ry);ry+=52;
-            card("EXPORT","FULL MIDI + SELECTED MIDI + REF MIDI",ry);
+            card("TRANSFER","LANE / LEAD / REFERENCE NOTES",ry);
         }
         else if(activeTab==6)
         {
@@ -1145,6 +1153,7 @@ void SonaraAudioProcessorEditor::resized()
     const int transportW=cw-174,cell=(transportW-6*((int)transport.size()-1))/(int)transport.size();int tx=cx;
     for(auto* c:transport){c->setBounds(tx,bottomControlsY,cell,34);tx+=cell+6;}
     bpm.setBounds(cx+cw-168,bottomControlsY,168,34);
+    songTempo.setBounds(bpm.getBounds());
     playbackBar.setBounds(cx,h-46,cw,15);
     statusLine.setBounds(cx,h-28,cw,18);
 

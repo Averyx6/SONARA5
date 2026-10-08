@@ -25,7 +25,7 @@ private:
 
     class ExternalDragButton final : public juce::TextButton {
     public:
-        enum class Kind { previewMidi, fullMidi, laneMidi, leadMidi, referenceMidi, referenceAudio, fullMixAudio, laneAudio, leadAudio, stemsAudio };
+        enum class Kind { previewMidi, laneMidi, leadMidi, referenceMidi, referenceAudio, fullMixAudio, laneAudio, leadAudio, stemsAudio };
         ExternalDragButton(SonaraAudioProcessorEditor& o, const juce::String& text, Kind k)
             : juce::TextButton(text), owner(o), kind(k) {}
         void mouseDown(const juce::MouseEvent& e) override {gestureStarted=false;juce::TextButton::mouseDown(e);}
@@ -101,7 +101,6 @@ private:
     juce::TextButton exportMixButton{"EXPORT MIX"}, exportStemsButton{"EXPORT STEMS"};
 
     ExternalDragButton dragPreviewMidi{*this,"SOUND MIDI",ExternalDragButton::Kind::previewMidi};
-    ExternalDragButton dragFullMidi{*this,"FULL SONG MIDI",ExternalDragButton::Kind::fullMidi};
     ExternalDragButton dragLaneMidi{*this,"LANE TO PIANO ROLL",ExternalDragButton::Kind::laneMidi};
     ExternalDragButton dragLeadMidi{*this,"LEAD TO PIANO ROLL",ExternalDragButton::Kind::leadMidi};
     ExternalDragButton dragReferenceMidi{*this,"REFERENCE MIDI",ExternalDragButton::Kind::referenceMidi};
@@ -115,7 +114,7 @@ private:
     juce::ToggleButton lockOsc{"OSC"},lockUnison{"UNISON"},lockEnv{"ENV"},lockFilter{"FILTER"},lockMod{"MOD"},lockSources{"SUB/NOISE"},lockTone{"TONE"},lockFx{"FX"};
     juce::Slider macroBrightness,macroMovement,macroSpace,macroImpact,bpm;
     juce::Slider mixLevel,mixPan,mixWidth,mixFx;
-    juce::Label patchName, statusLine, selectedLaneLabel, referenceSummary;
+    juce::Label patchName, statusLine, selectedLaneLabel, referenceSummary, songTempo;
 
     std::array<juce::TextButton,8> presets {{
         juce::TextButton("Progressive Lead"), juce::TextButton("Future Rave"), juce::TextButton("Warm Pluck"), juce::TextButton("Deep Reese"),

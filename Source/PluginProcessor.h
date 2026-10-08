@@ -125,7 +125,9 @@ private:
     sonara::SongRenderEngine hostMidiRenderer;
     std::atomic<MidiRoutingMode> midiRoutingMode{MidiRoutingMode::selectedLane};
     std::atomic<bool> useLaneMidiSound{false};
-    int64_t hostMidiSample=0,hostMidiTailSamples=0;
+    int64_t hostMidiSample=0;
+    bool hostWasPlaying=false;
+    double expectedHostPpq=-1.0;
     sonara::PromptGenerator generator; sonara::CyanoryxBridge cyanoryx; sonara::MutationLocks locks;
     sonara::ReferenceAnalyzer referenceAnalyzer; sonara::ReferenceAnalysis reference; bool referenceLoaded=false;std::atomic<bool> referenceMelodyPreview{false};
     std::shared_ptr<const sonara::SongArrangement> referenceSong;

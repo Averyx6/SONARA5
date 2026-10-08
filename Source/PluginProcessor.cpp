@@ -682,7 +682,7 @@ void SonaraAudioProcessor::prepareToPlay(double sr, int bs)
     engine.prepare(sr, maximumBlockSize, getTotalNumOutputChannels());
     songRenderer.prepare(sr,maximumBlockSize);
     hostMidiRenderer.prepare(sr,maximumBlockSize);
-    hostMidiSample=hostMidiTailSamples=0;
+    hostMidiSample=0;hostWasPlaying=false;expectedHostPpq=-1.0;
     if(auto a=arrangementSnapshot()){songRenderer.configure(*a);hostMidiRenderer.configure(*a);rendererPlan=a.get();}else rendererPlan=nullptr;
 }
 
@@ -706,16 +706,30 @@ void SonaraAudioProcessor::processBlock(juce::AudioBuffer<float>& b, juce::MidiB
         {
             if(!m.isEmpty()){songPlaying.store(false);previewPlaying.store(false);}
             int64_t position=hostMidiSample;
+            bool playing=false,seek=false;
             if(auto* playhead=getPlayHead())if(auto transport=playhead->getPosition())
-                if(auto ppq=transport->getPpqPosition();ppq&&transport->getIsPlaying())
+            {
+                playing=transport->getIsPlaying();
+                seek=playing&&!hostWasPlaying;
+                if(auto ppq=transport->getPpqPosition();ppq&&playing)
+                {
                     position=(int64_t)std::llround(std::max(0.0,*ppq)*previewSampleRate*60.0/a->getBpm());
-            if(position!=hostMidiSample)hostMidiRenderer.reset(position,false);
+                    // Section automation follows musical position. DSP continuity
+                    // follows the host tempo, not the saved song's sample stride.
+                    // Different tempos previously looked like a seek every block.
+                    const double tempo=transport->getBpm().orFallback(a->getBpm());
+                    if(expectedHostPpq>=0.0&&std::abs(*ppq-expectedHostPpq)>.001)seek=true;
+                    expectedHostPpq=*ppq+b.getNumSamples()/previewSampleRate*tempo/60.0;
+                }
+                else expectedHostPpq=-1.0;
+            }
+            if(!playing&&hostWasPlaying){seek=true;expectedHostPpq=-1.0;}
+            hostWasPlaying=playing;
+            if(seek)hostMidiRenderer.reset(position,false);
             const auto mix=songMixSnapshot();
             hostMidiRenderer.renderMidi(*a,b,m,position,b.getNumSamples(),&mix,selectedLane.load(),
                                        midiRoutingMode.load()==MidiRoutingMode::selectedLane);
             hostMidiSample=position+b.getNumSamples();
-            if(!m.isEmpty()||hostMidiRenderer.hasActiveVoices())hostMidiTailSamples=(int64_t)(previewSampleRate*4.0);
-            else hostMidiTailSamples=std::max<int64_t>(0,hostMidiTailSamples-b.getNumSamples());
             m.clear();return;
         }
         // Advance over leading rests too; MIDI imported at its original song
@@ -780,7 +794,7 @@ void SonaraAudioProcessor::stopPreview()
     previewPlaying.store(false);
     previewSample.store(0);
     engine.reset();
-    hostMidiRenderer.reset(0,false);hostMidiSample=hostMidiTailSamples=0;
+    hostMidiRenderer.reset(0,false);hostMidiSample=0;hostWasPlaying=false;expectedHostPpq=-1.0;
     generationStatus = "Sound preview stopped";
 }
 
@@ -1372,7 +1386,7 @@ void SonaraAudioProcessor::storeArrangement(std::shared_ptr<const sonara::SongAr
     const juce::ScopedLock lock(getCallbackLock());
     if(made){songRenderer.configure(*made);songRenderer.reset(songSample.load());hostMidiRenderer.configure(*made);rendererPlan=made.get();lastSongSeed.store(made->getSongId());}
     else {songPlaying.store(false);songRenderer.reset(0);hostMidiRenderer.reset(0,false);useLaneMidiSound.store(false);rendererPlan=nullptr;lastSongSeed.store(0);}
-    hostMidiSample=hostMidiTailSamples=0;
+    hostMidiSample=0;hostWasPlaying=false;expectedHostPpq=-1.0;
     std::atomic_store_explicit(&arrangement,std::move(made),std::memory_order_release);
 }
 void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int numSamples)
@@ -1804,7 +1818,7 @@ void SonaraAudioProcessor::setSelectedLane(int i)
     const auto& lane=a->getLanes()[(size_t)bounded];
     {
         const juce::ScopedLock callback(getCallbackLock());
-        hostMidiRenderer.reset(0,false);hostMidiSample=hostMidiTailSamples=0;
+        hostMidiRenderer.reset(0,false);hostMidiSample=0;hostWasPlaying=false;expectedHostPpq=-1.0;
         useLaneMidiSound.store(true,std::memory_order_release);
     }
     if(!lane.drums)
@@ -1820,7 +1834,7 @@ void SonaraAudioProcessor::setSelectedLane(int i)
 void SonaraAudioProcessor::setMidiRoutingMode(MidiRoutingMode mode)
 {
     const juce::ScopedLock callback(getCallbackLock());
-    midiRoutingMode.store(mode);hostMidiRenderer.reset(0,false);hostMidiSample=hostMidiTailSamples=0;
+    midiRoutingMode.store(mode);hostMidiRenderer.reset(0,false);hostMidiSample=0;hostWasPlaying=false;expectedHostPpq=-1.0;
 }
 
 SonaraAudioProcessor::LaneMixState SonaraAudioProcessor::getLaneMix(int laneIndex) const noexcept

@@ -32,6 +32,20 @@ int main(int argc,char** argv)
             for(size_t i=0;i<controls.size();++i)for(size_t j=i+1;j<controls.size();++j)
                 if(controls[i]->getBounds().intersects(controls[j]->getBounds()))
                 {std::cerr<<tab<<" overlapping controls: "<<controls[i]->getName()<<" / "<<controls[j]->getName()<<'\n';return 4;}
+            for(int i=0;i<editor->getNumChildComponents();++i) {
+                auto* c=editor->getChildComponent(i);
+                if(c->getName()=="Sound preview tempo"&&c->isVisible()!=(juce::String(tab)=="INSTRUMENT"))return 11;
+                if((juce::String(tab)=="MIDI"||juce::String(tab)=="EXPORT")
+                   &&c->isVisible()&&dynamic_cast<juce::TextEditor*>(c))return 12;
+                if(auto* button=dynamic_cast<juce::TextButton*>(c)) {
+                    if(button->getButtonText()=="FULL SONG MIDI")return 13;
+                    if(juce::String(tab)=="MIDI"&&button->isVisible()&&button->getButtonText().startsWith("MIDI:")) {
+                        const auto before=processor.getMidiRoutingMode();button->onClick();
+                        if(processor.getMidiRoutingMode()==before)return 14;
+                        button->onClick();if(processor.getMidiRoutingMode()!=before)return 15;
+                    }
+                }
+            }
             if(juce::String(tab)=="SONG")
             {
                 for(int i=0;i<editor->getNumChildComponents();++i)

@@ -39,6 +39,14 @@ class SonaraEngine {
 public: SonaraEngine(); void setLowCpuMode(bool enabled); void setRuntimeEcoMode(bool enabled) noexcept; void setVoiceLimit(int voices); void prepare(double,int,int); void render(juce::AudioBuffer<float>&,juce::MidiBuffer&); void render(juce::AudioBuffer<float>&,juce::MidiBuffer&,int numSamples); void setPatch(const SoundDNA&); void reset() noexcept; void allNotesOff() noexcept { synth.allNotesOff(0, false); } bool hasActiveVoices() noexcept; SoundDNA patchSnapshot() const {const juce::SpinLock::ScopedLockType lock(pendingLock);return dna;} const SoundDNA& patch()const noexcept{return dna;}
 private:
     static float readFractional(const juce::AudioBuffer<float>&,int,int,float) noexcept; float readDelay(int,float) const noexcept; void applyPendingPatch() noexcept; void processChorus(juce::AudioBuffer<float>&,int) noexcept; void processDelay(juce::AudioBuffer<float>&,int) noexcept;
-    juce::Synthesiser synth; SoundDNA dna,pendingDNA,audioDNA; mutable juce::SpinLock pendingLock; bool patchPending=false; double sr=44100.0; juce::Reverb reverb; juce::Reverb::Parameters reverbParams; juce::AudioBuffer<float> chorusBuffer,delayBuffer; int chorusWrite=0,delayWrite=0; float chorusPhase=0.f; bool lowCpuMode=false,runtimeEcoMode=false; int requestedVoices=8; void rebuildVoices();
+    class PerformanceSynth final : public juce::Synthesiser {
+    public:
+        void resetPerformance() noexcept {
+            const juce::ScopedLock guard(lock);
+            allNotesOff(0,false);
+            for(auto& value:lastPitchWheelValues)value=8192;
+        }
+    };
+    PerformanceSynth synth; SoundDNA dna,pendingDNA,audioDNA; mutable juce::SpinLock pendingLock; bool patchPending=false; double sr=44100.0; juce::Reverb reverb; juce::Reverb::Parameters reverbParams; juce::AudioBuffer<float> chorusBuffer,delayBuffer; int chorusWrite=0,delayWrite=0; float chorusPhase=0.f; bool lowCpuMode=false,runtimeEcoMode=false; int requestedVoices=8; void rebuildVoices();
 };
 }

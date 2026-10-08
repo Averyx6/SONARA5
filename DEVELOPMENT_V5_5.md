@@ -125,3 +125,32 @@ These are structural/recorded measurements, not listening or FL Studio approval.
 
 Next concrete task: incoming MIDI transport lifecycle, repeat playback/state sound
 reproducibility, generated-arrangement idle cost and honest UI control visibility.
+
+## v5.4 — reproducible performance and honest controls
+
+- JUCE calls inactive voices too. Guard their render path so stopped filter residue
+  cannot leak over leading rests; reset stored channel pitch wheels on restart/seek.
+  Regression first reproduced 0.027–0.031 sample error on restart and 0.417 after
+  a previous pitch bend. Both now reproduce the fresh saved performance exactly.
+- Detect host seeks by expected musical position using host tempo. Do not confuse
+  a saved-song/host tempo difference with a seek on every callback. Stop transitions
+  clear notes/FX; seeks never chase notes from the internal song into host MIDI.
+- Persisted project versus host state renders identical incoming audio (zero error),
+  including the selected custom sound, channel mode and lane mix. Five loaded
+  arrangements remain silent while idle: 0.247 s against the existing 1.5 s limit.
+- Remove the unused whole-song drag and false AI headline. Keep explicit full MIDI
+  save. Hide prompt/style controls on transfer/mix tabs where they do not apply.
+  Show saved song tempo as text; sound-preview tempo is editable only in INSTRUMENT.
+  Inspector style reports the generated song, not an ungenerated prompt draft.
+- Prepared audio cache hashes actual persisted notes/sounds/macros/mix/reference,
+  replacing pointer/seed checks that could reuse stale WAVs after same-seed edits.
+  Existing working reference, SoundDNA, mutation, mix and save/export features stay.
+- Required lifecycle suite covers restart, bend, different host tempo, seek/stop,
+  loaded idle cost and actual project/state audio. UI checks mode actions, control
+  visibility and all seven layouts at three sizes, with unchanged existing checks.
+
+Full v5.4 Linux x64 Release built and all twelve suites passed (57.16 s), including
+the unchanged 185-second stability/CPU, state/export, UI and native discovery gates.
+This checkpoint is locally committed while the v5.2 Windows build finishes.
+Next concrete task: final stabilization of explicit routing mode transitions, GM
+aliases and bounded host MIDI; record final-answer audio and rerun every gate.
