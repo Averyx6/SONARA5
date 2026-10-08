@@ -776,7 +776,7 @@ void SonaraAudioProcessor::startPreview()
         referenceSong=std::make_shared<sonara::SongArrangement>(sonara::AudioExporter::makeReferenceSong(reference,engine.patchSnapshot()));
         songRenderer.configure(*referenceSong);rendererPlan=referenceSong.get();previewSample.store(0);
         previewLengthSamples=(int64_t)std::llround(referenceSong->getTotalBeats()*previewSampleRate*60.0/referenceSong->getBpm()+previewSampleRate*4.0);
-        previewPlaying.store(true);generationStatus="Reference preview • same renderer as RESOUND WAV";return;
+        previewPlaying.store(true);generationStatus="Reference preview | same renderer as RESOUND WAV";return;
     }
     const double beats = referenceMelodyPreview && referenceLoaded && !reference.melody.empty() ? juce::jmax(1.0, reference.melodyBeats()) : 16.0;
     previewLengthSamples = (int64_t) std::llround(previewSampleRate * (60.0 / previewBpm) * beats);
@@ -863,9 +863,9 @@ void SonaraAudioProcessor::generatePatch(const juce::String& p)
                     ^ (++generationCounter * 0xd6e8feb86659fd93ULL)
                     ^ 0x534f554e445f444eULL;
     auto d = generator.generate(p, seed, [this](float x, const juce::String& s){ generationProgress.store(x); generationStatus = s; });
-    d.name = "AI • " + p.substring(0, 26);
+    d.name = "AI | " + p.substring(0, 26);
     setPatchWithHistory(d);
-    generationStatus = "Sound ready • unique SoundDNA";
+    generationStatus = "Sound ready | unique SoundDNA";
 }
 
 void SonaraAudioProcessor::mutatePatch()
@@ -934,7 +934,7 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     if(prompt.trim().isEmpty()||prompt.length()>8192||preparedPrompt.exclusions==4095u)
     {
         generationProgress.store(0.f);
-        generationStatus="Generation failed • enter a prompt with at least one instrument";
+        generationStatus="Generation failed | enter a prompt with at least one instrument";
         return false;
     }
 
@@ -1066,7 +1066,7 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
                           (quality<.75f?"Rejecting weak song structure":
                           (harmonySim>=.86f?"Rejecting recycled harmony":
                           (melodySim>=.55f?"Rejecting recycled hook":"Rejecting familiar whole song"))))
-                       +juce::String(" • trying composition ")
+                       +juce::String(" | trying composition ")
                        +juce::String(attempt+2)+"/"+juce::String(maxAttempts);
     }
 
@@ -1090,7 +1090,7 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     if(!made)
     {
         generationProgress.store(0.f);
-        generationStatus="Generation failed • no valid new song was published";
+        generationStatus="Generation failed | no valid new song was published";
         return false;
     }
 
@@ -1123,11 +1123,11 @@ bool SonaraAudioProcessor::generateTrack(const juce::String& prompt)
     storeArrangement(std::shared_ptr<const sonara::SongArrangement>(made));
     setSelectedLane(lanes.size()>9?9:0);
     generationProgress.store(1.f);
-    generationStatus="NEW SONG READY • whole "+juce::String((1.f-wholeSimilarityMax)*100.f,0)
-                   +"% • harmony "+juce::String((1.f-harmonySimilarityMax)*100.f,0)
-                   +"% • melody "+juce::String((1.f-melodySimilarityMax)*100.f,0)
-                   +"% • quality "+juce::String(bestQuality*100.f,0)
-                   +"% • prompt "+juce::String(bestPromptMatch*100.f,0)+"%";
+    generationStatus="NEW SONG READY | whole "+juce::String((1.f-wholeSimilarityMax)*100.f,0)
+                   +"% | harmony "+juce::String((1.f-harmonySimilarityMax)*100.f,0)
+                   +"% | melody "+juce::String((1.f-melodySimilarityMax)*100.f,0)
+                   +"% | quality "+juce::String(bestQuality*100.f,0)
+                   +"% | prompt "+juce::String(bestPromptMatch*100.f,0)+"%";
     return true;
 }
 
@@ -1150,7 +1150,7 @@ bool SonaraAudioProcessor::generateTrackWithSeed(const juce::String& prompt,uint
     lastSongSeed.store(0,std::memory_order_relaxed);
     generationProgress.store(.04f);
     if(prompt.trim().isEmpty()||prompt.length()>8192)
-    {generationStatus="Generation failed • enter a valid prompt";generationProgress.store(0.f);return false;}
+    {generationStatus="Generation failed | enter a valid prompt";generationProgress.store(0.f);return false;}
     generationStatus="Planning the requested seed";
     if(backgroundCancel.load()){generationStatus="Generation cancelled";generationProgress.store(0);return false;}
     auto made=std::make_shared<sonara::SongArrangement>();
@@ -1158,9 +1158,9 @@ bool SonaraAudioProcessor::generateTrackWithSeed(const juce::String& prompt,uint
     if(backgroundCancel.load()){generationStatus="Generation cancelled";generationProgress.store(0);return false;}
     juce::String reason;
     if(!made->validate(&reason))
-    {generationStatus="Generation failed • "+reason;generationProgress.store(0.f);return false;}
+    {generationStatus="Generation failed | "+reason;generationProgress.store(0.f);return false;}
     publishSong(std::move(made));
-    generationStatus="Song ready • reproduced seed "+juce::String::toHexString((juce::int64)seed);
+    generationStatus="Song ready | reproduced seed "+juce::String::toHexString((juce::int64)seed);
     generationProgress.store(1.f);
     return true;
 }
@@ -1183,14 +1183,14 @@ bool SonaraAudioProcessor::randomizeEverything(const juce::String& prompt)
     if(!hasKey)q+=", "+juce::String(keys[rng.nextInt((int)(sizeof(keys)/sizeof(keys[0])))]);
     q+=", completely fresh composition, new harmony, new groove, new melody contour, new drum kit, new bass and sub";
 
-    const juce::String soundBrief=q+" • completely new standalone signature synth, unique oscillator character, polished transient, controlled low end";
+    const juce::String soundBrief=q+" | completely new standalone signature synth, unique oscillator character, polished transient, controlled low end";
     generatePatch(soundBrief);
     if(!generateTrack(q))
     {
-        generationStatus="RANDOMIZE FAILED • no stale song published";
+        generationStatus="RANDOMIZE FAILED | no stale song published";
         return false;
     }
-    generationStatus="EVERYTHING RANDOMIZED • new song + melody + structure + drums + bass + sub + SoundDNA";
+    generationStatus="EVERYTHING RANDOMIZED | new song + melody + structure + drums + bass + sub + SoundDNA";
     return true;
 }
 
@@ -1268,8 +1268,8 @@ void SonaraAudioProcessor::regenerateDrums(const juce::String& prompt)
     selectedLane.store(0);
     generationProgress.store(1.f);
     generationStatus = current
-        ? "Drums regenerated only • melody, chords and bass preserved"
-        : "Drums ready • base arrangement created because no song existed";
+        ? "Drums regenerated only | melody, chords and bass preserved"
+        : "Drums ready | base arrangement created because no song existed";
 }
 
 void SonaraAudioProcessor::startSongPreview()
@@ -1285,7 +1285,7 @@ void SonaraAudioProcessor::startChorusPreview()
         if(section.name=="CHORUS")
         {
             startSongPreviewAtBar(section.startBar);
-            generationStatus="CHORUS PREVIEW • bar "+juce::String(section.startBar+1);
+            generationStatus="CHORUS PREVIEW | bar "+juce::String(section.startBar+1);
             return;
         }
     generationStatus="No CHORUS section in this arrangement";
@@ -1299,7 +1299,7 @@ void SonaraAudioProcessor::startDropPreview()
         if(section.name=="DROP")
         {
             startSongPreviewAtBar(section.startBar);
-            generationStatus="DROP PREVIEW • bar "+juce::String(section.startBar+1);
+            generationStatus="DROP PREVIEW | bar "+juce::String(section.startBar+1);
             return;
         }
     generationStatus="No DROP section in this arrangement";
@@ -1314,13 +1314,13 @@ void SonaraAudioProcessor::startSongPreviewAtBar(int bar)
     const auto start=(int64_t)std::llround(safe*4.0*previewSampleRate*60.0/a->getBpm());
     if(rendererPlan!=a.get()){songRenderer.configure(*a);rendererPlan=a.get();}
     songRenderer.reset(start);songSample.store(start);songPlaying.store(true);
-    generationStatus="Playing "+currentSectionName()+" • bar "+juce::String(safe+1);
+    generationStatus="Playing "+currentSectionName()+" | bar "+juce::String(safe+1);
 }
 void SonaraAudioProcessor::pauseSongPreview()
 {
     const juce::ScopedLock lock(getCallbackLock());
     if(!songPlaying.exchange(false))return;
-    generationStatus="Song preview paused • bar "+juce::String(currentSongBar()+1);
+    generationStatus="Song preview paused | bar "+juce::String(currentSongBar()+1);
 }
 void SonaraAudioProcessor::resumeSongPreview()
 {
@@ -1330,7 +1330,7 @@ void SonaraAudioProcessor::resumeSongPreview()
     const auto position=songSample.load();
     if(position<=0||position>=total){startSongPreviewAtBar(0);return;}
     // Pausing retains envelopes, FX and note state at the same sample.
-    songPlaying.store(true);generationStatus="Song preview resumed • "+currentSectionName();
+    songPlaying.store(true);generationStatus="Song preview resumed | "+currentSectionName();
 }
 void SonaraAudioProcessor::stopSongPreview()
 {
@@ -1464,14 +1464,14 @@ bool SonaraAudioProcessor::analyseReferenceFile(const juce::File& file)
     {
         generationProgress.store(0.f);
         generationStatus=result.sampleRate>0.0
-            ?"Reference analysis failed • no stable melody could be extracted"
+            ?"Reference analysis failed | no stable melody could be extracted"
             :"Reference file could not be read";
         return false;
     }
     reference=std::move(result);referenceLoaded=true;
     previewBpm=juce::jlimit(60.0,200.0,reference.estimatedBpm);
     generationProgress.store(1.f);
-    generationStatus="Reference ready • "+reference.keyName+" • "+juce::String(reference.melody.size())+" stable melody notes";
+    generationStatus="Reference ready | "+reference.keyName+" | "+juce::String(reference.melody.size())+" stable melody notes";
     return true;
 }
 
@@ -1484,12 +1484,12 @@ bool SonaraAudioProcessor::importMidiFile(const juce::File& file)
     auto result=referenceAnalyzer.importMidi(file);
     if(!result.valid())
     {
-        generationProgress.store(0.f);generationStatus="MIDI import failed • no usable note data";
+        generationProgress.store(0.f);generationStatus="MIDI import failed | no usable note data";
         return false;
     }
     reference=std::move(result);referenceLoaded=true;referenceMelodyPreview=true;
     previewBpm=juce::jlimit(60.0,200.0,reference.estimatedBpm);
-    generationProgress.store(1.f);generationStatus="MIDI imported • ready to RESOUND or REBUILD";
+    generationProgress.store(1.f);generationStatus="MIDI imported | ready to RESOUND or REBUILD";
     return true;
 }
 
@@ -1506,7 +1506,7 @@ bool SonaraAudioProcessor::resoundReference(const juce::String& prompt)
     previewBpm=juce::jlimit(60.0,200.0,reference.estimatedBpm);
     startPreview();
     generationProgress.store(1.f);
-    generationStatus="RESOUND • playing extracted melody with new SONARA SoundDNA";
+    generationStatus="RESOUND | playing extracted melody with new SONARA SoundDNA";
     return true;
 }
 
@@ -1523,7 +1523,7 @@ bool SonaraAudioProcessor::rebuildInstrumentalFromReference(const juce::String& 
     referenceMelodyPreview=false;
     previewBpm=juce::jlimit(60.0,200.0,reference.estimatedBpm);
     generationProgress.store(.04f);
-    generationStatus="REBUILD • creating a new backing arrangement around the extracted melody";
+    generationStatus="REBUILD | creating a new backing arrangement around the extracted melody";
 
     // Put reference tempo/key first because the song parser intentionally treats
     // the first explicit tempo/key as authoritative. A contradictory text prompt
@@ -1533,14 +1533,14 @@ bool SonaraAudioProcessor::rebuildInstrumentalFromReference(const juce::String& 
     if(!generateTrack(rebuildPrompt))
     {
         generationProgress.store(0.f);
-        generationStatus="Reference rebuild failed • backing generation did not pass the quality gate";
+        generationStatus="Reference rebuild failed | backing generation did not pass the quality gate";
         return false;
     }
 
     auto current=arrangementSnapshot();
     if(!current)
     {
-        generationProgress.store(0.f);generationStatus="Reference rebuild failed • no new arrangement was produced";
+        generationProgress.store(0.f);generationStatus="Reference rebuild failed | no new arrangement was produced";
         return false;
     }
     auto rebuilt=std::make_shared<sonara::SongArrangement>(*current);
@@ -1549,7 +1549,7 @@ bool SonaraAudioProcessor::rebuildInstrumentalFromReference(const juce::String& 
     for(int i=0;i<(int)lanes.size();++i)if(lanes[(size_t)i].name=="LEAD"){leadIndex=i;break;}
     if(leadIndex<0)
     {
-        generationProgress.store(0.f);generationStatus="Reference rebuild failed • generated arrangement has no LEAD lane";
+        generationProgress.store(0.f);generationStatus="Reference rebuild failed | generated arrangement has no LEAD lane";
         return false;
     }
 
@@ -1604,8 +1604,8 @@ bool SonaraAudioProcessor::rebuildInstrumentalFromReference(const juce::String& 
     storeArrangement(std::shared_ptr<const sonara::SongArrangement>(rebuilt));
     setSelectedLane(leadIndex);
     generationProgress.store(1.f);
-    generationStatus="REFERENCE REBUILT • "+reference.keyName+" • "+juce::String(reference.estimatedBpm,1)
-        +" BPM • "+juce::String(inserted)+" lead notes placed into song sections";
+    generationStatus="REFERENCE REBUILT | "+reference.keyName+" | "+juce::String(reference.estimatedBpm,1)
+        +" BPM | "+juce::String(inserted)+" lead notes placed into song sections";
     return true;
 }
 
@@ -1685,7 +1685,7 @@ bool SonaraAudioProcessor::loadProject(const juce::File& file)
     if(arr.isValid())
     {
         auto made=std::make_shared<sonara::SongArrangement>(sonara::SongArrangement::fromValueTree(arr));
-        if(!made->validate()){generationStatus="Project load failed • invalid arrangement";generationProgress.store(0);return false;}
+        if(!made->validate()){generationStatus="Project load failed | invalid arrangement";generationProgress.store(0);return false;}
         if(!made->isEmpty())
         {
             const auto& lanes=made->getLanes();
@@ -1699,7 +1699,7 @@ bool SonaraAudioProcessor::loadProject(const juce::File& file)
 
     setMidiRoutingMode((MidiRoutingMode)juce::jlimit(0,1,(int)root.getProperty("midiRoutingMode",0)));
     useLaneMidiSound.store((bool)root.getProperty("laneMidiSound",arrangementSnapshot()&&engine.patchSnapshot().seed==arrangementSnapshot()->getLanes()[(size_t)selectedLane.load()].sound.seed));
-    generationStatus="Project loaded • song, sounds, mix and reference restored";
+    generationStatus="Project loaded | song, sounds, mix and reference restored";
     generationProgress.store(1.f);
     return true;
 }
@@ -1724,14 +1724,14 @@ bool SonaraAudioProcessor::exportFullMix(const juce::File& file)
         &mix);
 
     generationProgress.store(ok?1.f:0.f);
-    generationStatus=ok?"24-bit full mix ready • "+file.getFullPathName():"Full mix export failed";
+    generationStatus=ok?"24-bit full mix ready | "+file.getFullPathName():"Full mix export failed";
     return ok;
 }
 
 bool SonaraAudioProcessor::exportSelectedLaneAudio(const juce::File& file)
 {
     const juce::ScopedLock operation(operationLock);
-    auto a=arrangementSnapshot();if(!a)return false;const auto mix=songMixSnapshot();const bool ok=audioExporter.renderSelectedLane(*a,selectedLane.load(),file,previewSampleRate,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;},&mix);generationProgress.store(ok?1.f:0.f);generationStatus=ok?"Selected lane WAV ready • "+file.getFullPathName():"Lane export failed";return ok;
+    auto a=arrangementSnapshot();if(!a)return false;const auto mix=songMixSnapshot();const bool ok=audioExporter.renderSelectedLane(*a,selectedLane.load(),file,previewSampleRate,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;},&mix);generationProgress.store(ok?1.f:0.f);generationStatus=ok?"Selected lane WAV ready | "+file.getFullPathName():"Lane export failed";return ok;
 }
 
 bool SonaraAudioProcessor::exportLeadAudio(const juce::File& file)
@@ -1746,7 +1746,7 @@ bool SonaraAudioProcessor::exportLeadAudio(const juce::File& file)
     const bool ok=audioExporter.renderSelectedLane(*a,leadIndex,file,previewSampleRate,
         [this](float x,const juce::String& status){generationProgress.store(x);generationStatus=status;},&mix);
     generationProgress.store(ok?1.f:0.f);
-    generationStatus=ok?"LEAD WAV ready • "+file.getFullPathName():"LEAD WAV export failed";
+    generationStatus=ok?"LEAD WAV ready | "+file.getFullPathName():"LEAD WAV export failed";
     return ok;
 }
 
@@ -1756,7 +1756,7 @@ bool SonaraAudioProcessor::exportReferenceAudio(const juce::File& file)
     if(!hasReference())
     {
         generationProgress.store(0.f);
-        generationStatus="RESOUND WAV unavailable • load a usable reference first";
+        generationStatus="RESOUND WAV unavailable | load a usable reference first";
         return false;
     }
 
@@ -1769,7 +1769,7 @@ bool SonaraAudioProcessor::exportReferenceAudio(const juce::File& file)
             generationStatus=status;
         });
     generationProgress.store(ok?1.f:0.f);
-    generationStatus=ok?"RESOUND WAV ready • "+file.getFullPathName():"RESOUND WAV export failed";
+    generationStatus=ok?"RESOUND WAV ready | "+file.getFullPathName():"RESOUND WAV export failed";
     return ok;
 }
 
@@ -1779,7 +1779,7 @@ bool SonaraAudioProcessor::exportAllStems(const juce::File& directory)
     auto a=arrangementSnapshot();if(!a)return false;const auto mix=songMixSnapshot();
     const bool ok=audioExporter.renderAllStems(*a,directory,previewSampleRate,[this](float x,const juce::String&s){generationProgress.store(x);generationStatus=s;},&mix)
         &&saveProject(directory.getChildFile("SONARA-Stems.sonaraproject"))&&a->writeMidiFile(directory.getChildFile("SONARA-Arrangement.mid"));
-    generationProgress.store(ok?1.f:0.f);generationStatus=ok?"All 24-bit stems + MIDI + SoundDNA project ready • "+directory.getFullPathName():"Stem export failed";return ok;
+    generationProgress.store(ok?1.f:0.f);generationStatus=ok?"All 24-bit stems + MIDI + SoundDNA project ready | "+directory.getFullPathName():"Stem export failed";return ok;
 }
 
 void SonaraAudioProcessor::setLaneMix(int laneIndex,LaneMixParameter parameter,float value) noexcept
@@ -1824,7 +1824,7 @@ void SonaraAudioProcessor::setSelectedLane(int i)
         // This lets editable FL Piano Roll MIDI play the same SoundDNA when the
         // MIDI is placed on a SONARA channel.
         engine.setPatch(lane.sound);
-        generationStatus="LIVE SOUND • "+lane.name+" • drop lane MIDI on this SONARA channel";
+        generationStatus="LIVE SOUND | "+lane.name+" | drop lane MIDI on this SONARA channel";
     }
 }
 
@@ -1880,10 +1880,10 @@ bool SonaraAudioProcessor::setSelectedLaneSound(const juce::String& prompt,bool 
             ^ (++generationCounter*0x9e3779b97f4a7c15ULL)
             ^ (uint64_t)userPrompt.hashCode64()
             ^ ((uint64_t)laneIndex+1ULL)*0xbf58476d1ce4e5b9ULL);
-        next=generator.generate(userPrompt+" • "+lanes[(size_t)laneIndex].name+" instrument",seed);
+        next=generator.generate(userPrompt+" | "+lanes[(size_t)laneIndex].name+" instrument",seed);
         applyLaneSoundCpuBudget(lanes[(size_t)laneIndex].name,next);
         const auto semantic=next.name.replace("Generated ","").trim();
-        next.name=lanes[(size_t)laneIndex].name+" • Custom "+(semantic.isEmpty()?juce::String("Sound"):semantic);
+        next.name=lanes[(size_t)laneIndex].name+" | Custom "+(semantic.isEmpty()?juce::String("Sound"):semantic);
         lanes[(size_t)laneIndex].sound=next;
     }
 
@@ -1894,7 +1894,7 @@ bool SonaraAudioProcessor::setSelectedLaneSound(const juce::String& prompt,bool 
 
     storeArrangement(std::shared_ptr<const sonara::SongArrangement>(updated));
     generationProgress.store(1.f);
-    generationStatus=juce::String(automatic?"AUTO FIT • ":"CUSTOM SOUND • ")+lanes[(size_t)laneIndex].name;
+    generationStatus=juce::String(automatic?"AUTO FIT | ":"CUSTOM SOUND | ")+lanes[(size_t)laneIndex].name;
     return true;
 }
 
@@ -2001,7 +2001,7 @@ void SonaraAudioProcessor::setStateInformation(const void* data,int bytes)
         if(arr.isValid())
         {
             auto made=std::make_shared<sonara::SongArrangement>(sonara::SongArrangement::fromValueTree(arr));
-            if(!made->validate()){generationStatus="Session restore failed • invalid arrangement";generationProgress.store(0);return;}
+            if(!made->validate()){generationStatus="Session restore failed | invalid arrangement";generationProgress.store(0);return;}
             if(!made->isEmpty())
             {
                 const auto& lanes=made->getLanes();
@@ -2019,7 +2019,7 @@ void SonaraAudioProcessor::setStateInformation(const void* data,int bytes)
         patchHistory.push_back(engine.patch());
         historyIndex=0;
         generationProgress.store(1.f);
-        generationStatus="Session restored • song, sounds, mix and reference";
+        generationStatus="Session restored | song, sounds, mix and reference";
     }
 }
 

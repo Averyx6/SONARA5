@@ -48,7 +48,7 @@ void SonaraAudioProcessorEditor::SoundDNAView::paint(juce::Graphics& g){
     juce::ColourGradient glow(purple.withAlpha(.28f),graph.getCentreX(),graph.getCentreY(),cyan.withAlpha(.03f),graph.getRight(),graph.getBottom(),true);g.setGradientFill(glow);g.fillRoundedRectangle(graph,10.f);
     const int bars=88; for(int i=0;i<bars;++i){const float x=graph.getX()+graph.getWidth()*i/(bars-1.f);const float seed=std::sin((float)i*.31f+(float)(d.seed%997)*.011f+animation);const float shape=.25f+.75f*std::abs(seed*std::sin((float)i*.071f+d.macroMovement*4.f));const float amp=(12.f+shape*graph.getHeight()*.34f)*(0.45f+d.macroImpact*.55f);g.setColour(juce::Colour::fromHSV(.68f-(float)i/bars*.22f,.72f,.98f,.28f+.55f*shape));g.drawLine(x,graph.getCentreY()-amp*.5f,x,graph.getCentreY()+amp*.5f,1.25f);}
     g.setColour(text);g.setFont(juce::FontOptions(20.f).withStyle("Bold"));g.drawText(d.name,r.getX()+18,r.getY()+10,r.getWidth()-36,24,juce::Justification::left);
-    g.setColour(dim);g.setFont(11.f);g.drawText("SOUND DNA • seed "+juce::String(d.seed)+" • unison "+juce::String(d.unison)+" • cutoff "+juce::String((int)d.cutoff)+" Hz",r.getX()+18,r.getBottom()-31,r.getWidth()-36,18,juce::Justification::left);
+    g.setColour(dim);g.setFont(11.f);g.drawText("SOUND DNA | seed "+juce::String(d.seed)+" | unison "+juce::String(d.unison)+" | cutoff "+juce::String((int)d.cutoff)+" Hz",r.getX()+18,r.getBottom()-31,r.getWidth()-36,18,juce::Justification::left);
 }
 
 void SonaraAudioProcessorEditor::TimelineView::paint(juce::Graphics& g)
@@ -147,7 +147,7 @@ void SonaraAudioProcessorEditor::TimelineView::paint(juce::Graphics& g)
     g.setColour(juce::Colour(0xff06101c).withAlpha(.92f));
     g.fillRoundedRectangle(r.getRight()-190.f,r.getBottom()-22.f,182.f,16.f,5.f);
     g.setColour(cyan.withAlpha(.9f));g.setFont(8.5f);
-    g.drawFittedText("BAR "+juce::String(currentBar+1)+"/"+juce::String(bars)+" • "+sectionName,
+    g.drawFittedText("BAR "+juce::String(currentBar+1)+"/"+juce::String(bars)+" | "+sectionName,
                      (int)r.getRight()-184,(int)r.getBottom()-20,170,12,
                      juce::Justification::centredRight,1);
 }
@@ -193,7 +193,7 @@ void SonaraAudioProcessorEditor::PianoRollView::paint(juce::Graphics& g)
     if(!a||!juce::isPositiveAndBelow(processor.getSelectedLane(),(int)a->getLanes().size()))
     {
         g.setColour(dim);g.setFont(12.f);
-        g.drawText("PIANO ROLL • select a lane",getLocalBounds(),juce::Justification::centred);
+        g.drawText("PIANO ROLL | select a lane",getLocalBounds(),juce::Justification::centred);
         return;
     }
 
@@ -231,7 +231,7 @@ void SonaraAudioProcessorEditor::PianoRollView::paint(juce::Graphics& g)
 
     g.setColour(juce::Colour(0xff0a1524));g.fillRect(header);
     g.setColour(text.withAlpha(.92f));g.setFont(juce::FontOptions(10.f).withStyle("Bold"));
-    g.drawText(lane.name+"  •  BARS "+juce::String(firstBar+1)+"–"+juce::String(juce::jmin(bars,firstBar+viewBars)),
+    g.drawText(lane.name+"  |  BARS "+juce::String(firstBar+1)+"-"+juce::String(juce::jmin(bars,firstBar+viewBars)),
                (int)header.getX()+8,(int)header.getY()+3,(int)header.getWidth()-16,17,juce::Justification::left);
 
     auto isBlack=[](int note)
@@ -355,11 +355,11 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     dragReferenceAudio.setTooltip("Rendered extracted reference melody using the current RESOUND SoundDNA. Drag to FL Playlist for the actual resounded audio.");
     dragFullAudio.setTooltip("Rendered full mix using the same SONARA song mixer as preview. Drag to FL Playlist for preview-matched sound.");
 
-    dragFullAudio.onClick=[this]{const auto kind=ExternalDragButton::Kind::fullMixAudio;const auto it=dragCache.find((int)kind);if(it!=dragCache.end()&&it->second.key==dragCacheKey(kind))showStatus("Audio ready • drag this button to the FL Playlist");else beginExternalDrag(kind);};
-    dragLaneAudio.onClick=[this]{const auto kind=ExternalDragButton::Kind::laneAudio;const auto it=dragCache.find((int)kind);if(it!=dragCache.end()&&it->second.key==dragCacheKey(kind))showStatus("Audio ready • drag this button to the FL Playlist");else beginExternalDrag(kind);};
-    dragLeadAudio.onClick=[this]{const auto kind=ExternalDragButton::Kind::leadAudio;const auto it=dragCache.find((int)kind);if(it!=dragCache.end()&&it->second.key==dragCacheKey(kind))showStatus("Audio ready • drag this button to the FL Playlist");else beginExternalDrag(kind);};
-    dragStems.onClick=[this]{const auto kind=ExternalDragButton::Kind::stemsAudio;const auto it=dragCache.find((int)kind);if(it!=dragCache.end()&&it->second.key==dragCacheKey(kind))showStatus("Audio ready • drag this button to the FL Playlist");else beginExternalDrag(kind);};
-    dragReferenceAudio.onClick=[this]{const auto kind=ExternalDragButton::Kind::referenceAudio;const auto it=dragCache.find((int)kind);if(it!=dragCache.end()&&it->second.key==dragCacheKey(kind))showStatus("Audio ready • drag this button to the FL Playlist");else beginExternalDrag(kind);};
+    dragFullAudio.onClick=[this]{const auto kind=ExternalDragButton::Kind::fullMixAudio;const auto it=dragCache.find((int)kind);if(it!=dragCache.end()&&it->second.key==dragCacheKey(kind))showStatus("Audio ready | drag this button to the FL Playlist");else beginExternalDrag(kind);};
+    dragLaneAudio.onClick=[this]{const auto kind=ExternalDragButton::Kind::laneAudio;const auto it=dragCache.find((int)kind);if(it!=dragCache.end()&&it->second.key==dragCacheKey(kind))showStatus("Audio ready | drag this button to the FL Playlist");else beginExternalDrag(kind);};
+    dragLeadAudio.onClick=[this]{const auto kind=ExternalDragButton::Kind::leadAudio;const auto it=dragCache.find((int)kind);if(it!=dragCache.end()&&it->second.key==dragCacheKey(kind))showStatus("Audio ready | drag this button to the FL Playlist");else beginExternalDrag(kind);};
+    dragStems.onClick=[this]{const auto kind=ExternalDragButton::Kind::stemsAudio;const auto it=dragCache.find((int)kind);if(it!=dragCache.end()&&it->second.key==dragCacheKey(kind))showStatus("Audio ready | drag this button to the FL Playlist");else beginExternalDrag(kind);};
+    dragReferenceAudio.onClick=[this]{const auto kind=ExternalDragButton::Kind::referenceAudio;const auto it=dragCache.find((int)kind);if(it!=dragCache.end()&&it->second.key==dragCacheKey(kind))showStatus("Audio ready | drag this button to the FL Playlist");else beginExternalDrag(kind);};
     juce::TextButton* tabs[]={&tabInstrument,&tabSong,&tabDrums,&tabFx,&tabReference,&tabMidi,&tabExport};
     for(auto* t:tabs){addAndMakeVisible(*t);styleButton(*t);}
     tabInstrument.onClick=[this]{setTab(0);};tabSong.onClick=[this]{setTab(1);};tabDrums.onClick=[this]{setTab(2);p.setSelectedLane(0);};
@@ -521,7 +521,7 @@ void SonaraAudioProcessorEditor::runWork(std::function<void()> work,std::functio
     juce::Component::SafePointer<SonaraAudioProcessorEditor> self(this);
     worker=std::thread([this,self,work=std::move(work),finished=std::move(finished)]() mutable
     {
-        try{work();}catch(const std::exception&){p.generationStatus="Operation failed • no output was published";p.generationProgress.store(0);}
+        try{work();}catch(const std::exception&){p.generationStatus="Operation failed | no output was published";p.generationProgress.store(0);}
         juce::MessageManager::callAsync([self,finished=std::move(finished)]() mutable
         {
             if(!self)return;
@@ -559,22 +559,22 @@ void SonaraAudioProcessorEditor::beginExternalDrag(ExternalDragButton::Kind kind
         if(exists){launchFileDrag(it->second.files);return;}
     }
     auto files=std::make_shared<juce::StringArray>();
-    showStatus("Preparing audio transfer • progress below • drag again when ready");
+    showStatus("Preparing audio transfer | progress below | drag again when ready");
     runWork([this,kind,files]{*files=prepareDragFiles(kind);},[this,kind,key,files]
     {
         if(files->isEmpty()){showStatus("Audio transfer failed or cancelled");return;}
-        dragCache[(int)kind]={key,*files};showStatus("AUDIO READY • drag the same WAV/stems button into FL Studio");
+        dragCache[(int)kind]={key,*files};showStatus("AUDIO READY | drag the same WAV/stems button into FL Studio");
     });
 }
 
 void SonaraAudioProcessorEditor::launchFileDrag(const juce::StringArray& files)
 {
     if(files.isEmpty())return;
-    dragActive=true;showStatus("DRAGGING • release over FL Studio's Piano Roll or Playlist");repaint();
+    dragActive=true;showStatus("DRAGGING | release over FL Studio's Piano Roll or Playlist");repaint();
     juce::Component::SafePointer<SonaraAudioProcessorEditor> self(this);
     const bool started=juce::DragAndDropContainer::performExternalDragDropOfFiles(files,false,this,[self]
-    {if(self){self->dragActive=false;self->showStatus("Drag ended • check the target's imported content");self->repaint();}});
-    if(!started){dragActive=false;showStatus("Drag could not start • use MIDI/WAV export controls");repaint();}
+    {if(self){self->dragActive=false;self->showStatus("Drag ended | check the target's imported content");self->repaint();}});
+    if(!started){dragActive=false;showStatus("Drag could not start | use MIDI/WAV export controls");repaint();}
 }
 
 void SonaraAudioProcessorEditor::chooseExportMidi(bool selected)
@@ -587,7 +587,7 @@ void SonaraAudioProcessorEditor::chooseExportMidi(bool selected)
         if(!self)return;auto f=chooser.getResult();if(f==juce::File{})return;
         if(f.getFileExtension().isEmpty())f=f.withFileExtension(".mid");
         const bool ok=selected?self->p.writeSelectedLaneMidiFile(f):self->p.writeArrangementMidiFile(f);
-        self->showStatus(ok?"MIDI exported • notes/timing only; use WAV for SONARA audio":"MIDI export failed");
+        self->showStatus(ok?"MIDI exported | notes/timing only; use WAV for SONARA audio":"MIDI export failed");
     });
 }
 
@@ -604,7 +604,7 @@ juce::StringArray SonaraAudioProcessorEditor::prepareDragFiles(ExternalDragButto
         p.generationStatus=juce::String("Preparing SOUND MIDI...");
         dragFile=temp.getNonexistentChildFile("SONARA-Sound",".mid");
         ok=p.writePreviewMidiFile(dragFile);
-        status="SOUND MIDI ready • drop on SONARA for the same SoundDNA";
+        status="SOUND MIDI ready | drop on SONARA for the same SoundDNA";
     }
     else if(kind==ExternalDragButton::Kind::laneMidi)
     {
@@ -612,7 +612,7 @@ juce::StringArray SonaraAudioProcessorEditor::prepareDragFiles(ExternalDragButto
         p.generationStatus=juce::String("Preparing SELECTED MIDI...");
         dragFile=temp.getNonexistentChildFile("SONARA-Selected-Lane",".mid");
         ok=p.writeSelectedLaneMidiFile(dragFile);
-        status="SELECTED MIDI ready • current lane only";
+        status="SELECTED MIDI ready | current lane only";
     }
     else if(kind==ExternalDragButton::Kind::leadMidi)
     {
@@ -622,49 +622,49 @@ juce::StringArray SonaraAudioProcessorEditor::prepareDragFiles(ExternalDragButto
         p.generationStatus=juce::String("Preparing LEAD MIDI...");
         dragFile=temp.getNonexistentChildFile("SONARA-Lead",".mid");
         ok=p.writeLeadMidiFile(dragFile);
-        status="LEAD MIDI ready • main melody only";
+        status="LEAD MIDI ready | main melody only";
     }
     else if(kind==ExternalDragButton::Kind::referenceMidi)
     {
         p.generationStatus=juce::String("Preparing REFERENCE MIDI...");
         dragFile=temp.getNonexistentChildFile("SONARA-Reference-Melody",".mid");
         ok=p.writeReferenceMidiFile(dragFile);
-        status="REFERENCE MIDI ready • extracted melody";
+        status="REFERENCE MIDI ready | extracted melody";
     }
     else if(kind==ExternalDragButton::Kind::referenceAudio)
     {
         p.generationStatus=juce::String("Rendering RESOUND WAV...");
         dragFile=temp.getNonexistentChildFile("SONARA-Resound",".wav");
         ok=p.exportReferenceAudio(dragFile);
-        status="RESOUND WAV ready • extracted melody + current SoundDNA";
+        status="RESOUND WAV ready | extracted melody + current SoundDNA";
     }
     else if(kind==ExternalDragButton::Kind::fullMixAudio)
     {
         p.generationStatus=juce::String("Rendering FULL MIX WAV...");
         dragFile=temp.getNonexistentChildFile("SONARA-Full-Mix",".wav");
         ok=p.exportFullMix(dragFile);
-        status="FULL MIX WAV ready • preview-matched 24-bit audio";
+        status="FULL MIX WAV ready | preview-matched 24-bit audio";
     }
     else if(kind==ExternalDragButton::Kind::laneAudio)
     {
         p.generationStatus=juce::String("Rendering SELECTED WAV...");
         dragFile=temp.getNonexistentChildFile("SONARA-Selected-Lane",".wav");
         ok=p.exportSelectedLaneAudio(dragFile);
-        status="SELECTED WAV ready • current lane SoundDNA preserved";
+        status="SELECTED WAV ready | current lane SoundDNA preserved";
     }
     else if(kind==ExternalDragButton::Kind::leadAudio)
     {
         p.generationStatus=juce::String("Rendering LEAD WAV...");
         dragFile=temp.getNonexistentChildFile("SONARA-Lead",".wav");
         ok=p.exportLeadAudio(dragFile);
-        status="LEAD WAV ready • LEAD SoundDNA preserved";
+        status="LEAD WAV ready | LEAD SoundDNA preserved";
     }
     else
     {
         p.generationStatus=juce::String("Rendering STEMS...");
         dragFile=temp.getNonexistentChildFile("SONARA-Stems","");
         ok=dragFile.createDirectory()&&p.exportAllStems(dragFile);
-        status="STEMS ready • rendered 24-bit lanes";
+        status="STEMS ready | rendered 24-bit lanes";
         if(ok)
         {
             juce::Array<juce::File> wavs;
@@ -679,7 +679,7 @@ juce::StringArray SonaraAudioProcessorEditor::prepareDragFiles(ExternalDragButto
 
     if(!ok||files.isEmpty())
     {
-        p.generationStatus=juce::String("Export unavailable • required generated/reference content is missing");
+        p.generationStatus=juce::String("Export unavailable | required generated/reference content is missing");
         return {};
     }
     return files;
@@ -833,7 +833,7 @@ void SonaraAudioProcessorEditor::timerCallback()
     hostMidiMode.setButtonText(p.getMidiRoutingMode()==SonaraAudioProcessor::MidiRoutingMode::selectedLane?"MIDI: SELECTED LANE":"MIDI: SONG CHANNELS");
     const bool hasArrangement=a&&!a->isEmpty();
     bpm.setEnabled(true);
-    songTempo.setText(hasArrangement?juce::String(a->getBpm(),0)+" BPM • saved song":"Set BPM in song prompt",juce::dontSendNotification);
+    songTempo.setText(hasArrangement?juce::String(a->getBpm(),0)+" BPM | saved song":"Set BPM in song prompt",juce::dontSendNotification);
     const auto seed=p.getSongGenerationSeed();if((!seedInitialised||seed!=displayedSeed)&&!seedInput.hasKeyboardFocus(true)){seedInitialised=true;displayedSeed=seed;seedInput.setText(hasArrangement?juce::String::toHexString((juce::int64)seed).paddedLeft('0',16):juce::String(),false);}
     const int selected=p.getSelectedLane();
     const bool selectedReady=hasArrangement&&juce::isPositiveAndBelow(selected,(int)a->getLanes().size())
@@ -859,8 +859,8 @@ void SonaraAudioProcessorEditor::timerCallback()
     dragReferenceAudio.setEnabled(referenceReady);
 
     selectedLaneLabel.setText(selectedReady
-        ?"SELECTED • "+a->getLanes()[(size_t)selected].name
-        :(hasArrangement?"SELECTED • lane has no events":"SELECTED • generate a song first"),
+        ?"SELECTED | "+a->getLanes()[(size_t)selected].name
+        :(hasArrangement?"SELECTED | lane has no events":"SELECTED | generate a song first"),
         juce::dontSendNotification);
 
     if(activeTab==3)syncMixControls();
@@ -922,10 +922,10 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
     g.drawRoundedRectangle(252,118,(float)getWidth()-516,(float)getHeight()-195,12,1);
 
     g.setColour(cyan.withAlpha(.72f));g.setFont(9.f);
-    const juce::String promptTitle=activeTab==5?"PIANO ROLL NOTES • CHOOSE LEAD OR ONE LANE":
-        (activeTab==6?"SAVE YOUR PROJECT OR EXPORT NOTES / AUDIO":(instrumentTab?"SOUND PROMPT • SOUND DESIGN ONLY":
-        (activeTab==3?"SELECTED LANE SOUND PROMPT • OVERRIDES ONLY THIS INSTRUMENT":
-                      "SONG / ARRANGEMENT PROMPT • COMPOSITION + GROOVE + STRUCTURE")));
+    const juce::String promptTitle=activeTab==5?"PIANO ROLL NOTES | CHOOSE LEAD OR ONE LANE":
+        (activeTab==6?"SAVE YOUR PROJECT OR EXPORT NOTES / AUDIO":(instrumentTab?"SOUND PROMPT | SOUND DESIGN ONLY":
+        (activeTab==3?"SELECTED LANE SOUND PROMPT | OVERRIDES ONLY THIS INSTRUMENT":
+                      "SONG / ARRANGEMENT PROMPT | COMPOSITION + GROOVE + STRUCTURE")));
     g.drawText(promptTitle,270,120,getWidth()-570,15,juce::Justification::left);
 
     if(instrumentTab)
@@ -942,7 +942,7 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
     if(activeTab==1)
     {
         g.setColour(cyan.withAlpha(.70f));g.setFont(8.5f);
-        g.drawText("PROMPT DIRECTIONS • CLICK TO ADD",270,225,getWidth()-570,14,juce::Justification::left);
+        g.drawText("PROMPT DIRECTIONS | CLICK TO ADD",270,225,getWidth()-570,14,juce::Justification::left);
     }
     if(activeTab==6)
     {
@@ -990,18 +990,18 @@ void SonaraAudioProcessorEditor::paint(juce::Graphics& g)
         if(activeTab==1)
         {
             card("STYLE",style,ry);ry+=44;
-            card("KEY / TEMPO",key+" • "+juce::String(a->getBpm(),0)+" BPM",ry);ry+=44;
-            g.setColour(dim);g.setFont(9.f);g.drawText("SEED • HEXADECIMAL",rx,ry,186,16,juce::Justification::left);
+            card("KEY / TEMPO",key+" | "+juce::String(a->getBpm(),0)+" BPM",ry);ry+=44;
+            g.setColour(dim);g.setFont(9.f);g.drawText("SEED | HEXADECIMAL",rx,ry,186,16,juce::Justification::left);
             ry+=82;
             card("PRODUCER PLAN",a->getPromptIntentSummary(),ry);ry+=44;
             card("HARMONY",a->getHarmonySummary(),ry);ry+=44;
             card("MELODY",a->getMelodyArchetypeName(),ry);ry+=44;
-            card("CURRENT SECTION",p.currentSectionName()+" • "+juce::String(p.currentSongBar()+1)+"/"+juce::String(a->getBars()),ry);ry+=44;
+            card("CURRENT SECTION",p.currentSectionName()+" | "+juce::String(p.currentSongBar()+1)+"/"+juce::String(a->getBars()),ry);ry+=44;
             const int selected=p.getSelectedLane();
             if(juce::isPositiveAndBelow(selected,(int)a->getLanes().size()))
             {
                 const auto& lane=a->getLanes()[(size_t)selected];
-                card("SOUND DNA",lane.name+" • U"+juce::String(lane.sound.unison)+" • "+juce::String((int)lane.sound.cutoff)+" Hz",ry);ry+=44;
+                card("SOUND DNA",lane.name+" | U"+juce::String(lane.sound.unison)+" | "+juce::String((int)lane.sound.cutoff)+" Hz",ry);ry+=44;
             }
             g.setColour(dim);g.setFont(9.f);g.drawFittedText("MIDI carries notes and timing. Use WAV/stems for exact SONARA sound.",rx,ry,186,40,juce::Justification::topLeft,3);
         }

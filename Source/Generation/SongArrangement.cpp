@@ -782,8 +782,8 @@ juce::String SongArrangement::getSectionGoalSummary() const
 
 juce::String SongArrangement::getHarmonySummary() const
 {
-    static constexpr const char* minorRoman[]={"i","ii°","III","iv","v","VI","VII"};
-    static constexpr const char* majorRoman[]={"I","ii","iii","IV","V","vi","vii°"};
+    static constexpr const char* minorRoman[]={"i","ii(dim)","III","iv","v","VI","VII"};
+    static constexpr const char* majorRoman[]={"I","ii","iii","IV","V","vi","vii(dim)"};
     const auto* roman=minor?minorRoman:majorRoman;
     juce::StringArray parts;
     for(int i=0;i<harmonyPlan.progressionLength;++i)
@@ -1936,7 +1936,7 @@ void SongArrangement::finalizeSoundPalette()
         else if(lane.name=="BASS")lane.sound.macroSpace=juce::jmin(.12f,lane.sound.macroSpace);
 
         const auto semanticName=lane.sound.name.replace("Generated ","").trim();
-        lane.sound.name=lane.name+" • "+(semanticName.isEmpty()?juce::String("Custom"):semanticName);
+        lane.sound.name=lane.name+" | "+(semanticName.isEmpty()?juce::String("Custom"):semanticName);
         // Generated patches must already obey the persisted DSP domain. In
         // particular, seeded pluck attacks may otherwise fall below 1 ms and
         // change when restored through the SoundDNA reader.

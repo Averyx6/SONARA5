@@ -200,3 +200,19 @@ that those actions occurred. A verified download can be delivered as a file.
 
 Next concrete task after gates pass: user-host acceptance/listening, then only
 reproduce and fix reported issues; preserve all thirteen regression gates.
+
+### Final screenshot correction
+
+Visual review at 1180x720 exposed garbled Unicode separators in existing prompt,
+selected-lane and status text. JUCE's plain `const char*` String constructor reads
+ASCII, not UTF-8. Use readable ASCII separators/ranges and `(dim)` harmony labels,
+including reference summaries; dynamic user text remains untouched. Add UI
+assertions for selected-lane/status text and repeat full Release/regression plus
+visual review. This is a reproduced UI defect, not a new feature.
+Windows run 37782797321 for 276333ea963a75be188938aabd1c9b96eaa39231 was superseded
+for this concrete defect; it cannot be the delivered final package. The corrected
+exact HEAD must receive a new passing Windows run and downloaded ZIP verification.
+That run was cancelled for the reproduced defect. Corrected Linux Release built;
+all thirteen suites passed again (76.33 s), including new text assertions. Visual
+review at 1180x720 confirms readable labels/status and all 72 audio measurement
+rows remain identical. No composition, routing or sound changes were introduced.

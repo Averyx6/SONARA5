@@ -15,9 +15,9 @@ double ReferenceAnalysis::melodyBeats() const noexcept
 juce::String ReferenceAnalysis::summary() const
 {
     if (!valid()) return "No reference loaded";
-    return fileName + "  •  " + juce::String(durationSeconds, 1) + " s  •  " + juce::String(estimatedBpm, 1)
-        + " BPM  •  " + keyName + "  •  melody " + juce::String((int) melody.size()) + " notes"
-        + "  •  RMS " + juce::String(rmsDb, 1) + " dB  •  peak " + juce::String(peakDb, 1) + " dB";
+    return fileName + "  |  " + juce::String(durationSeconds, 1) + " s  |  " + juce::String(estimatedBpm, 1)
+        + " BPM  |  " + keyName + "  |  melody " + juce::String((int) melody.size()) + " notes"
+        + "  |  RMS " + juce::String(rmsDb, 1) + " dB  |  peak " + juce::String(peakDb, 1) + " dB";
 }
 
 ReferenceAnalysis ReferenceAnalyzer::analyseAudio(const juce::File& file) const
@@ -228,7 +228,7 @@ bool ReferenceAnalyzer::writeMelodyMidi(const ReferenceAnalysis& a,const juce::F
 {
     if(a.melody.empty())return false;juce::MidiFile mf;mf.setTicksPerQuarterNote(960);juce::MidiMessageSequence seq;
     auto tempo=juce::MidiMessage::tempoMetaEvent((int)std::llround(60000000.0/juce::jmax(20.0,a.estimatedBpm)));tempo.setTimeStamp(0);seq.addEvent(tempo);
-    auto name=juce::MidiMessage::textMetaEvent(3,"SONARA Reference Melody • "+a.keyName);name.setTimeStamp(0);seq.addEvent(name);
+    auto name=juce::MidiMessage::textMetaEvent(3,"SONARA Reference Melody | "+a.keyName);name.setTimeStamp(0);seq.addEvent(name);
     for(const auto& n:a.melody){auto on=juce::MidiMessage::noteOn(1,n.midiNote,(juce::uint8)juce::jlimit(1,127,n.velocity));on.setTimeStamp(n.beat*960.0);seq.addEvent(on);auto off=juce::MidiMessage::noteOff(1,n.midiNote);off.setTimeStamp((n.beat+n.length)*960.0);seq.addEvent(off);}seq.updateMatchedPairs();mf.addTrack(seq);destination.deleteFile();juce::FileOutputStream out(destination);return out.openedOk()&&mf.writeTo(out);
 }
 

@@ -34,6 +34,8 @@ int main(int argc,char** argv)
                 {std::cerr<<tab<<" overlapping controls: "<<controls[i]->getName()<<" / "<<controls[j]->getName()<<'\n';return 4;}
             for(int i=0;i<editor->getNumChildComponents();++i) {
                 auto* c=editor->getChildComponent(i);
+                if(auto* label=dynamic_cast<juce::Label*>(c);label&&label->getText().startsWith("SELECTED ")
+                   &&!label->getText().startsWith("SELECTED |"))return 16;
                 if(c->getName()=="Sound preview tempo"&&c->isVisible()!=(juce::String(tab)=="INSTRUMENT"))return 11;
                 if((juce::String(tab)=="MIDI"||juce::String(tab)=="EXPORT")
                    &&c->isVisible()&&dynamic_cast<juce::TextEditor*>(c))return 12;
@@ -69,6 +71,7 @@ int main(int argc,char** argv)
             {const auto file=output.getChildFile("SONARA-"+juce::String(size.x)+"x"+juce::String(size.y)+".png");file.deleteFile();juce::FileOutputStream stream(file);juce::PNGImageFormat png;if(!png.writeImageToStream(snapshot,stream))return 6;}
         }
     }
+    if(!processor.generationStatus.containsIgnoreCase("|"))return 17;
     // A worker must expose cancellation and safely join when the editor closes.
     bool started=false;
     for(int i=0;i<editor->getNumChildComponents();++i)
