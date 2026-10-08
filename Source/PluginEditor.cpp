@@ -343,6 +343,10 @@ SonaraAudioProcessorEditor::SonaraAudioProcessorEditor(SonaraAudioProcessor& x):
     for(auto* b:buttons){addAndMakeVisible(*b);styleButton(*b,b==&generateSound||b==&generateTrack||b==&generateDrums||b==&randomizeEverythingButton||b==&surpriseMe||b==&playSong||b==&playChorus||b==&playDrop||b==&resound||b==&rebuildReference||b==&exportMixButton||b==&exportStemsButton);}
     for(auto* button:{&exportFullMidiButton,&exportLaneMidiButton}){addAndMakeVisible(*button);styleButton(*button);}
     exportFullMidiButton.onClick=[this]{chooseExportMidi(false);};exportLaneMidiButton.onClick=[this]{chooseExportMidi(true);};
+    addAndMakeVisible(hostMidiMode);styleButton(hostMidiMode);
+    hostMidiMode.setTooltip("Selected lane: all incoming MIDI colours/channels play this lane. Song channels: multitrack MIDI uses the saved lane channels, with drums on channel 10.");
+    hostMidiMode.onClick=[this]{p.setMidiRoutingMode(p.getMidiRoutingMode()==SonaraAudioProcessor::MidiRoutingMode::selectedLane?SonaraAudioProcessor::MidiRoutingMode::arrangementChannels:SonaraAudioProcessor::MidiRoutingMode::selectedLane);timerCallback();};
+    exportFullMidiButton.setTooltip("Save a multitrack song for FL Studio's MIDI import. For one Piano Roll, drag a lane or the lead instead.");
     dragLaneMidi.setTooltip("Selected lane notes for FL Piano Roll. Drop onto a SONARA channel to use that lane's SoundDNA; other instruments will sound different.");
     dragLeadMidi.setTooltip("Always exports only the generated LEAD notes for FL Piano Roll. No BASS, SUB, CHORDS, PAD or drum notes are included.");
     dragFullMidi.setTooltip("Drag the WHOLE generated song as multitrack MIDI: drums, bass, sub, chords, pluck, pad, lead, counter and FX stay on separate named tracks with full song timing.");
@@ -606,6 +610,7 @@ juce::StringArray SonaraAudioProcessorEditor::prepareDragFiles(ExternalDragButto
     }
     else if(kind==ExternalDragButton::Kind::laneMidi)
     {
+        p.setMidiRoutingMode(SonaraAudioProcessor::MidiRoutingMode::selectedLane);
         p.generationStatus=juce::String("Preparing SELECTED MIDI...");
         dragFile=temp.getNonexistentChildFile("SONARA-Selected-Lane",".mid");
         ok=p.writeSelectedLaneMidiFile(dragFile);
@@ -613,6 +618,9 @@ juce::StringArray SonaraAudioProcessorEditor::prepareDragFiles(ExternalDragButto
     }
     else if(kind==ExternalDragButton::Kind::leadMidi)
     {
+        if(auto a=p.arrangementSnapshot())for(int i=0;i<(int)a->getLanes().size();++i)
+            if(a->getLanes()[(size_t)i].name=="LEAD"){p.setSelectedLane(i);break;}
+        p.setMidiRoutingMode(SonaraAudioProcessor::MidiRoutingMode::selectedLane);
         p.generationStatus=juce::String("Preparing LEAD MIDI...");
         dragFile=temp.getNonexistentChildFile("SONARA-Lead",".mid");
         ok=p.writeLeadMidiFile(dragFile);
@@ -760,7 +768,8 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     laneSoundPrompt.setVisible(mixTab);
     for(auto& b:promptSuggestions)b.setVisible(songTab);
 
-    exportFullMidiButton.setVisible(midiTab||exportTab);exportLaneMidiButton.setVisible(midiTab||exportTab);
+    exportFullMidiButton.setVisible(exportTab);exportLaneMidiButton.setVisible(midiTab||exportTab);
+    hostMidiMode.setVisible(midiTab||mixTab);
     generateSound.setVisible(instrumentTab);
     similar.setVisible(instrumentTab);
     mutate.setVisible(instrumentTab);
@@ -786,9 +795,9 @@ void SonaraAudioProcessorEditor::updateModeVisibility(){
     selectedLaneLabel.setVisible(arrangementTab);
 
     dragPreviewMidi.setVisible(instrumentTab);
-    dragFullMidi.setVisible(songTab||midiTab||exportTab);
+    dragFullMidi.setVisible(false);
     dragLaneMidi.setVisible(songTab||drumsTab||midiTab||exportTab);
-    dragLeadMidi.setVisible(midiTab||exportTab);
+    dragLeadMidi.setVisible(songTab||midiTab||exportTab);
     dragReferenceMidi.setVisible(referenceTab||midiTab||exportTab);
     dragReferenceAudio.setVisible(referenceTab||exportTab);
     dragFullAudio.setVisible(songTab||exportTab);
@@ -822,6 +831,8 @@ void SonaraAudioProcessorEditor::timerCallback()
     previewSound.setButtonText(p.isPreviewPlaying()?"PREVIEWING":"PREVIEW SOUND");
 
     auto a=p.arrangementSnapshot();
+    hostMidiMode.setButtonText(p.getMidiRoutingMode()==SonaraAudioProcessor::MidiRoutingMode::selectedLane?"MIDI: SELECTED LANE":"MIDI: SONG CHANNELS");
+    dragFullMidi.setVisible(false);
     const bool hasArrangement=a&&!a->isEmpty();
     bpm.setEnabled(activeTab==0||!hasArrangement);if(activeTab!=0&&hasArrangement)bpm.setValue(a->getBpm(),juce::dontSendNotification);
     const auto seed=p.getSongGenerationSeed();if((!seedInitialised||seed!=displayedSeed)&&!seedInput.hasKeyboardFocus(true)){seedInitialised=true;displayedSeed=seed;seedInput.setText(hasArrangement?juce::String::toHexString((juce::int64)seed).paddedLeft('0',16):juce::String(),false);}
@@ -1070,10 +1081,10 @@ void SonaraAudioProcessorEditor::resized()
         case 0: layoutRow({&generateSound,&similar,&mutate,&randomize,&undo,&redo},184); break;
         case 1: layoutRow({&generateTrack,&randomizeEverythingButton,&surpriseMe},184); break;
         case 2: layoutRow({&generateDrums},184); break;
-        case 3: layoutRow({&applyLaneSound,&autoLaneSound},184); break;
+        case 3: layoutRow({&applyLaneSound,&autoLaneSound,&hostMidiMode},184); break;
         case 4: layoutRow({&loadReference,&importMidi,&resound,&rebuildReference},184); break;
         case 6: layoutRow({&saveSoundButton,&loadSoundButton,&saveProjectButton,&loadProjectButton,&exportMixButton,&exportStemsButton},184); break;
-        case 5: layoutRow({&exportFullMidiButton,&exportLaneMidiButton},184);break;
+        case 5: layoutRow({&hostMidiMode,&exportLaneMidiButton},184);break;
         default: break;
     }
     if(activeTab==6)layoutRow({&exportFullMidiButton,&exportLaneMidiButton},228,30);
@@ -1116,12 +1127,12 @@ void SonaraAudioProcessorEditor::resized()
     switch(activeTab)
     {
         case 0: layoutRow({&dragPreviewMidi},h-130,34); break;
-        case 1: layoutRow({&dragFullMidi,&dragLaneMidi,&dragFullAudio,&dragLaneAudio},h-130,34); break;
+        case 1: layoutRow({&dragLeadMidi,&dragLaneMidi,&dragFullAudio,&dragLaneAudio},h-130,34); break;
         case 2: layoutRow({&dragLaneMidi,&dragLaneAudio},h-130,34); break;
         case 4: layoutRow({&dragReferenceMidi,&dragReferenceAudio},h-130,34); break;
-        case 5: layoutRow({&dragFullMidi,&dragLaneMidi,&dragLeadMidi,&dragReferenceMidi},h-130,34); break;
+        case 5: layoutRow({&dragLaneMidi,&dragLeadMidi,&dragReferenceMidi},h-130,34); break;
         case 6:
-            layoutRow({&dragFullMidi,&dragLaneMidi,&dragLeadMidi,&dragReferenceMidi},h-168,32);
+            layoutRow({&dragLaneMidi,&dragLeadMidi,&dragReferenceMidi},h-168,32);
             layoutRow({&dragFullAudio,&dragLaneAudio,&dragLeadAudio,&dragReferenceAudio,&dragStems},h-130,32);
             break;
         default: break;

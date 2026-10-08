@@ -78,7 +78,7 @@ public:
         }
         reset(0);
     }
-    void reset(int64_t start)
+    void reset(int64_t start,bool chaseArrangement=true)
     {
         seekSample=start;duckState=0.f;reverb.reset();
         for(auto& e:engines)if(e)e->reset();
@@ -88,11 +88,21 @@ public:
         for(size_t i=0;i<chase.size();++i)
         {
             chase[i].clear();
-            for(const auto& h:holds[i+4])if(h.on<start&&h.off>start)
+            for(const auto& h:holds[i+4])if(chaseArrangement&&h.on<start&&h.off>start)
                 chase[i].addEvent(juce::MidiMessage::noteOn(channels[i+4],h.note,(juce::uint8)h.velocity),0);
         }
     }
     void render(const SongArrangement& a,juce::AudioBuffer<float>& out,int64_t start,int samples,const SongMixArray* mix=nullptr,int isolatedLane=-1)
+    {renderBlocks(a,out,start,samples,mix,isolatedLane,nullptr,9,true);}
+
+    // Piano Roll note colours never select a drum kit in single-lane mode.
+    // Host MIDI shares the actual lane engines and mixer with preview/WAV/stems.
+    void renderMidi(const SongArrangement& a,juce::AudioBuffer<float>& out,const juce::MidiBuffer& midi,
+                    int64_t start,int samples,const SongMixArray* mix,int selectedLane,bool selectedOnly)
+    {renderBlocks(a,out,start,samples,mix,-1,&midi,selectedLane,selectedOnly);}
+private:
+    void renderBlocks(const SongArrangement& a,juce::AudioBuffer<float>& out,int64_t start,int samples,
+                      const SongMixArray* mix,int isolatedLane,const juce::MidiBuffer* incoming,int selectedLane,bool selectedOnly)
     {
         if(sectionMix.empty()){out.clear();return;}
         int offset=0;
@@ -102,7 +112,7 @@ public:
             int n=juce::jmin(blockSize,samples-offset);
             const auto end=std::upper_bound(boundaries.begin(),boundaries.end(),position);
             if(end!=boundaries.end())n=(int)std::min<int64_t>(n,*end-position);
-            renderPart(a,position,n,mix,isolatedLane);
+            renderPart(a,position,n,mix,isolatedLane,incoming,offset,selectedLane,selectedOnly);
             for(int ch=0;ch<out.getNumChannels();++ch)
                 if(out.getNumChannels()==1)
                 {out.copyFrom(0,offset,block.getReadPointer(0),n,.5f);out.addFrom(0,offset,block,1,0,n,.5f);}
@@ -121,14 +131,48 @@ private:
             midi.addEvent(it->on?juce::MidiMessage::noteOn(channels[(size_t)lane],it->note,(juce::uint8)it->velocity):juce::MidiMessage::noteOff(channels[(size_t)lane],it->note),(int)(it->sample-start));
         auto& held=chase[(size_t)(lane-4)];if(!held.isEmpty()){midi.addEvents(held,0,n,0);held.clear();}
     }
-    int collectTriggers(int lane,int64_t start,int n,DrumTrigger* dest,int capacity)
+    bool routesToLane(const juce::MidiMessage& message,int lane,int selectedLane,bool selectedOnly) const noexcept
     {
+        if(selectedOnly)return lane==selectedLane;
+        if(lane>=4)return message.getChannel()==channels[(size_t)lane];
+        if(message.getChannel()!=10||!message.isNoteOn())return false;
+        const int note=message.getNoteNumber();
+        const int drumLane=(note==35||note==36)?0:((note==38||note==39||note==40)?1:((note==42||note==44||note==46)?2:3));
+        return lane==drumLane;
+    }
+    void injectHostMidi(int lane,juce::MidiBuffer& midi,const juce::MidiBuffer& input,int offset,int n,int selectedLane,bool selectedOnly)
+    {
+        midi.clear();
+        for(const auto event:input)
+            if(event.samplePosition>=offset&&event.samplePosition<offset+n)
+            {
+                auto message=event.getMessage();
+                if(message.getChannel()>0&&routesToLane(message,lane,selectedLane,selectedOnly))
+                {message.setChannel(channels[(size_t)lane]);midi.addEvent(message,event.samplePosition-offset);}
+            }
+    }
+    int collectTriggers(int lane,int64_t start,int n,DrumTrigger* dest,int capacity,
+                        const juce::MidiBuffer* incoming=nullptr,int offset=0,int selectedLane=9,bool selectedOnly=true)
+    {
+        if(incoming)
+        {
+            int count=0;
+            for(const auto event:*incoming)
+                if(event.samplePosition>=offset&&event.samplePosition<offset+n&&count<capacity)
+                {
+                    const auto message=event.getMessage();
+                    if(message.isNoteOn()&&routesToLane(message,lane,selectedLane,selectedOnly))
+                        dest[count++]={event.samplePosition-offset,message.getNoteNumber(),message.getFloatVelocity()};
+                }
+            return count;
+        }
         const auto& list=events[(size_t)lane];int count=0;
         for(auto it=std::lower_bound(list.begin(),list.end(),start,[](const Event& e,int64_t s){return e.sample<s;});it!=list.end()&&it->sample<start+n&&count<capacity;++it)
             dest[count++]={(int)(it->sample-start),it->note,it->velocity/127.f};
         return count;
     }
-    void renderPart(const SongArrangement& a,int64_t startSample,int n,const SongMixArray* mix,int isolatedLane)
+    void renderPart(const SongArrangement& a,int64_t startSample,int n,const SongMixArray* mix,int isolatedLane,
+                    const juce::MidiBuffer* incoming,int inputOffset,int selectedLane,bool selectedOnly)
     {
         juce::ScopedNoDenormals noDenormals;
         constexpr int firstMusical=4,musicalCount=8;
@@ -137,7 +181,7 @@ private:
         const auto sectionIndex=std::min(sectionMix.size()-1,(size_t)(std::upper_bound(boundaries.begin(),boundaries.end(),startSample)-boundaries.begin()));
         const auto& automation=sectionMix[sectionIndex];
 
-        int count=mix&&(*mix)[0].level<=.0001f?0:collectTriggers(0,startSample,n,triggers.data(),(int)triggers.size());
+        int count=mix&&(*mix)[0].level<=.0001f?0:collectTriggers(0,startSample,n,triggers.data(),(int)triggers.size(),incoming,inputOffset,selectedLane,selectedOnly);
         const float duckRelease=duckReleaseCoefficient;
         float duck=duckState;int triggerIndex=0;
         for(int s=0;s<n;++s)
@@ -157,7 +201,8 @@ private:
         {
             auto& midi=midis[(size_t)i];
             auto& s=scratch[(size_t)i];
-            injectMidi(firstMusical+i,midi,startSample,n);
+            if(incoming)injectHostMidi(firstMusical+i,midi,*incoming,inputOffset,n,selectedLane,selectedOnly);
+            else injectMidi(firstMusical+i,midi,startSample,n);
             if(isolatedLane>=0&&isolatedLane!=firstMusical+i)continue;
 
             s.clear();
@@ -249,7 +294,7 @@ private:
         {
             if(isolatedLane>=0&&isolatedLane!=lane)continue;
             drumBus.clear();
-            const int hits=collectTriggers(lane,startSample,n,triggers.data(),(int)triggers.size());
+            const int hits=collectTriggers(lane,startSample,n,triggers.data(),(int)triggers.size(),incoming,inputOffset,selectedLane,selectedOnly);
             juce::AudioBuffer<float> drumView(drumBus.getArrayOfWritePointers(),2,0,n);
             drums[(size_t)lane].render(drumView,triggers.data(),hits);
             const auto m=mix?(*mix)[(size_t)lane]:MixState{};

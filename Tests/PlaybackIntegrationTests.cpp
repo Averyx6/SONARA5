@@ -7,6 +7,8 @@
 #include <iostream>
 #include <vector>
 #include <set>
+#include "IncomingMidiTests.h"
+#include "ProductionBenchmark.h"
 
 namespace {
 int fail(const juce::String& m){std::cerr<<"SONARA playback test failure: "<<m<<"\n";return 1;}
@@ -161,8 +163,11 @@ double renderDrumEnergy(const sonara::SongArrangement& a,double sr)
 }
 }
 
-int main()
+int main(int argc,char** argv)
 {
+    if(argc==3&&juce::String(argv[1])=="--benchmark")return sonara::benchmark::run(juce::File(argv[2]));
+    if(const auto error=sonara::incomingtests::run();error.isNotEmpty())return fail(error);
+    if(argc==2&&juce::String(argv[1])=="--routing-only")return 0;
     const juce::String prompt="Emotional progressive house, 128 BPM, F minor, emotional memorable hook, huge melodic drop";
 
     // TEST E + F + G + H + performance: exercise the real processor/processBlock path.

@@ -681,7 +681,9 @@ void SonaraAudioProcessor::prepareToPlay(double sr, int bs)
 
     engine.prepare(sr, maximumBlockSize, getTotalNumOutputChannels());
     songRenderer.prepare(sr,maximumBlockSize);
-    if(auto a=arrangementSnapshot()){songRenderer.configure(*a);rendererPlan=a.get();}else rendererPlan=nullptr;
+    hostMidiRenderer.prepare(sr,maximumBlockSize);
+    hostMidiSample=hostMidiTailSamples=0;
+    if(auto a=arrangementSnapshot()){songRenderer.configure(*a);hostMidiRenderer.configure(*a);rendererPlan=a.get();}else rendererPlan=nullptr;
 }
 
 bool SonaraAudioProcessor::isBusesLayoutSupported(const BusesLayout& l) const
@@ -694,6 +696,32 @@ void SonaraAudioProcessor::processBlock(juce::AudioBuffer<float>& b, juce::MidiB
 {
     juce::ScopedNoDenormals noDenormals;
     b.clear();
+
+    if(useLaneMidiSound.load(std::memory_order_acquire)&&(!m.isEmpty()||!previewPlaying.load()))
+    {
+        auto a=arrangementSnapshot();
+        // Advance DSP over leading rests as well: chorus phase and delay/FX
+        // history are part of the saved sound, even before the first note.
+        if(a&&(!songPlaying.load()||!m.isEmpty()))
+        {
+            if(!m.isEmpty()){songPlaying.store(false);previewPlaying.store(false);}
+            int64_t position=hostMidiSample;
+            if(auto* playhead=getPlayHead())if(auto transport=playhead->getPosition())
+                if(auto ppq=transport->getPpqPosition();ppq&&transport->getIsPlaying())
+                    position=(int64_t)std::llround(std::max(0.0,*ppq)*previewSampleRate*60.0/a->getBpm());
+            if(position!=hostMidiSample)hostMidiRenderer.reset(position,false);
+            const auto mix=songMixSnapshot();
+            hostMidiRenderer.renderMidi(*a,b,m,position,b.getNumSamples(),&mix,selectedLane.load(),
+                                       midiRoutingMode.load()==MidiRoutingMode::selectedLane);
+            hostMidiSample=position+b.getNumSamples();
+            if(!m.isEmpty()||hostMidiRenderer.hasActiveVoices())hostMidiTailSamples=(int64_t)(previewSampleRate*4.0);
+            else hostMidiTailSamples=std::max<int64_t>(0,hostMidiTailSamples-b.getNumSamples());
+            m.clear();return;
+        }
+        // Advance over leading rests too; MIDI imported at its original song
+        // position must receive the same section automation as internal playback.
+        if(a)hostMidiSample+=b.getNumSamples();
+    }
 
     if(previewPlaying.load()&&referenceMelodyPreview.load()&&referenceSong)
     {
@@ -715,18 +743,16 @@ void SonaraAudioProcessor::processBlock(juce::AudioBuffer<float>& b, juce::MidiB
     if(!previewActive&&m.isEmpty()&&!engine.hasActiveVoices())
         return;
 
-    const bool multiInstance=gSonaraInstanceCount.load(std::memory_order_relaxed)>1;
-    engine.setRuntimeEcoMode(multiInstance);
+    // Opening another instance must never rewrite the currently audible patch.
+    // The existing voice cap and idle fast path keep CPU bounded.
+    engine.setRuntimeEcoMode(false);
 
     injectPreviewMidi(m, b.getNumSamples());
     engine.render(b, m);
 
-    if(!multiInstance)
-    {
-        for (int c = 0; c < b.getNumChannels(); ++c)
-            for (int i = 0; i < b.getNumSamples(); ++i)
-                b.setSample(c, i, std::tanh(b.getSample(c, i) * 1.12f));
-    }
+    for (int c = 0; c < b.getNumChannels(); ++c)
+        for (int i = 0; i < b.getNumSamples(); ++i)
+            b.setSample(c, i, juce::jlimit(-sonara::mixpolicy::masterCeiling(),sonara::mixpolicy::masterCeiling(),std::tanh(b.getSample(c, i) * 1.12f)));
 }
 
 void SonaraAudioProcessor::startPreview()
@@ -754,6 +780,7 @@ void SonaraAudioProcessor::stopPreview()
     previewPlaying.store(false);
     previewSample.store(0);
     engine.reset();
+    hostMidiRenderer.reset(0,false);hostMidiSample=hostMidiTailSamples=0;
     generationStatus = "Sound preview stopped";
 }
 
@@ -808,6 +835,7 @@ bool SonaraAudioProcessor::writePreviewMidiFile(const juce::File& destination) c
 
 void SonaraAudioProcessor::setPatchWithHistory(const sonara::SoundDNA& d)
 {
+    useLaneMidiSound.store(false);
     engine.setPatch(d);
     if (historyIndex + 1 < (int) patchHistory.size()) patchHistory.erase(patchHistory.begin() + historyIndex + 1, patchHistory.end());
     patchHistory.push_back(d);
@@ -1342,8 +1370,9 @@ sonara::SongMixArray SonaraAudioProcessor::songMixSnapshot() const noexcept
 void SonaraAudioProcessor::storeArrangement(std::shared_ptr<const sonara::SongArrangement> made)
 {
     const juce::ScopedLock lock(getCallbackLock());
-    if(made){songRenderer.configure(*made);songRenderer.reset(songSample.load());rendererPlan=made.get();lastSongSeed.store(made->getSongId());}
-    else {songPlaying.store(false);songRenderer.reset(0);rendererPlan=nullptr;lastSongSeed.store(0);}
+    if(made){songRenderer.configure(*made);songRenderer.reset(songSample.load());hostMidiRenderer.configure(*made);rendererPlan=made.get();lastSongSeed.store(made->getSongId());}
+    else {songPlaying.store(false);songRenderer.reset(0);hostMidiRenderer.reset(0,false);useLaneMidiSound.store(false);rendererPlan=nullptr;lastSongSeed.store(0);}
+    hostMidiSample=hostMidiTailSamples=0;
     std::atomic_store_explicit(&arrangement,std::move(made),std::memory_order_release);
 }
 void SonaraAudioProcessor::renderSongBlock(juce::AudioBuffer<float>& out,int numSamples)
@@ -1377,8 +1406,8 @@ bool SonaraAudioProcessor::writeSelectedLaneMidiFile(const juce::File& destinati
     for(const auto& section:a->getSections()){auto marker=juce::MidiMessage::textMetaEvent(6,section.name);marker.setTimeStamp(section.startBar*4.0*960);seq.addEvent(marker);}
     for (const auto& n : lane.notes)
     {
-        auto on=juce::MidiMessage::noteOn(lane.midiChannel,n.note,(juce::uint8)n.velocity); on.setTimeStamp(n.beat*960.0); seq.addEvent(on);
-        auto off=juce::MidiMessage::noteOff(lane.midiChannel,n.note); off.setTimeStamp((n.beat+n.length)*960.0); seq.addEvent(off);
+        auto on=juce::MidiMessage::noteOn(1,n.note,(juce::uint8)n.velocity); on.setTimeStamp(n.beat*960.0); seq.addEvent(on);
+        auto off=juce::MidiMessage::noteOff(1,n.note); off.setTimeStamp((n.beat+n.length)*960.0); seq.addEvent(off);
     }
     auto end=juce::MidiMessage::endOfTrack();end.setTimeStamp(a->getTotalBeats()*960);seq.addEvent(end);
     seq.updateMatchedPairs(); mf.addTrack(seq); destination.deleteFile(); juce::FileOutputStream out(destination);
@@ -1592,6 +1621,8 @@ bool SonaraAudioProcessor::saveProject(const juce::File& file) const
     root.setProperty("generationCounter",juce::String(generationCounter),nullptr);
     root.setProperty("bpm",previewBpm.load(),nullptr);
     root.setProperty("selectedLane",selectedLane.load(),nullptr);
+    root.setProperty("laneMidiSound",useLaneMidiSound.load(),nullptr);
+    root.setProperty("midiRoutingMode",(int)midiRoutingMode.load(),nullptr);
     root.addChild(engine.patchSnapshot().toValueTree(),-1,nullptr);
     root.addChild(locks.toValueTree(),-1,nullptr);
     root.addChild(makeLaneMixTree(*this),-1,nullptr);
@@ -1655,6 +1686,8 @@ bool SonaraAudioProcessor::loadProject(const juce::File& file)
         }
     }
 
+    setMidiRoutingMode((MidiRoutingMode)juce::jlimit(0,1,(int)root.getProperty("midiRoutingMode",0)));
+    useLaneMidiSound.store((bool)root.getProperty("laneMidiSound",arrangementSnapshot()&&engine.patchSnapshot().seed==arrangementSnapshot()->getLanes()[(size_t)selectedLane.load()].sound.seed));
     generationStatus="Project loaded • song, sounds, mix and reference restored";
     generationProgress.store(1.f);
     return true;
@@ -1769,6 +1802,11 @@ void SonaraAudioProcessor::setSelectedLane(int i)
     if(!a||!juce::isPositiveAndBelow(bounded,(int)a->getLanes().size()))return;
 
     const auto& lane=a->getLanes()[(size_t)bounded];
+    {
+        const juce::ScopedLock callback(getCallbackLock());
+        hostMidiRenderer.reset(0,false);hostMidiSample=hostMidiTailSamples=0;
+        useLaneMidiSound.store(true,std::memory_order_release);
+    }
     if(!lane.drums)
     {
         // The selected arrangement sound also becomes the live SONARA instrument.
@@ -1777,6 +1815,12 @@ void SonaraAudioProcessor::setSelectedLane(int i)
         engine.setPatch(lane.sound);
         generationStatus="LIVE SOUND • "+lane.name+" • drop lane MIDI on this SONARA channel";
     }
+}
+
+void SonaraAudioProcessor::setMidiRoutingMode(MidiRoutingMode mode)
+{
+    const juce::ScopedLock callback(getCallbackLock());
+    midiRoutingMode.store(mode);hostMidiRenderer.reset(0,false);hostMidiSample=hostMidiTailSamples=0;
 }
 
 SonaraAudioProcessor::LaneMixState SonaraAudioProcessor::getLaneMix(int laneIndex) const noexcept
@@ -1883,6 +1927,8 @@ void SonaraAudioProcessor::getStateInformation(juce::MemoryBlock& dest)
     state.setProperty("generationCounter",juce::String(generationCounter),nullptr);
     state.setProperty("bpm",previewBpm.load(),nullptr);
     state.setProperty("selectedLane",selectedLane.load(),nullptr);
+    state.setProperty("laneMidiSound",useLaneMidiSound.load(),nullptr);
+    state.setProperty("midiRoutingMode",(int)midiRoutingMode.load(),nullptr);
     state.addChild(engine.patchSnapshot().toValueTree(),-1,nullptr);
     state.addChild(locks.toValueTree(),-1,nullptr);
     state.addChild(makeLaneMixTree(*this),-1,nullptr);
@@ -1955,6 +2001,8 @@ void SonaraAudioProcessor::setStateInformation(const void* data,int bytes)
             }
         }
 
+        setMidiRoutingMode((MidiRoutingMode)juce::jlimit(0,1,(int)state.getProperty("midiRoutingMode",0)));
+        useLaneMidiSound.store((bool)state.getProperty("laneMidiSound",arrangementSnapshot()&&engine.patchSnapshot().seed==arrangementSnapshot()->getLanes()[(size_t)selectedLane.load()].sound.seed));
         patchHistory.clear();
         patchHistory.push_back(engine.patch());
         historyIndex=0;

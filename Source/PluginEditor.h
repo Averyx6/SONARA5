@@ -97,12 +97,13 @@ private:
     juce::TextButton loadReference{"LOAD AUDIO"}, importMidi{"IMPORT MIDI"}, resound{"RESOUND"}, rebuildReference{"REBUILD TRACK"};
     juce::TextButton saveSoundButton{"SAVE SOUND"}, loadSoundButton{"LOAD SOUND"}, saveProjectButton{"SAVE PROJECT"}, loadProjectButton{"LOAD PROJECT"};
     juce::TextButton exportFullMidiButton{"EXPORT FULL MIDI"},exportLaneMidiButton{"EXPORT SELECTED MIDI"};
+    juce::TextButton hostMidiMode{"MIDI: SELECTED LANE"};
     juce::TextButton exportMixButton{"EXPORT MIX"}, exportStemsButton{"EXPORT STEMS"};
 
     ExternalDragButton dragPreviewMidi{*this,"SOUND MIDI",ExternalDragButton::Kind::previewMidi};
     ExternalDragButton dragFullMidi{*this,"FULL SONG MIDI",ExternalDragButton::Kind::fullMidi};
-    ExternalDragButton dragLaneMidi{*this,"SELECTED MIDI",ExternalDragButton::Kind::laneMidi};
-    ExternalDragButton dragLeadMidi{*this,"LEAD MIDI",ExternalDragButton::Kind::leadMidi};
+    ExternalDragButton dragLaneMidi{*this,"LANE TO PIANO ROLL",ExternalDragButton::Kind::laneMidi};
+    ExternalDragButton dragLeadMidi{*this,"LEAD TO PIANO ROLL",ExternalDragButton::Kind::leadMidi};
     ExternalDragButton dragReferenceMidi{*this,"REFERENCE MIDI",ExternalDragButton::Kind::referenceMidi};
     ExternalDragButton dragReferenceAudio{*this,"RESOUND WAV",ExternalDragButton::Kind::referenceAudio};
     ExternalDragButton dragFullAudio{*this,"FULL MIX WAV",ExternalDragButton::Kind::fullMixAudio};

@@ -19,6 +19,7 @@ class SonaraAudioProcessor final : public juce::AudioProcessor {
 public:
     enum class Macro : int { brightness=0, movement, space, impact };
     enum class LaneMixParameter : int { level=0, pan, width, fxSend };
+    enum class MidiRoutingMode : int { selectedLane=0, arrangementChannels=1 };
     struct LaneMixState { float level=1.f,pan=0.f,width=1.f,fxSend=1.f; };
     SonaraAudioProcessor();
     ~SonaraAudioProcessor() override;
@@ -59,6 +60,8 @@ public:
     bool writeLeadMidiFile(const juce::File&) const;
     void setSelectedLane(int i);
     int getSelectedLane() const noexcept { return selectedLane.load(); }
+    void setMidiRoutingMode(MidiRoutingMode);
+    MidiRoutingMode getMidiRoutingMode() const noexcept {return midiRoutingMode.load();}
 
 
     // Reference / RESOUND / MIDI import
@@ -119,6 +122,10 @@ private:
 
     sonara::SonaraEngine engine;
     sonara::SongRenderEngine songRenderer;
+    sonara::SongRenderEngine hostMidiRenderer;
+    std::atomic<MidiRoutingMode> midiRoutingMode{MidiRoutingMode::selectedLane};
+    std::atomic<bool> useLaneMidiSound{false};
+    int64_t hostMidiSample=0,hostMidiTailSamples=0;
     sonara::PromptGenerator generator; sonara::CyanoryxBridge cyanoryx; sonara::MutationLocks locks;
     sonara::ReferenceAnalyzer referenceAnalyzer; sonara::ReferenceAnalysis reference; bool referenceLoaded=false;std::atomic<bool> referenceMelodyPreview{false};
     std::shared_ptr<const sonara::SongArrangement> referenceSong;

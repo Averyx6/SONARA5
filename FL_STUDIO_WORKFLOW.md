@@ -21,6 +21,19 @@ then verify/rescan it in FL Studio's Plugin Manager. Open SONARA as an instrumen
 
 ## Move the result into FL Studio
 
+For one FL Piano Roll, use **LEAD TO PIANO ROLL** or select a musical lane and
+use **LANE TO PIANO ROLL**. These files have one track on MIDI channel 1. Lead
+transfer selects the lead's SoundDNA in SONARA; lane transfer uses the selected
+lane. In **MIDI: SELECTED LANE** mode, every incoming note colour/channel plays
+that lane through the same song mixer used by preview and WAV export.
+
+Use **EXPORT FULL MIDI** on EXPORT for FL Studio's multitrack MIDI import, rather
+than dragging a whole song into one Piano Roll. **MIDI: SONG CHANNELS** routes
+the stored arrangement channels to their own SoundDNA and mixer: lead 1, bass 2,
+sub 3, chords 4, pluck 5, pad 6, counter 7, transitions 8, and drums 10. Keep FL's
+tempo and imported notes' original song position to preserve section automation.
+The MIDI routing mode and selected lane are saved with the project/session.
+
 | Transfer | What it contains | Use |
 | --- | --- | --- |
 | Full song MIDI | Named tracks, notes, velocities, tempo/meter, section markers and full song timing | Import the MIDI as separate FL channels/patterns, or save through MIDI/EXPORT |
