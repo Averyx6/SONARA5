@@ -49,3 +49,39 @@ Next concrete task: inspect the v5.1 Windows gate, then fix automatic role-safe
 lead articulation/material/filter range and rebalance melody/drums using the same
 seeds and recorded audio. Keep .950 ceiling and every existing assertion unchanged.
 Do not claim musical quality or FL Studio acceptance from technical CI alone.
+
+## v5.2 — measured musical balance
+
+- Automatic LEAD retains a lowpass melodic body unless an explicit highpass/thin
+  lead is requested; bounded attack/sustain keeps short genre articulations audible.
+  Triangle LEAD/CHORDS use one unison voice to avoid seeded phase cancellation.
+  Custom lane designs and explicit dark/bright directions remain supported.
+- Increase CHORDS/PLUCK/LEAD/COUNTER mixer balance and reduce drop drum gain.
+  Master drive and .950 sample ceiling remain unchanged across host/preview/exports.
+- Add required `sonara_production_balance`: nine deterministic four-bar drops,
+  each with full/drum/harmonic/lead render measurements and full/lead 24-bit WAVs.
+  Require full >= -15, harmonic >= -20, lead >= -24 RMS dBFS and harmonic within
+  6 dB of drums. Keep all existing assertions. Windows saves the recorded audio
+  as a separate measurement artifact; BUILD_LOG counts actual registered tests.
+- Add exact-run ZIP verification and optional FFmpeg EBU R128 measurement tools.
+
+The same nine seeds now measure: lead -22.15 to -14.78 dBFS (baseline worst
+-34.16); harmonic -19.01 to -13.30 (baseline worst -24.00); drum -13.20 to
+-12.88; full -11.65 to -9.24. Worst harmonic/drum deficit improves from 12.53
+to 5.98 dB. Quiet tech-house seed lead improves 12.01 dB RMS and 11.9 LUFS
+(-30.5 to -18.6). Progressive quiet lead improves 3.92 dB RMS; trance 3.27.
+These are fixed benchmark excerpts, not universal quality guarantees.
+
+FFmpeg R128 measures full mixes -9.5 to -6.9 LUFS. Sample peak stays <= .950,
+but reconstruction true peaks are +0.2 to +0.5 dBFS (baseline +0.9 to +1.3).
+The sample ceiling is not a true-peak limiter; do not describe it as one.
+Recorded comparison evidence: measurements-v5.0 versus build-v5/production-benchmark.
+Full v5.2 Linux x64 Release built and all ten registered suites passed (108.66 s),
+including unchanged long playback/CPU, UI and native VST3 discovery checks.
+The comparison CSVs are committed in Evidence/v5.2. Exact v5.1 Windows CI run
+37776043170 is still building; do not cancel it by pushing another checkpoint.
+The v5.2 checkpoint is locally committed while that gate finishes.
+
+Next concrete task: preserve tech-house's short syncopated articulation while
+bounding its accidental high register and developing the answer in four-bar
+final hooks. Verify actual note/rhythm/harmony diversity, not only seed IDs.

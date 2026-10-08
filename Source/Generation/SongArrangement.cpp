@@ -1864,6 +1864,9 @@ void SongArrangement::finalizeSoundPalette()
         else if(lane.name=="CHORDS")
         {
             lane.sound.unison=juce::jlimit(1,3,lane.sound.unison);
+            // Triangle body does not need decorrelated unison voices. Random
+            // near-opposite phases could cancel the harmony in the shared mixer.
+            if(lane.sound.oscA==WaveShape::triangle)lane.sound.unison=1;
             lane.sound.subLevel=0.f; lane.sound.noiseLevel=juce::jmin(.04f,lane.sound.noiseLevel);
             lane.sound.reverb=juce::jmin(.09f,lane.sound.reverb);
             lane.sound.delay=juce::jmin(.045f,lane.sound.delay);
@@ -1888,6 +1891,20 @@ void SongArrangement::finalizeSoundPalette()
         else if(lane.name=="LEAD")
         {
             lane.sound.unison=juce::jlimit(2,4,lane.sound.unison);
+            if(lane.sound.oscA==WaveShape::triangle)lane.sound.unison=1;
+            // Automatic flavour must retain a melodic body. Generic "airy"
+            // could select a highpass above the hook; seeded warm colour could
+            // push a high-register lead below 800 Hz and bury it under drums.
+            // Custom lane designs remain independent of these AUTO FIT guards.
+            if(!productionPrompt.contains("highpass")&&!productionPrompt.contains("high-pass")
+               &&!productionPrompt.contains("thin lead")&&!productionPrompt.contains("telephone lead"))
+            {
+                lane.sound.filterMode=FilterMode::lowpass;
+                const float minimum=promptIntent.brightnessDirection<0?1800.f:3600.f;
+                lane.sound.cutoff=juce::jmax(minimum,lane.sound.cutoff);
+            }
+            lane.sound.attack=juce::jmin(.008f,lane.sound.attack);
+            lane.sound.sustain=juce::jmax(.55f,lane.sound.sustain);
             lane.sound.subLevel=juce::jmin(.025f,lane.sound.subLevel);
             lane.sound.reverb=juce::jmin(.10f,lane.sound.reverb);
             lane.sound.delay=juce::jmin(.10f,lane.sound.delay);

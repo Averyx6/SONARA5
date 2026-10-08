@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(SONARA VERSION 5.1.0)
+project(SONARA VERSION 5.2.0)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -150,6 +150,8 @@ if(BUILD_TESTING)
         juce::juce_audio_utils juce::juce_dsp
         juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
     add_test(NAME sonara_full_playback_acceptance COMMAND SONARA_PlaybackTests)
+    add_test(NAME sonara_production_balance
+        COMMAND SONARA_PlaybackTests --benchmark-check "${CMAKE_BINARY_DIR}/production-benchmark")
 
     juce_add_console_app(SONARA_UITests PRODUCT_NAME "SONARA UI Tests")
     juce_generate_juce_header(SONARA_UITests)

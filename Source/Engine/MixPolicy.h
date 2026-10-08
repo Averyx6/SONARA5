@@ -11,7 +11,7 @@ constexpr int musicalLaneCount = 8;
 inline float baseGain(int lane) noexcept
 {
     static constexpr std::array<float,musicalLaneCount> values{
-        .62f,.36f,.37f,.27f,.21f,.84f,.18f,.15f
+        .62f,.36f,.52f,.36f,.21f,.96f,.20f,.15f
     };
     return values[(size_t)juce::jlimit(0,musicalLaneCount-1,lane)];
 }
@@ -106,7 +106,7 @@ inline float drumGain(const juce::String& section,float energy) noexcept
     const bool breakdown=section=="BREAKDOWN";
     const bool finalHook=section=="FINAL HOOK";
     const float sectionGainValue=intro?.46f:(verse?.60f:(build?.64f:
-        (chorus?.68f:(drop?.84f:(breakdown?.48f:(finalHook?.86f:.70f))))));
+        (chorus?.62f:(drop?.68f:(breakdown?.48f:(finalHook?.72f:.70f))))));
     return sectionGainValue*(.84f+.20f*juce::jlimit(0.f,1.f,energy));
 }
 

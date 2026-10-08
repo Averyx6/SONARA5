@@ -166,6 +166,7 @@ double renderDrumEnergy(const sonara::SongArrangement& a,double sr)
 int main(int argc,char** argv)
 {
     if(argc==3&&juce::String(argv[1])=="--benchmark")return sonara::benchmark::run(juce::File(argv[2]));
+    if(argc==3&&juce::String(argv[1])=="--benchmark-check")return sonara::benchmark::run(juce::File(argv[2]),true);
     if(const auto error=sonara::incomingtests::run();error.isNotEmpty())return fail(error);
     if(argc==2&&juce::String(argv[1])=="--routing-only")return 0;
     const juce::String prompt="Emotional progressive house, 128 BPM, F minor, emotional memorable hook, huge melodic drop";

@@ -35,7 +35,7 @@ cmake --build build-win64 --config Release --parallel
 ctest --test-dir build-win64 -C Release --output-on-failure
 ```
 
-The GitHub Actions Windows workflow builds Release, runs all nine regression
+The GitHub Actions Windows workflow builds Release, runs every regression
 suites including VST3 host discovery, validates the x64 bundle and uploads
 `SONARA-Windows-x64-VST3`. Its downloadable ZIP includes the complete VST3 folder,
 installation/workflow instructions, `BUILD_LOG.txt` and `SHA256SUMS.txt`.

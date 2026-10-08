@@ -17,7 +17,7 @@ struct Metrics {
 
 // Reproducible production arrangements and actual rendered audio, rather than
 // patch/seed IDs as a proxy for audible variety. Optional files are review evidence.
-inline int run(const juce::File& output) {
+inline int run(const juce::File& output,bool enforceBalance=false) {
     if(!output.createDirectory())return 1;
     juce::String csv="prompt,seed,group,rms_dbfs,peak,notes\n";
     static const char* prompts[]={
@@ -34,6 +34,7 @@ inline int run(const juce::File& output) {
         const int64_t start=(int64_t)std::llround(drop->startBar*4.0*44100.0*60.0/song->getBpm());
         const int samples=(int)std::llround(std::min(4,drop->bars)*4.0*44100.0*60.0/song->getBpm());
         const auto label=juce::String(genre)+"-"+juce::String::toHexString((juce::int64)seed);
+        std::array<double,4> levels{};
         for(int group=0;group<4;++group) {
             SongMixArray mix{};int notes=0;
             for(int lane=0;lane<12;++lane) {
@@ -46,7 +47,9 @@ inline int run(const juce::File& output) {
             juce::AudioBuffer<float> audio(2,512);Metrics metrics;
             std::unique_ptr<juce::AudioFormatWriter> writer;
             if(group==0||group==3) {
-                auto stream=std::make_unique<juce::FileOutputStream>(output.getChildFile(label+(group==0?"-mix.wav":"-lead.wav")));
+                const auto file=output.getChildFile(label+(group==0?"-mix.wav":"-lead.wav"));
+                if(file.existsAsFile()&&!file.deleteFile())return 4;
+                auto stream=std::make_unique<juce::FileOutputStream>(file);
                 if(!stream->openedOk())return 4;
                 juce::WavAudioFormat wav;auto* raw=stream.release();
                 writer.reset(wav.createWriterFor(raw,44100.0,2,24,{},0));
@@ -58,8 +61,12 @@ inline int run(const juce::File& output) {
                 if(writer&&!writer->writeFromAudioSampleBuffer(audio,0,n))return 6;
             }
             csv+=juce::String(genre)+","+juce::String::toHexString((juce::int64)seed)+","+juce::String(group)+","+juce::String(metrics.db(),5)+","+juce::String(metrics.peak,7)+","+juce::String(notes)+"\n";
+            levels[(size_t)group]=metrics.db();
             std::cout<<label<<" group="<<group<<" RMS dBFS="<<metrics.db()<<" peak="<<metrics.peak<<" notes="<<notes<<'\n';
             if(!std::isfinite(metrics.rms())||metrics.peak>.951f||metrics.rms()<1e-8)return 7;
+        }
+        if(enforceBalance&&(levels[0]<-15.0||levels[2]<-20.0||levels[3]<-24.0||levels[2]-levels[1]<-6.0)) {
+            std::cerr<<"Production drop is too quiet or drum-dominated: "<<label<<"\n";return 10;
         }
         if(!output.getChildFile(label+"-arrangement.xml").replaceWithText(song->toValueTree().createXml()->toString()))return 8;
     }

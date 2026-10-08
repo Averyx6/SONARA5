@@ -20,6 +20,13 @@ jobs:
         run: cmake --build build-win64 --config Release --parallel
       - name: Run regression tests
         run: ctest --test-dir build-win64 -C Release --output-on-failure
+      - name: Save deterministic audio and balance measurements
+        uses: actions/upload-artifact@v4
+        with:
+          name: SONARA-production-measurements
+          path: build-win64/production-benchmark
+          if-no-files-found: error
+          retention-days: 14
       - name: Validate and package host-discoverable VST3
         shell: pwsh
         run: |
@@ -82,7 +89,9 @@ jobs:
           "architecture=x86_64" | Add-Content DIST/BUILD_LOG.txt
           "tests=passed" | Add-Content DIST/BUILD_LOG.txt
           "workflow_run=${{ github.run_id }}" | Add-Content DIST/BUILD_LOG.txt
-          "regression_suites=9" | Add-Content DIST/BUILD_LOG.txt
+          $testInventory = ctest --test-dir build-win64 -C Release --show-only=json-v1 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $testInventory.tests.Count -lt 10) { throw 'Incomplete regression inventory' }
+          "regression_suites=$($testInventory.tests.Count)" | Add-Content DIST/BUILD_LOG.txt
           $checksums = Get-ChildItem DIST -Recurse -File | ForEach-Object {
             $relative = [System.IO.Path]::GetRelativePath((Resolve-Path DIST).Path, $_.FullName).Replace('\','/')
             "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $relative
